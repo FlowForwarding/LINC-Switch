@@ -1,0 +1,6 @@
+*.beam
+*.app
+erl_crash.dump
+rebar
+/deps
+/rel/openflow

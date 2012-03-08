@@ -1,0 +1,11 @@
+{application, of_protocol,
+ [
+  {description, "Linux Netlink interface library"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.

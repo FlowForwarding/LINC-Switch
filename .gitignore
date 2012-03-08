@@ -1,5 +1,6 @@
 *.beam
 *.app
+*.eqc
 erl_crash.dump
 rebar
 /deps

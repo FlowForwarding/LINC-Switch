@@ -1,4 +1,4 @@
-{application, of_protocol,
+{application, of_netlink,
  [
   {description, "Linux Netlink interface library"},
   {vsn, "0.0.1"},

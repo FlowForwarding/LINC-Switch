@@ -56,7 +56,8 @@ decode(<<L:32/native-integer,2:16/native-integer,
     %chop trailing 0's
     <<Data1:PayloadLen/binary,_/binary>>=Data,
     <<ErrCode:32/native-integer,Original/binary>> = Data1,
-    Payload={error,ErrCode,decode(Original)},
+%    Payload={error,ErrCode,decode(Original)},
+    Payload={error,ErrCode,Original},
     #nlmsg{len=L,type=?NETLINK_GENERIC,request=R,multi=M,ack=A,echo=E,
            dumpintr=D,seq=Seq,pid=Pid,payload=Payload};
 

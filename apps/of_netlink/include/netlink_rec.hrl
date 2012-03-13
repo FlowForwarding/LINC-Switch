@@ -61,8 +61,8 @@
 %        flag0200:: bool(),
 %        flag0400:: bool(),
 %        flag0800:: bool(),
-        seq     :: integer(),
-        pid     :: integer(),
+        seq     = undefined :: undefined | integer(),
+        pid     = undefined :: undefined | integer(),
         payload :: #genlmsg{}
         }).
 

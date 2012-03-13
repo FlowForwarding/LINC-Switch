@@ -7,5 +7,6 @@
                   kernel,
                   stdlib
                  ]},
+  {mod, {of_netlink_app, []}},
   {env, []}
  ]}.

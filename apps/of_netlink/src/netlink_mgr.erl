@@ -21,7 +21,11 @@
         sock,
         port,
         sock_pid,
-        seq=0,
+        seq = 0,
+        dp_id = undefined,
+        vp_id = undefined,
+        fl_id = undefined,
+        pk_id = undefined,
         reqs=[]
          }).
 
@@ -80,6 +84,26 @@ handle_call({sendpkt,Packet},From, State) ->
         [?MODULE, From, Packet, State]),
     {noreply, NewState};
 
+handle_call({set,ovs_datapath,Id}, From, State) ->
+    error_logger:info_msg("[~p] ovs_datapath family id set rq from ~p Id=~p~nwhen in state: ~p~n",
+        [?MODULE, From,Id, State]),
+    {reply, ok, State#state{dp_id=Id}};
+
+handle_call({set,ovs_vport,Id}, From, State) ->
+    error_logger:info_msg("[~p] ovs_vport family id set rq from ~p Id=~p~nwhen in state: ~p~n",
+        [?MODULE, From,Id, State]),
+    {reply, ok, State#state{vp_id=Id}};
+
+handle_call({set,ovs_flow,Id}, From, State) ->
+    error_logger:info_msg("[~p] ovs_flow family id set rq from ~p Id=~p~nwhen in state: ~p~n",
+        [?MODULE, From,Id, State]),
+    {reply, ok, State#state{fl_id=Id}};
+
+handle_call({set,ovs_packet,Id}, From, State) ->
+    error_logger:info_msg("[~p] ovs_packet family id set rq from ~p Id=~p~nwhen in state: ~p~n",
+        [?MODULE, From,Id, State]),
+    {reply, ok, State#state{pk_id=Id}};
+
 handle_call(stop, From, State) ->
     error_logger:info_msg("[~p] Stop request from  ~p~nwhen in state: ~p~n",
         [?MODULE, From, State]),
@@ -114,10 +138,10 @@ handle_cast(Request, State) ->
 %% Handling all non call/cast messages
 %% @end
 %%--------------------------------------------------------------------
-handle_info({Port,{data,Data}},State=#state{port=Port}) ->
+handle_info({Port,{data,Data}},State=#state{port=Port,dp_id=Dp,vp_id=Vp,fl_id=Fl,pk_id=Pk}) ->
     error_logger:info_msg("[~p] data from Port msg=~n~p~nwhen in state: ~p~n",
         [?MODULE,Data,State]),
-    {noreply, receive_packet(of_netlink:decode(Data),State)};
+    {noreply, receive_packet(of_netlink:decode(Data,Dp,Vp,Fl,Pk),State)};
 
 handle_info(Request, State) ->
     error_logger:info_msg("[~p] unhandled msg: ~p~nwhen in state: ~p~n",
@@ -166,11 +190,15 @@ send_packet(Packet=#nlmsg{pid=undefined}, From, State=#state{sock_pid=Pid})->
 send_packet(Packet=#nlmsg{seq=undefined},From, State=#state{seq=Seq})->
     send_packet(Packet#nlmsg{seq=Seq},From, State#state{seq=Seq+1});
 
-send_packet(Packet=#nlmsg{request=0,seq=Seq}, From, State=#state{reqs=Reqs})->
+send_packet(Packet=#nlmsg{request=0,seq=Seq}, From, 
+        State=#state{reqs=Reqs})->
+%if this is not request we probable shouldn't store sender info as we will not
+%get ther reply.
     State1=State#state{reqs=Reqs ++ [{Seq, {From, Packet}}]},
     send_packet(of_netlink:encode(Packet), From, State1);
 
-send_packet(Packet=#nlmsg{request=1,seq=Seq},From, State=#state{reqs=Reqs})->
+send_packet(Packet=#nlmsg{request=1,seq=Seq},From, 
+        State=#state{reqs=Reqs})->
     State1=State#state{reqs=Reqs ++ [{Seq, {From, Packet}}]},
     send_packet(of_netlink:encode(Packet),From, State1).
 

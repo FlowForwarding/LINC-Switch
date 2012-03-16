@@ -12,6 +12,8 @@
 %%%===================================================================
 %%% External functions
 %%%===================================================================
+-spec encode(binary() | [] | nlmsg() | genlmsg() | sockaddr_nl()
+        | ovsdpmsg() | ovsvpmsg() | ovsflmsg() |ovspkmsg()) -> binary().
 encode(Binary) when is_binary(Binary) ->
     Binary;
 
@@ -64,10 +66,15 @@ encode(#nlmsg{len=Len,type=Type,request=R,multi=M,ack=A,echo=E,dumpintr=D,
       FlagsLo:8/native-integer,FlagsHi:8/native-integer,
       Seq:32/native-integer,Pid:32/native-integer,Data/binary>>.
 
+-spec decode_sockaddr_nl(<<_:96>>) -> sockaddr_nl().
 decode_sockaddr_nl(<<Family:16/native-integer, _:16/native-integer,
         Pid:32/native-integer,Groups:32/native-integer>>) ->
     #sockaddr_nl{family=Family,pid=Pid,groups=Groups}.
 
+-spec decode(binary(),undefined | int16(),
+                      undefined | int16(),
+                      undefined | int16(),
+                      undefined | int16()) -> nlmsg().
 %netlink error 
 decode(<<L:32/native-integer,2:16/native-integer,
          FlagsLo:1/binary,_FlagsHi:8/native-integer,
@@ -160,6 +167,7 @@ decode(<<L:32/native-integer,Type:16/native-integer,
 %%%-------------------------------------------------------------------
 %%% Generic Netlink message decoder
 %%%-------------------------------------------------------------------
+-spec decode_genl(binary()) -> {'error','no_genl'} | genlmsg().
 decode_genl(<<>>) ->
     {error,no_genl};
 decode_genl(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
@@ -171,6 +179,7 @@ decode_genl(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
 %%% OVS Datapath message decoder
 %%%-------------------------------------------------------------------
 %stub
+-spec decode_ovs_datapath(binary()) -> ovsdpmsg().
 decode_ovs_datapath(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
                       IfIndex:32/native-integer, %this is ovs custom header
                       Data/binary>>) ->
@@ -178,18 +187,23 @@ decode_ovs_datapath(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-inte
     #ovsdpmsg{cmd=Cmd,version=Ver,ifindex=IfIndex,payload=Payload}.
 
 %stub
+-spec decode_ovs_vport(binary()) -> ovsvpmsg().
 decode_ovs_vport(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
                       IfIndex:32/native-integer, %this is ovs custom header
                    Data/binary>>) ->
     Payload=decode_ovsvp_nla(Data, []),
     #ovsvpmsg{cmd=Cmd,version=Ver,ifindex=IfIndex,payload=Payload}.
+
 %stub
+-spec decode_ovs_flow(binary()) -> ovsflmsg().
 decode_ovs_flow(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
                   IfIndex:32/native-integer, %this is ovs custom header
                   Data/binary>>) ->
     Payload=decode_ovsfl_nla(Data, []),
     #ovsflmsg{cmd=Cmd,version=Ver,ifindex=IfIndex,payload=Payload}.
+
 %stub
+-spec decode_ovs_packet(binary()) -> ovspkmsg().
 decode_ovs_packet(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-integer,
                     IfIndex:32/native-integer, %this is ovs custom header
                     Data/binary>>) ->
@@ -199,8 +213,12 @@ decode_ovs_packet(<<Cmd:8/native-integer,Ver:8/native-integer,_:16/native-intege
 %%%-------------------------------------------------------------------
 %%% attributes decoder helper functions
 %%%-------------------------------------------------------------------
-nla_align(Len) -> (Len + ?NLA_ALIGNTO - 1) band bnot(?NLA_ALIGNTO - 1).
+-spec nla_align(non_neg_integer()) -> non_neg_integer().
+%nla_align(Len) -> (Len + ?NLA_ALIGNTO - 1) band bnot(?NLA_ALIGNTO - 1).
+% reimplemented to make dialyzer happy
+nla_align(Len) ->((Len + ?NLA_ALIGNTO - 1) div ?NLA_ALIGNTO)*?NLA_ALIGNTO.
 
+-spec decode_nla_common(binary()) -> {int14(),bit(),bit(),int16(),binary(),binary()}.
 decode_nla_common(<<Len:16/native-integer, Type:14/native-integer,O:1,N:1, Rest/binary>>) ->
     PayloadLen=Len-4,
     HdrPadLen=0, % should be nla_align(?NLA_HDRLEN), where -define(NLA_HDRLEN,4).
@@ -211,16 +229,19 @@ decode_nla_common(<<Len:16/native-integer, Type:14/native-integer,O:1,N:1, Rest/
       Tail/binary>> = Rest,
     {Type,N,O,PayloadLen,Payload,Tail}.
 
+-spec decode_nla_binary(binary()) -> {nla_attr(),binary()}.
 decode_nla_binary(Nla) ->
     {Type,N,O,_PayloadLen,Payload,Tail}=decode_nla_common(Nla),
     {#nla_attr{type=Type,n=N,o=O,data=Payload},Tail}.
 
+-spec decode_nla_string(binary()) -> {nla_attr(),binary()}.
 decode_nla_string(Nla) ->
     {Type,N,O,PayloadLen,Payload,Tail}=decode_nla_common(Nla),
     L=PayloadLen-1,
     <<A:L/binary,0>>=Payload,
     {#nla_attr{type=Type,n=N,o=O,data=binary_to_list(A)},Tail}.
 
+-spec decode_nla_integer(binary()) -> {nla_attr(),binary()}.
 decode_nla_integer(Nla) ->
     {Type,N,O,PayloadLen,Payload,Tail}=decode_nla_common(Nla),
     PL=PayloadLen*8,
@@ -230,6 +251,7 @@ decode_nla_integer(Nla) ->
 %%%-------------------------------------------------------------------
 %%% Generic NetLink attributes decoder
 %%%-------------------------------------------------------------------
+-spec decode_genl_nla(binary(),[]|[nla_attr()]) -> [nla_attr()].
 decode_genl_nla(<<>>,NlaList) ->
     NlaList;
 decode_genl_nla(Nla= <<_Len:16/native-integer,?CTRL_ATTR_UNSPEC:14/native-integer,_O:1,_N:1,_Rest/binary>>,NlaList) ->
@@ -261,6 +283,7 @@ decode_genl_nla(     <<Len:16/native-integer,?CTRL_ATTR_MCAST_GROUPS:14/native-i
     Attr=#nla_attr{type=?CTRL_ATTR_MCAST_GROUPS,n=N,o=O,data=decode_nla_nested_mcast(This,[])},
     decode_genl_nla(Tail, NlaList ++ [Attr]).
 
+-spec decode_nla_nested_ops(binary(),[]|[{'nested_ops',int16(),nla_attr(),nla_attr()}]) -> [{'nested_ops',int16(),nla_attr(),nla_attr()}].
 decode_nla_nested_ops(<<>>,Acc) ->
     Acc;
 decode_nla_nested_ops(<<Len:16/native-integer,Num:16/native-integer,Rest/binary>>,Acc) ->
@@ -274,6 +297,7 @@ decode_nla_nested_ops(<<Len:16/native-integer,Num:16/native-integer,Rest/binary>
 %NLA_PUT_U32(skb, CTRL_ATTR_OP_FLAGS, ops->flags);
 
 %mcast_groups
+-spec decode_nla_nested_mcast(binary(),[]|[{'nested_mcast',int16(),nla_attr(),nla_attr()}]) -> [{'nested_mcast',int16(),nla_attr(),nla_attr()}].
 decode_nla_nested_mcast(<<>>,Acc) ->
     Acc;
 decode_nla_nested_mcast(<<Len:16/native-integer,Num:16/native-integer,Rest/binary>>,Acc) ->
@@ -289,6 +313,7 @@ decode_nla_nested_mcast(<<Len:16/native-integer,Num:16/native-integer,Rest/binar
 %%%-------------------------------------------------------------------
 %%% OVS Datapath attributes decoder
 %%%-------------------------------------------------------------------
+-spec decode_ovsdp_nla(binary(),[]|[nla_attr()]) -> [nla_attr()].
 decode_ovsdp_nla(<<>>,NlaList) ->
     NlaList;
 decode_ovsdp_nla(Nla= <<_Len:16/native-integer,?OVS_DP_ATTR_UNSPEC:14/native-integer,_O:1,_N:1,_Rest/binary>>,NlaList) ->
@@ -309,6 +334,7 @@ decode_ovsdp_nla(Nla= <<_Len:16/native-integer,?OVS_DP_ATTR_STATS:14/native-inte
 %%%-------------------------------------------------------------------
 %%% OVS vPort attributes decoder
 %%%-------------------------------------------------------------------
+-spec decode_ovsvp_nla(binary(),[]|[nla_attr()]) -> [nla_attr()].
 decode_ovsvp_nla(<<>>,NlaList) ->
     NlaList;
 decode_ovsvp_nla(Nla= <<_Len:16/native-integer,
@@ -378,6 +404,7 @@ decode_nla_nested_vportopts(<<Len:16/native-integer,Num:16/native-integer,Rest/b
 %%%-------------------------------------------------------------------
 %%% OVS Flow attributes decoder
 %%%-------------------------------------------------------------------
+-spec decode_ovsfl_nla(binary(),[]|[nla_attr()]) -> [nla_attr()].
 decode_ovsfl_nla(<<>>,NlaList) ->
     NlaList;
 decode_ovsfl_nla(Nla= <<_Len:16/native-integer,
@@ -457,6 +484,7 @@ decode_nla_nested_flowactions(<<Len:16/native-integer,Num:16/native-integer,Rest
 %%%-------------------------------------------------------------------
 %%% OVS Packet attributes decoder
 %%%-------------------------------------------------------------------
+-spec decode_ovspk_nla(binary(),[]|[nla_attr()]) -> [nla_attr()].
 decode_ovspk_nla(<<>>,NlaList) ->
     NlaList;
 decode_ovspk_nla(Nla= <<_Len:16/native-integer,
@@ -507,6 +535,7 @@ decode_ovspk_nla(Nla= <<_Len:16/native-integer,
 %%%-------------------------------------------------------------------
 %%% attributes ecoder helper functions
 %%%-------------------------------------------------------------------
+-spec encode_nla_string(nla_attr()) -> binary().
 encode_nla_string(Nla=#nla_attr{data = []}) ->
     encode_nla_string(Nla#nla_attr{data = <<0>>});
 
@@ -529,19 +558,28 @@ encode_nla_string(    #nla_attr{type = Type, n=N, o=O, data = Data}) when is_bin
     <<Len:16/native-integer, Type:14/native-integer,O:1,N:1 ,0:(HdrPadLen*8),
       Payload/binary, 0:(PayloadPadLen*8)>>.
 
+-spec encode_nla_integer( integer(), nla_attr()) -> binary().
 encode_nla_integer(PayloadLen,    #nla_attr{type = Type, n=N, o=O, data = Data}) ->
     %should be nla_align(?NLA_HDRLEN), where -define(NLA_HDRLEN,4).
     HdrPadLen = 0,
     PayloadPadLen=nla_align(PayloadLen)-PayloadLen,
     Len= 4 + HdrPadLen + PayloadLen,
-    <<Len:16/native-integer, Type:14/native-integer,O:1,N:1, 0:(HdrPadLen*8),
-      Data:(PayloadLen*8)/native-integer, 0:(PayloadPadLen*8)>>.
+    HPL=HdrPadLen*8,
+    PL=PayloadLen*8,
+    PPL=PayloadPadLen*8,
+    <<Len:16/native-integer, Type:14/native-integer,O:1,N:1, 0:HPL,
+      Data:PL/native-integer, 0:PPL>>.
 
+-spec encode_nla_int8(nla_attr()) -> binary().
+-spec encode_nla_int16(nla_attr()) -> binary().
+-spec encode_nla_int32(nla_attr()) -> binary().
+-spec encode_nla_int64(nla_attr()) -> binary().
 encode_nla_int8(Nla=#nla_attr{})  ->    encode_nla_integer(1,Nla).
 encode_nla_int16(Nla=#nla_attr{}) ->    encode_nla_integer(2,Nla).
 encode_nla_int32(Nla=#nla_attr{}) ->    encode_nla_integer(4,Nla).
 encode_nla_int64(Nla=#nla_attr{}) ->    encode_nla_integer(8,Nla).
 
+-spec encode_nla_binary(nla_attr()) -> binary().
 encode_nla_binary(#nla_attr{type = Type, n=N, o=O, data = Payload}) ->
     PayloadLen=size(Payload),
     %should be nla_align(?NLA_HDRLEN), where -define(NLA_HDRLEN,4).
@@ -554,6 +592,9 @@ encode_nla_binary(#nla_attr{type = Type, n=N, o=O, data = Payload}) ->
 %%%-------------------------------------------------------------------
 %%% Generic NetLink attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_genl_nla( <<>> | [] | [nla_attr()]
+        | [{nested_ops,int16(),nla_attr(),nla_attr()}]
+        | [{nested_mcast,int16(),nla_attr(),nla_attr()}],binary()) -> binary().
 encode_genl_nla([],Acc) ->  Acc;
 encode_genl_nla(<<>>,Acc) -> Acc;
 
@@ -626,8 +667,10 @@ encode_genl_nla([{nested_mcast,Num,Attr1,Attr2}|Rest],Acc) ->
 %%%-------------------------------------------------------------------
 %%% OVS Datapath attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_ovsdp_nla( <<>> | [] | [nla_attr()],binary()) -> binary().
+
 encode_ovsdp_nla([],Acc) -> Acc;
-encode_ovsdp_nla(<<>>,Acc) -> Acc;
+%encode_ovsdp_nla(<<>>,Acc) -> Acc;
 
 encode_ovsdp_nla([Nla=#nla_attr{type = ?OVS_DP_ATTR_UNSPEC} |Rest],Acc) ->
     Bin=encode_nla_binary(Nla),
@@ -650,6 +693,8 @@ encode_ovsdp_nla([Nla=#nla_attr{type = ?OVS_DP_ATTR_STATS} |Rest],Acc) ->
 %%%-------------------------------------------------------------------
 %%% OVS vPort attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_ovsvp_nla( <<>> | [] | [nla_attr()]
+    | [{nested_vportopts,int16(),nla_attr()}],binary()) -> binary().
 
 encode_ovsvp_nla([],Acc) -> Acc;
 encode_ovsvp_nla(<<>>,Acc) -> Acc;
@@ -706,9 +751,10 @@ encode_ovsvp_nla([{nested_vportopts,Num,Attr}|Rest],Acc) ->
 %%%-------------------------------------------------------------------
 %%% OVS Flow attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_ovsfl_nla( <<>> | [] | [nla_attr()],binary()) -> binary().
 
 encode_ovsfl_nla([],Acc) -> Acc;
-encode_ovsfl_nla(<<>>,Acc) -> Acc;
+%encode_ovsfl_nla(<<>>,Acc) -> Acc;
 
 encode_ovsfl_nla([Nla=#nla_attr{type = ?OVS_FLOW_ATTR_UNSPEC} |Rest],Acc) ->
     Bin=encode_nla_binary(Nla),
@@ -766,9 +812,10 @@ encode_ovsfl_nla([Nla=#nla_attr{type = ?OVS_FLOW_ATTR_CLEAR} |Rest],Acc) ->
 %%%-------------------------------------------------------------------
 %%% OVS Packet attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_ovspk_nla( <<>> | [] | [nla_attr()],binary()) -> binary().
 
 encode_ovspk_nla([],Acc) -> Acc;
-encode_ovspk_nla(<<>>,Acc) -> Acc;
+%encode_ovspk_nla(<<>>,Acc) -> Acc;
 
 encode_ovspk_nla([Nla=#nla_attr{type = ?OVS_PACKET_ATTR_UNSPEC} |Rest],Acc) ->
     Bin=encode_nla_binary(Nla),
@@ -816,6 +863,9 @@ encode_ovspk_nla([Nla=#nla_attr{type = ?OVS_PACKET_ATTR_USERDATA} |Rest],Acc) ->
 %%%-------------------------------------------------------------------
 %%% OVS common encodes for Flow and Packet attributes encoder
 %%%-------------------------------------------------------------------
+-spec encode_ovs_nla( [{nested_flowkeys,   int16(),[] | [nla_attr()]}]
+                    | [{nested_flowactions,int16(),[] | [nla_attr()]}],binary()) -> binary().
+
 encode_ovs_nla([{nested_flowkeys,Num,Attr}|Rest],Acc) ->
     Payload=encode_nla_nested_flowkeys(Attr,<<>>),
     Len=4+size(Payload),
@@ -828,12 +878,14 @@ encode_ovs_nla([{nested_flowactions,Num,Attr}|Rest],Acc) ->
     encode_ovsvp_nla(Rest,<<Acc/binary,NlaBin/binary>>).
 
 %stub flow keys
+-spec encode_nla_nested_flowkeys([] | [{nested_flowkeys,int16(),nla_attr()}],binary()) -> binary().
 encode_nla_nested_flowkeys([],Acc) ->
     Acc;
-encode_nla_nested_flowkeys([_|Rest],Acc) ->
+encode_nla_nested_flowkeys([{nested_flowkeys,_,_}|Rest],Acc) ->
     encode_nla_nested_flowkeys(Rest,Acc).
 %stub flow actions
+-spec encode_nla_nested_flowactions([] | [{nested_flowactions,int16(),nla_attr()}],binary()) -> binary().
 encode_nla_nested_flowactions([],Acc) ->
     Acc;
-encode_nla_nested_flowactions([_|Rest],Acc) ->
+encode_nla_nested_flowactions([{nested_flowactions,_,_}|Rest],Acc) ->
     encode_nla_nested_flowactions(Rest,Acc).

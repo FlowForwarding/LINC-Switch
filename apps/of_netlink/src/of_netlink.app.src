@@ -2,7 +2,7 @@
  [
   {description, "Linux Netlink interface library"},
   {vsn, "0.0.1"},
-  {registered, []},
+  {registered, [netlink_mgr,of_netlink_sup]},
   {applications, [
                   kernel,
                   stdlib

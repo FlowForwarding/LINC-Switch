@@ -16,13 +16,18 @@
 %%   bit flag holder
 %% @end
 %%------------------------------------------------------------------------------
-
+%-type int8()  :: byte().
+-type int8()  :: 0..16#FF.
+-type int14() :: 0..16#3FFF.
+-type int16() :: 0..16#FFFF.
+-type int32() :: 0..16#FFFFFFF.
+-type int64() :: 0..16#FFFFFFFFFFFFFFFF.
 
 %% struct sockaddr_nl
 -record(sockaddr_nl, {
-        family = ?AF_NETLINK :: integer(), %16b, + pad 16b
-        pid    = 0           :: integer(), %32b
-        groups = 0           ::integer()   %32b
+        family = ?AF_NETLINK :: int16(), %16b, + pad 16b
+        pid    = 0           :: int32(), %32b
+        groups = 0           :: int32()  %32b
         }).
 
 -type sockaddr_nl() :: #sockaddr_nl{}.
@@ -32,53 +37,57 @@
 
 %% struct nla_attr with payload
 -record(nla_attr, {
-        type :: integer(),
+        type :: int14(),
         n    :: bit(),
         o    :: bit(),
-        data :: binary()
+        data :: binary() |list() | int8() |int16() |int32() |int64()
         }).
+-type nla_attr() :: #nla_attr{}.
 
 %% struct genlmsghdr
 -record(genlmsg, {
-        cmd :: byte(),
-        version :: byte(),
+        cmd :: int8(),
+        version :: int8(),
 %       reserved :: binary()
         payload :: list(#nla_attr{})
         }).
-
+-type genlmsg() :: #genlmsg{}.
 %% ovs_datapath rec == genlmsg + ovs_header struct
 -record(ovsdpmsg, {
-        cmd :: byte(),
-        version :: byte(),
-        ifindex :: integer(), %might should have rec here if protocol specific header would be more complex
+        cmd :: int8(),
+        version :: int8(),
+        ifindex :: int32(), %might should have rec here if protocol specific header would be more complex
         payload :: list(#nla_attr{})
         }).
+-type ovsdpmsg() :: #ovsdpmsg{}.
 %% ovs_vport rec == genlmsg + ovs_header struct
 -record(ovsvpmsg, {
-        cmd :: byte(),
-        version :: byte(),
-        ifindex :: integer(), %might should have rec here if protocol specific header would be more complex
+        cmd :: int8(),
+        version :: int8(),
+        ifindex :: int32(), %might should have rec here if protocol specific header would be more complex
         payload :: list(#nla_attr{})
         }).
+-type ovsvpmsg() :: #ovsvpmsg{}.
 %% ovs_flow rec == genlmsg + ovs_header struct
 -record(ovsflmsg, {
-        cmd :: byte(),
-        version :: byte(),
-        ifindex :: integer(), %might should have rec here if protocol specific header would be more complex
+        cmd :: int8(),
+        version :: int8(),
+        ifindex :: int32(), %might should have rec here if protocol specific header would be more complex
         payload :: list(#nla_attr{})
         }).
+-type ovsflmsg() :: #ovsflmsg{}.
 %% ovs_packet rec == genlmsg + ovs_header struct
 -record(ovspkmsg, {
-        cmd :: byte(),
-        version :: byte(),
-        ifindex :: integer(), %might should have rec here if protocol specific header would be more complex
+        cmd :: int8(),
+        version :: int8(),
+        ifindex :: int32(), %might should have rec here if protocol specific header would be more complex
         payload :: list(#nla_attr{})
         }).
-
+-type ovspkmsg() :: #ovspkmsg{}.
 %% struct nlmsghdr
 -record(nlmsg, {
-        len   = undefined  :: integer() | undefined,
-        type    :: integer(),
+        len   = undefined  :: int32() | undefined,
+        type    :: int16(),
 %        flags:
         request =1 :: bit(),
         multi   =0 :: bit(),
@@ -90,11 +99,11 @@
 %        flag0200:: bool(),
 %        flag0400:: bool(),
 %        flag0800:: bool(),
-        seq     = undefined :: undefined | integer(),
-        pid     = undefined :: undefined | integer(),
-        payload :: #genlmsg{}
+        seq     = undefined :: undefined | int32(),
+        pid     = undefined :: undefined | int32(),
+        payload :: #genlmsg{} | ovsdpmsg() | ovsvpmsg() | ovsflmsg() | ovspkmsg() | {error,int32(),term()}
         }).
-
+-type nlmsg() :: #nlmsg{}.
 
 %netlink types = nlmsgheader.type
 -define(NETLINK_ROUTE,           0). %  Routing/device hook

@@ -63,9 +63,10 @@ init([]) ->
             Port=netlink_meck:port_open({fd, Sock, Sock}, [stream, binary]),
             SA=#sockaddr_nl{family = ?AF_NETLINK, pid=0}, % pid=0 means destination is kernel
             ok=netlink_meck:procket_connect(Sock,of_netlink:encode(SA)),
+            Sock_pid=list_to_integer(os:getpid()),
             error_logger:info_msg("[~p] started pid=~p~n",[?MODULE,self()]),
             {ok, #state{sock=Sock, port=Port,
-                        sock_pid=0, seq=0
+                        sock_pid=Sock_pid, seq=0
             }}
     end.
 
@@ -103,6 +104,16 @@ handle_call({set,ovs_packet,Id}, From, State) ->
     error_logger:info_msg("[~p] ovs_packet family id set rq from ~p Id=~p~nwhen in state: ~p~n",
         [?MODULE, From,Id, State]),
     {reply, ok, State#state{pk_id=Id}};
+
+handle_call({set,pid,Pid}, From, State) ->
+    error_logger:info_msg("[~p] Sock_pid set rq from ~p Pid=~p~nwhen in state: ~p~n",
+        [?MODULE, From,Pid, State]),
+    {reply, ok, State#state{sock_pid=Pid}};
+
+handle_call(get_ids, From, State) ->
+    error_logger:info_msg("[~p] get_ids rq from ~p ~nwhen in state: ~p~n",
+        [?MODULE, From, State]),
+    {reply, {ids,State#state.dp_id,State#state.vp_id,State#state.fl_id,State#state.pk_id}, State};
 
 handle_call(stop, From, State) ->
     error_logger:info_msg("[~p] Stop request from  ~p~nwhen in state: ~p~n",

@@ -32,6 +32,6 @@ start_link() ->
 -spec init([]) -> {ok, { term(), [term()] | []}}. % | ignore | {error, term()}.
 init([]) ->
     {ok, { {one_for_all, 5, 10}, [
-      {   netlink_mgr, {   netlink_mgr, start_link, []}, permanent, 10000, worker, [netlink_mgr]},
-      {of_netlink_mgr, {of_netlink_mgr, start_link, []}, permanent, 10000, worker, [of_netlink_mgr]}
+      {   netlink_mgr, {   netlink_mgr, start_link, []}, permanent, 10000, worker, [netlink_mgr]}
+%      {of_netlink_mgr, {of_netlink_mgr, start_link, []}, permanent, 10000, worker, [of_netlink_mgr]}
     ]}}.

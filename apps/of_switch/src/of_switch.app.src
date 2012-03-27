@@ -1,0 +1,13 @@
+{application, of_switch,
+ [
+  {description, "OpenFlow Logical Switch"},
+  {vsn, "1.2.1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  of_channel
+                 ]},
+  {mod, {ofs_app, []}},
+  {env, []}
+ ]}.

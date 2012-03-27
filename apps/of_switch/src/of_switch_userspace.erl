@@ -9,8 +9,7 @@
 -behaviour(gen_switch).
 
 %% gen_switch callbacks
--export([init/1, add_flow/2, modify_flow/2, delete_flow/2, modify_table/2,
-         modify_port/2, add_group/2, modify_group/2, delete_group/2,
+-export([init/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
          echo_request/2, get_desc_stats/2, get_flow_stats/2,
          get_aggregate_stats/2, get_table_stats/2, get_port_stats/2,
          get_queue_stats/2, get_group_stats/2, get_group_desc_stats/2,
@@ -31,19 +30,9 @@
 init(_Opts) ->
     {ok, #state{}}.
 
-%% @doc Add a new flow entry to the flow table.
--spec add_flow(state(), flow_mod()) -> any().
-add_flow(#state{} = _State, #flow_mod{} = _FlowMod) ->
-    ok.
-
 %% @doc Modify flow entry in the flow table.
 -spec modify_flow(state(), flow_mod()) -> any().
 modify_flow(#state{} = _State, #flow_mod{} = _FlowMod) ->
-    ok.
-
-%% @doc Delete flow entry from the flow table.
--spec delete_flow(state(), flow_mod()) -> any().
-delete_flow(#state{} = _State, #flow_mod{} = _FlowMod) ->
     ok.
 
 %% @doc Modify flow table configuration.
@@ -56,19 +45,9 @@ modify_table(#state{} = _State, #table_mod{} = _TableMod) ->
 modify_port(#state{} = _State, #port_mod{} = _PortMod) ->
     ok.
 
-%% @doc Add a new group entry to the group table.
--spec add_group(state(), group_mod()) -> any().
-add_group(#state{} = _State, #group_mod{} = _GroupMod) ->
-    ok.
-
 %% @doc Modify group entry in the group table.
 -spec modify_group(state(), group_mod()) -> any().
 modify_group(#state{} = _State, #group_mod{} = _GroupMod) ->
-    ok.
-
-%% @doc Delete group entry from the group table.
--spec delete_group(state(), group_mod()) -> any().
-delete_group(#state{} = _State, #group_mod{} = _GroupMod) ->
     ok.
 
 %% @doc Reply to echo request.

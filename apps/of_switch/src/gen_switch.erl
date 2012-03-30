@@ -61,7 +61,7 @@ behaviour_info(_) ->
 %% @doc Start OpenFlow switch backend.
 -spec start(atom()) -> {ok, handler()}.
 start(Module) ->
-    {ok, State} = Module:init(),
+    {ok, State} = Module:init([]),
     {ok, #handler{module = Module, state = State}}.
 
 %% @doc Add, modify or delete flow entry in the flow table.

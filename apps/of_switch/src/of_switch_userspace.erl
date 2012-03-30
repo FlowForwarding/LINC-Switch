@@ -16,6 +16,7 @@
          get_group_features_stats/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include("of_switch_userspace.hrl").
 
 -record(state, {}).
 
@@ -28,12 +29,26 @@
 %% @doc Initialize switch state.
 -spec init(any()) -> {ok, state()}.
 init(_Opts) ->
+    flow_tables = ets:new(flow_tables, [named_table,
+                                        {keypos, #flow_table.id},
+                                        {read_concurrency, true}]),
+    InitialTable = #flow_table{id = 0, entries = [], config = drop},
+    ets:insert(flow_tables, InitialTable),
     {ok, #state{}}.
 
 %% @doc Modify flow entry in the flow table.
 -spec modify_flow(state(), flow_mod()) -> any().
-modify_flow(#state{} = _State, #flow_mod{} = _FlowMod) ->
-    ok.
+modify_flow(State, #flow_mod{table_id = TID} = FlowMod) ->
+    [Table] = ets:lookup(flow_tables, TID),
+    case apply_flow_mod(Table, FlowMod) of
+        {ok, NewTable} ->
+            ets:insert(flow_tables, NewTable);
+        {error, _Err} ->
+            %% XXX: send error reply
+            send_error_reply
+    end,
+    % XXX: look at buffer_id
+    State.
 
 %% @doc Modify flow table configuration.
 -spec modify_table(state(), table_mod()) -> any().
@@ -108,3 +123,33 @@ get_group_desc_stats(#state{} = _State,
 get_group_features_stats(#state{} = _State,
                          #group_features_stats_request{} = _StatsRequest) ->
     {ok, #group_features_stats_reply{}}.
+
+%%%-----------------------------------------------------------------------------
+%%% Helpers
+%%%-----------------------------------------------------------------------------
+
+apply_flow_mod(#flow_table{entries = Entries} = Table,
+               #flow_mod{command = add,
+                         priority = Priority,
+                         flags = Flags} = FlowMod) ->
+    case has_priority_overlap(Flags, Priority, Entries) of
+        true ->
+            {error, overflow};
+        false ->
+            NewEntries = lists:keymerge(#flow_entry.priority,
+                                        [flow_mod_to_entry(FlowMod)],
+                                        Entries),
+            {ok, Table#flow_table{entries = NewEntries}}
+    end.
+
+flow_mod_to_entry(#flow_mod{priority = Priority,
+                            match = Match,
+                            instructions = Instructions}) ->
+    #flow_entry{priority = Priority,
+                match = Match,
+                instructions = Instructions}.
+
+has_priority_overlap(Flags, Priority, Entries) ->
+    lists:member(check_overlap, Flags)
+    andalso
+    lists:keymember(Priority, #flow_entry.priority, Entries).

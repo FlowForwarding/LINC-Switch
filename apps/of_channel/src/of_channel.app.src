@@ -1,12 +1,11 @@
 {application, of_channel,
  [
   {description, "OpenFlow Channel"},
-  {vsn, "0.1"},
+  {vsn, "1.2.1"},
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib,
-                  of_protocol
+                  stdlib
                  ]},
   {mod, {ofc_app, []}},
   {env, []}

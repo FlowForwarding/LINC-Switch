@@ -28,9 +28,9 @@ start_link() ->
 init([]) ->
     ChannelLogic = {ofc_logic, {ofc_logic, start_link, []},
                     permanent, 5000, worker, [ofc_logic]},
-    ConnectionSup = {ofc_connection_sup, {ofc_connection_sup, start_link, []},
-                   permanent, 5000, supervisor, [ofc_connection_sup]},
+    ReceiverSup = {ofc_receiver_sup, {ofc_receiver_sup, start_link, []},
+                   permanent, 5000, supervisor, [ofc_receiver_sup]},
     {ok, {{one_for_all, 5, 10}, [
                                  ChannelLogic,
-                                 ConnectionSup
+                                 ReceiverSup
                                 ]}}.

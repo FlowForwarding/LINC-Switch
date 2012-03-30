@@ -4,12 +4,12 @@
 %%% @doc Supervisor module for the receiver processes.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofc_connection_sup).
+-module(ofc_receiver_sup).
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, open/1]).
+-export([start_link/0, open/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -21,10 +21,12 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-open(Controller) ->
-    ChildSpec = {ofc_connection, {ofc_connection, start_link, [Controller]},
-                 permanent, 5000, worker, [ofc_connection]},
-    supervisor:start_child(ofc_connection_sup, ChildSpec).
+open(Controller, Port) ->
+    Id = list_to_atom(atom_to_list(ofc_receiver)
+                      ++ "_" ++ integer_to_list(Port)),
+    ChildSpec = {Id, {ofc_receiver, start_link, [Controller, Port]},
+                 permanent, 5000, worker, [ofc_receiver]},
+    supervisor:start_child(ofc_receiver_sup, ChildSpec).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks

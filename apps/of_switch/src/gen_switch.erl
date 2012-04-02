@@ -6,7 +6,7 @@
 %%%-----------------------------------------------------------------------------
 -module(gen_switch).
 
--export([behaviour_info/1, start/1]).
+-export([behaviour_info/1, start/1, stop/1]).
 -export([modify_flow/2,
          modify_table/2,
          modify_port/2,
@@ -37,6 +37,7 @@
 
 behaviour_info(callbacks) ->
     [{init, 1},
+     {terminate, 1},
      {modify_flow, 2},
      {modify_table, 2},
      {modify_port, 2},
@@ -63,6 +64,11 @@ behaviour_info(_) ->
 start(Module) ->
     {ok, State} = Module:init([]),
     {ok, #handler{module = Module, state = State}}.
+
+%% @doc Stop OpenFlow switch backend.
+-spec stop(handler()) -> any().
+stop(#handler{module = Module, state = State}) ->
+    Module:terminate(State).
 
 %% @doc Add, modify or delete flow entry in the flow table.
 -spec modify_flow(handler(), flow_mod()) -> any().

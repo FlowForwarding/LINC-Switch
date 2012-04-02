@@ -13,7 +13,7 @@
          echo_request/2, get_desc_stats/2, get_flow_stats/2,
          get_aggregate_stats/2, get_table_stats/2, get_port_stats/2,
          get_queue_stats/2, get_group_stats/2, get_group_desc_stats/2,
-         get_group_features_stats/2]).
+         get_group_features_stats/2, terminate/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 
@@ -108,3 +108,8 @@ get_group_desc_stats(#state{} = _State,
 get_group_features_stats(#state{} = _State,
                          #group_features_stats_request{} = _StatsRequest) ->
     {ok, #group_features_stats_reply{}}.
+
+%% @doc Terminate the switch.
+-spec terminate(state()) -> any().
+terminate(#state{} = _State) ->
+    ok.

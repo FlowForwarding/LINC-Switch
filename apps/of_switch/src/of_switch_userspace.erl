@@ -178,7 +178,7 @@ do_route(Pkt, FlowId) ->
         {match, goto, NextFlowId, NewPkt} ->
             do_route(NewPkt, NextFlowId);
         {match, output, NewPkt} ->
-            NewPkt2 = execute_action_set(NewPkt),
+            NewPkt2 = apply_action_set(NewPkt#ofs_pkt.actions, NewPkt),
             route_to_output(NewPkt2),
             output;
         {nomatch, controller} ->
@@ -227,7 +227,7 @@ match_flow_entries(Pkt, [FlowEntry | Rest]) ->
         {match, output, NewPkt} ->
             {match, output, NewPkt};
         nomatch ->
-            match_flow_entries(Rest, Pkt)
+            match_flow_entries(Pkt, Rest)
     end;
 match_flow_entries(_Pkt, []) ->
     nomatch.
@@ -267,14 +267,25 @@ has_field(Field, List) ->
 -spec apply_instructions(list(of_protocol:instruction()),
                          #ofs_pkt{},
                          output | {goto, integer()}) -> tuple().
-apply_instructions([#instruction_apply_actions{} | Rest], Pkt, NextStep) ->
-    apply_instructions(Rest, Pkt, NextStep);
+apply_instructions([#instruction_apply_actions{actions = Actions} | Rest],
+                   Pkt,
+                   NextStep) ->
+    NewPkt = apply_action_list(Actions, Pkt),
+    apply_instructions(Rest, NewPkt, NextStep);
 apply_instructions([#instruction_clear_actions{} | Rest], Pkt, NextStep) ->
-    apply_instructions(Rest, Pkt, NextStep);
-apply_instructions([#instruction_write_actions{} | Rest], Pkt, NextStep) ->
-    apply_instructions(Rest, Pkt, NextStep);
-apply_instructions([#instruction_write_metadata{} | Rest], Pkt, NextStep) ->
-    apply_instructions(Rest, Pkt, NextStep);
+    apply_instructions(Rest, Pkt#ofs_pkt{actions = []}, NextStep);
+apply_instructions([#instruction_write_actions{actions = Actions} | Rest],
+                   #ofs_pkt{actions = OldActions} = Pkt,
+                   NextStep) ->
+    UActions = lists:ukeysort(2, Actions),
+    NewActions = lists:ukeymerge(2, UActions, OldActions),
+    apply_instructions(Rest, Pkt#ofs_pkt{actions = NewActions}, NextStep);
+apply_instructions([#instruction_write_metadata{metadata = Metadata,
+                                                metadata_mask = Mask} | Rest],
+                   Pkt,
+                   NextStep) ->
+    MaskedMetadata = apply_mask(Metadata, Mask),
+    apply_instructions(Rest, Pkt#ofs_pkt{metadata = MaskedMetadata}, NextStep);
 apply_instructions([#instruction_goto_table{table_id = Id} | Rest],
                    Pkt,
                    _NextStep) ->
@@ -284,13 +295,70 @@ apply_instructions([], Pkt, output) ->
 apply_instructions([], Pkt, {goto, Id}) ->
     {Pkt, goto, Id}.
 
--spec execute_action_set(#ofs_pkt{}) -> #ofs_pkt{}.
-execute_action_set(Pkt) ->
+-spec apply_mask(binary(), binary()) -> binary().
+apply_mask(Metadata, Mask) ->
+    Metadata.
+
+-spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
+apply_action_list([#action_output{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_group{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_set_queue{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_set_mpls_ttl{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_dec_mpls_ttl{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_set_nw_ttl{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_dec_nw_ttl{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_copy_ttl_out{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_copy_ttl_in{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_push_vlan{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_pop_vlan{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_push_mpls{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_pop_mpls{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_set_field{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_experimenter{} | Rest], Pkt) ->
+    NewPkt = Pkt,
+    apply_action_list(Rest, NewPkt);
+apply_action_list([], Pkt) ->
+    Pkt.
+
+-spec apply_action_set(ordsets:ordset(ofp_structures:action()), #ofs_pkt{})
+                      -> #ofs_pkt{}.
+apply_action_set([Action | Rest], Pkt) ->
+    NewPkt = apply_action_list([Action], Pkt),
+    apply_action_set(Rest, NewPkt);
+apply_action_set([], Pkt) ->
     Pkt.
 
 -spec route_to_controller(#ofs_pkt{}) -> ok.
 route_to_controller(Pkt) ->
-    ok.
+    of_channel:send(Pkt).
 
 -spec route_to_output(#ofs_pkt{}) -> ok.
 route_to_output(Pkt) ->

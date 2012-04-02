@@ -7,7 +7,7 @@
 -record(flow_entry, {
           priority :: integer(),
           match :: of_protocol:match(),
-          instructions :: [of_protocol:instruction()]
+          instructions :: ordsets:ordered_set(of_protocol:instruction())
          }).
 
 -record(flow_table, {
@@ -18,7 +18,6 @@
 
 -record(ofs_pkt, {
           fields       :: of_protocol:match(),
-          actions = [] :: ordsets:ordered_set(tuple(integer(),
-                                                    ofp_structures:action())),
+          actions = [] :: ordsets:ordset(ofp_structures:action()),
           metadata     :: binary()
          }).

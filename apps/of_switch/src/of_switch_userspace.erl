@@ -178,9 +178,13 @@ do_route(Pkt, FlowId) ->
         {match, goto, NextFlowId, NewPkt} ->
             do_route(NewPkt, NextFlowId);
         {match, output, NewPkt} ->
-            NewPkt2 = apply_action_set(NewPkt#ofs_pkt.actions, NewPkt),
-            route_to_output(NewPkt2),
-            output;
+            case lists:keymember(action_output, 1, NewPkt#ofs_pkt.actions) of
+                true ->
+                    apply_action_set(NewPkt#ofs_pkt.actions, NewPkt),
+                    output;
+                false ->
+                    drop
+            end;
         {nomatch, controller} ->
             route_to_controller(Pkt),
             controller;
@@ -300,9 +304,9 @@ apply_mask(Metadata, Mask) ->
     Metadata.
 
 -spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
-apply_action_list([#action_output{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
+apply_action_list([#action_output{} = Output | Rest], Pkt) ->
+    route_to_output(Output, Pkt),
+    apply_action_list(Rest, Pkt);
 apply_action_list([#action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(Rest, NewPkt);
@@ -360,6 +364,6 @@ apply_action_set([], Pkt) ->
 route_to_controller(Pkt) ->
     of_channel:send(Pkt).
 
--spec route_to_output(#ofs_pkt{}) -> ok.
-route_to_output(Pkt) ->
+-spec route_to_output(#action_output{}, #ofs_pkt{}) -> ok.
+route_to_output(Output, Pkt) ->
     ok.

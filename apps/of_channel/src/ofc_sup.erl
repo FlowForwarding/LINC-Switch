@@ -26,7 +26,7 @@ start_link() ->
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    ChannelLogic = {ofc_logic, {ofc_logic, start_link, []},
+    ChannelLogic = {ofc_logic, {ofc_logic, start_link, [of_switch_userspace, []]},
                     permanent, 5000, worker, [ofc_logic]},
     ReceiverSup = {ofc_receiver_sup, {ofc_receiver_sup, start_link, []},
                    permanent, 5000, supervisor, [ofc_receiver_sup]},

@@ -1,151 +1,104 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc OpenFlow Switch behaviour.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(gen_switch).
 
--export([behaviour_info/1, start/1, stop/1]).
--export([modify_flow/2,
-         modify_table/2,
-         modify_port/2,
-         modify_group/2,
-         echo_request/2,
-         get_desc_stats/2,
-         get_flow_stats/2,
-         get_aggregate_stats/2,
-         get_table_stats/2,
-         get_port_stats/2,
-         get_queue_stats/2,
-         get_group_stats/2,
-         get_group_desc_stats/2,
-         get_group_features_stats/2]).
+%% @doc Start the switch.
+-callback start(Args :: term()) ->
+    {ok, State :: term()}.
 
--include_lib("of_protocol/include/of_protocol.hrl").
+%% @doc Stop the switch.
+-callback stop(State :: term()) ->
+    term().
 
--record(handler, {
-          module :: atom(),
-          state :: any()
-         }).
-
--type handler() :: #handler{}.
-
-%%%-----------------------------------------------------------------------------
-%%% Behaviour info function
-%%%-----------------------------------------------------------------------------
-
-behaviour_info(callbacks) ->
-    [{init, 1},
-     {terminate, 1},
-     {modify_flow, 2},
-     {modify_table, 2},
-     {modify_port, 2},
-     {modify_group, 2},
-     {echo_request, 2},
-     {get_desc_stats, 2},
-     {get_flow_stats, 2},
-     {get_aggregate_stats, 2},
-     {get_table_stats, 2},
-     {get_port_stats, 2},
-     {get_queue_stats, 2},
-     {get_group_stats, 2},
-     {get_group_desc_stats, 2},
-     {get_group_features_stats, 2}];
-behaviour_info(_) ->
-    undefined.
-
-%%%-----------------------------------------------------------------------------
-%%% API functions
-%%%-----------------------------------------------------------------------------
-
-%% @doc Start OpenFlow switch backend.
--spec start(atom()) -> {ok, handler()}.
-start(Module) ->
-    {ok, State} = Module:init([]),
-    {ok, #handler{module = Module, state = State}}.
-
-%% @doc Stop OpenFlow switch backend.
--spec stop(handler()) -> any().
-stop(#handler{module = Module, state = State}) ->
-    Module:terminate(State).
-
-%% @doc Add, modify or delete flow entry in the flow table.
--spec modify_flow(handler(), flow_mod()) -> any().
-modify_flow(#handler{module = Module, state = State}, FlowMod) ->
-    Module:modify_flow(State, FlowMod).
+%% @doc Modify flow entry in the flow table.
+-callback modify_flow(State :: term(),
+                      of_protocol:flow_mod()) ->
+    {ok, NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Modify flow table configuration.
--spec modify_table(handler(), table_mod()) -> any().
-modify_table(#handler{module = Module, state = State}, TableMod) ->
-    Module:modify_table(State, TableMod).
+-callback modify_table(State :: term(),
+                       of_protocol:table_mod()) ->
+    {ok, NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Modify port configuration.
--spec modify_port(handler(), port_mod()) -> any().
-modify_port(#handler{module = Module, state = State}, PortMod) ->
-    Module:modify_port(State, PortMod).
+-callback modify_port(State :: term(),
+                      of_protocol:port_mod()) ->
+    {ok, NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
-%% @doc Add, modify or delete group entry in the group table.
--spec modify_group(handler(), group_mod()) -> any().
-modify_group(#handler{module = Module, state = State}, GroupMod) ->
-    Module:modify_group(State, GroupMod).
+%% @doc Modify group entry in the group table.
+-callback modify_group(State :: term(),
+                       of_protocol:group_mod()) ->
+    {ok, NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Reply to echo request.
--spec echo_request(handler(), echo_request()) -> any().
-echo_request(#handler{module = Module, state = State}, EchoRequest) ->
-    Module:echo_request(State, EchoRequest).
+-callback echo_request(State :: term(),
+                       of_protocol:echo_request()) ->
+    {ok, of_protocol:echo_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
+
+%% @doc Reply to barrier request.
+-callback barrier_request(State :: term(),
+                          of_protocol:barrier_request()) ->
+    {ok, of_protocol:barrier_request(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get switch description statistics.
--spec get_desc_stats(handler(), desc_stats_request()) ->
-                            {ok, desc_stats_reply()}.
-get_desc_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_desc_stats(State, StatsRequest).
+-callback get_desc_stats(State :: term(),
+                         of_protocol:desc_stats_request()) ->
+    {ok, of_protocol:desc_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get flow entry statistics.
--spec get_flow_stats(handler(), flow_stats_request()) ->
-                            {ok, flow_stats_reply()}.
-get_flow_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_flow_stats(State, StatsRequest).
+-callback get_flow_stats(State :: term(),
+                         of_protocol:flow_stats_request()) ->
+    {ok, of_protocol:flow_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get aggregated flow statistics.
--spec get_aggregate_stats(handler(), aggregate_stats_request()) ->
-                                 {ok, aggregate_stats_reply()}.
-get_aggregate_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_aggregate_stats(State, StatsRequest).
+-callback get_aggregate_stats(State :: term(),
+                              of_protocol:aggregate_stats_request()) ->
+    {ok, of_protocol:aggregate_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get flow table statistics.
--spec get_table_stats(handler(), table_stats_request()) ->
-                             {ok, table_stats_reply()}.
-get_table_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_table_stats(State, StatsRequest).
+-callback get_table_stats(State :: term(),
+                          of_protocol:table_stats_request()) ->
+    {ok, of_protocol:table_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get port statistics.
--spec get_port_stats(handler(), port_stats_request()) ->
-                            {ok, port_stats_reply()}.
-get_port_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_port_stats(State, StatsRequest).
+-callback get_port_stats(State :: term(),
+                         of_protocol:port_stats_request()) ->
+    {ok, of_protocol:port_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get queue statistics.
--spec get_queue_stats(handler(), queue_stats_request()) ->
-                             {ok, queue_stats_reply()}.
-get_queue_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_queue_stats(State, StatsRequest).
+-callback get_queue_stats(State :: term(),
+                          of_protocol:queue_stats_request()) ->
+    {ok, of_protocol:queue_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get group statistics.
--spec get_group_stats(handler(), group_stats_request()) ->
-                             {ok, group_stats_reply()}.
-get_group_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_group_stats(State, StatsRequest).
+-callback get_group_stats(State :: term(),
+                          of_protocol:group_stats_request()) ->
+    {ok, of_protocol:group_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get group description statistics.
--spec get_group_desc_stats(handler(), group_desc_stats_request()) ->
-                                  {ok, group_desc_stats_reply()}.
-get_group_desc_stats(#handler{module = Module, state = State}, StatsRequest) ->
-    Module:get_group_desc_stats(State, StatsRequest).
+-callback get_group_desc_stats(State :: term(),
+                               of_protocol:group_desc_stats_request()) ->
+    {ok, of_protocol:group_desc_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.
 
 %% @doc Get group features statistics.
--spec get_group_features_stats(handler(), group_features_stats_request()) ->
-                                      {ok, group_features_stats_reply()}.
-get_group_features_stats(#handler{module = Module,
-                                  state = State}, StatsRequest) ->
-    Module:get_group_features_stats(State, StatsRequest).
+-callback get_group_features_stats(State :: term(),
+                                   of_protocol:group_features_stats_request()) ->
+    {ok, of_protocol:group_features_stats_reply(), NewState :: term()} |
+    {error, atom(), NewState :: term()}.

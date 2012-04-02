@@ -9,7 +9,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/2]).
 -export([register_receiver/2, unregister_receiver/1, message/2]).
 -export([get_connection/1]).
 
@@ -22,7 +22,9 @@
 
 -record(state, {
           connections = [] :: [#connection{}],
-          generation_id :: integer()
+          generation_id :: integer(),
+          backend_mod :: atom(),
+          backend_state :: term()
          }).
 
 %%%-----------------------------------------------------------------------------
@@ -30,9 +32,10 @@
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start the OF Channel gen_server.
--spec start_link() -> {ok, pid()} | {error, any()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link(atom(), term()) -> {ok, pid()} | {error, any()}.
+start_link(BackendMod, BackendOpts) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE,
+                          [BackendMod, BackendOpts], []).
 
 %% @doc Register receiver.
 -spec register_receiver(pid(), port()) -> any().
@@ -58,8 +61,10 @@ get_connection(Pid) ->
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
 
-init([]) ->
-    {ok, #state{}}.
+init([BackendMod, BackendOpts]) ->
+    {ok, BackendState} = BackendMod:start(BackendOpts),
+    {ok, #state{backend_mod = BackendMod,
+                backend_state = BackendState}}.
 
 handle_call({get_connection, Pid}, _From,
             #state{connections = Connections} = State) ->
@@ -84,8 +89,9 @@ handle_cast({message, From, Message},
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #state{backend_mod = BackendMod,
+                          backend_state = BackendState}) ->
+    BackendMod:stop(BackendState).
 
 code_change(_OldVersion, State, _Extra) ->
     {ok, State}.
@@ -123,19 +129,35 @@ handle_message(#error_msg{type = hello_failed},
     %% Disconnect when hello_failed was received.
     ofc_receiver:stop(Pid),
     State;
-handle_message(#echo_request{header = #header{xid = Xid},
-                             data = Data} = _EchoRequest,
-               #connection{socket = Socket}, State) ->
-    %% EchoReply = gen_switch:echo_request(EchoRequest),
-    EchoReply = #echo_reply{header = #header{xid = Xid}, data = Data},
-    do_send(Socket, EchoReply),
-    State;
+handle_message(#echo_request{} = EchoRequest,
+               #connection{socket = Socket},
+               #state{backend_mod = BackendMod,
+                      backend_state = BackendState} = State) ->
+    case BackendMod:echo_request(BackendState, EchoRequest) of
+        {ok, EchoReply, NewBackendState} ->
+            do_send(Socket, EchoReply);
+        {error, Reason, NewBackendState} ->
+            send_error_reply(Socket, EchoRequest, Reason)
+    end,
+    State#state{backend_state = NewBackendState};
 handle_message(#flow_mod{header = #header{xid = Xid}},
-               #connection{socket = Socket, role = slave}, State) ->
+               #connection{socket = Socket, role = slave},
+               State) ->
     do_send(Socket, error_is_slave(Xid)),
     State;
-handle_message(#flow_mod{} = _FlowMod, _, State) ->
-    %% gen_switch:flow_mod(FlowMod),
+handle_message(#flow_mod{buffer_id = _BufferId} = FlowMod,
+               #connection{socket = Socket},
+               #state{backend_mod = BackendMod,
+                      backend_state = BackendState} = State) ->
+%%    FIXME: uncomment
+%%    case BackendMod:modify_flow(BackendState, FlowMod) of
+%%        {ok, NewBackendState} ->
+%%            %% XXX: look at _BufferId, emulate packet-out
+%%            ok;
+%%        {error, Reason, NewBackendState} ->
+%%            send_error_reply(Socket, FlowMod, Reason)
+%%    end,
+%%    State#state{backend_state = NewBackendState};
     State;
 handle_message(#role_request{header = #header{xid = Xid}, role = Role,
                              generation_id = GenerationId},
@@ -227,3 +249,7 @@ error_stale(Xid) ->
 do_send(Socket, Message) ->
     {ok, EncodedMessage} = of_protocol:encode(Message),
     gen_tcp:send(Socket, EncodedMessage).
+
+send_error_reply(_Socket, Request, Reason) ->
+    error_logger:info_msg("Unsupported error reason (~p) "
+                          "when handling ~p~n", [Reason, Request]).

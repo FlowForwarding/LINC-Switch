@@ -15,11 +15,11 @@
         ]).
 
 %% gen_switch callbacks
--export([init/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
-         echo_request/2, get_desc_stats/2, get_flow_stats/2,
+-export([start/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
+         echo_request/2, barrier_request/2, get_desc_stats/2, get_flow_stats/2,
          get_aggregate_stats/2, get_table_stats/2, get_port_stats/2,
          get_queue_stats/2, get_group_stats/2, get_group_desc_stats/2,
-         get_group_features_stats/2, terminate/1]).
+         get_group_features_stats/2, stop/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include("of_switch_userspace.hrl").
@@ -58,9 +58,9 @@ remove_port(PortId) ->
 %%% gen_switch callbacks
 %%%-----------------------------------------------------------------------------
 
-%% @doc Initialize switch state.
--spec init(any()) -> {ok, state()}.
-init(_Opts) ->
+%% @doc Start the switch.
+-spec start(any()) -> {ok, state()}.
+start(_Opts) ->
     flow_tables = ets:new(flow_tables, [named_table,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
@@ -75,100 +75,111 @@ init(_Opts) ->
     ets:insert(flow_tables, InitialTable),
     {ok, #state{}}.
 
+%% @doc Stop the switch.
+-spec stop(state()) -> any().
+stop(_State) ->
+    ets:delete(flow_tables),
+    ets:delete(flow_entry_counters),
+    ok.
+
 %% @doc Modify flow entry in the flow table.
--spec modify_flow(state(), flow_mod()) -> any().
+-spec modify_flow(state(), flow_mod()) ->
+      {ok, #state{}} | {error, atom(), #state{}}.
 modify_flow(State, #flow_mod{table_id = TID} = FlowMod) ->
     [Table] = ets:lookup(flow_tables, TID),
     case apply_flow_mod(Table, FlowMod) of
         {ok, NewTable} ->
-            ets:insert(flow_tables, NewTable);
-        {error, _Err} ->
-            %% XXX: send error reply
-            send_error_reply
-    end,
-    % XXX: look at buffer_id
-    State.
+            ets:insert(flow_tables, NewTable),
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc Modify flow table configuration.
--spec modify_table(state(), table_mod()) -> any().
-modify_table(#state{} = _State, #table_mod{} = _TableMod) ->
-    ok.
+-spec modify_table(state(), table_mod()) ->
+      {ok, #state{}} | {error, atom(), #state{}}.
+modify_table(State, #table_mod{} = _TableMod) ->
+    {ok, State}.
 
 %% @doc Modify port configuration.
--spec modify_port(state(), port_mod()) -> any().
-modify_port(#state{} = _State, #port_mod{} = _PortMod) ->
-    ok.
+-spec modify_port(state(), port_mod()) ->
+      {ok, #state{}} | {error, atom(), #state{}}.
+modify_port(State, #port_mod{} = _PortMod) ->
+    {ok, State}.
 
 %% @doc Modify group entry in the group table.
--spec modify_group(state(), group_mod()) -> any().
-modify_group(#state{} = _State, #group_mod{} = _GroupMod) ->
-    ok.
+-spec modify_group(state(), group_mod()) ->
+      {ok, #state{}} | {error, atom(), #state{}}.
+modify_group(State, #group_mod{} = _GroupMod) ->
+    {ok, State}.
 
 %% @doc Reply to echo request.
--spec echo_request(state(), echo_request()) -> any().
-echo_request(#state{} = _State, #echo_request{} = _EchoRequest) ->
-    ok.
+-spec echo_request(state(), echo_request()) ->
+      {ok, #echo_reply{}, #state{}} | {error, atom(), #state{}}.
+echo_request(State, #echo_request{header = Header, data = Data}) ->
+    EchoReply = #echo_reply{header = Header, data = Data},
+    {ok, EchoReply, State}.
+
+%% @doc Reply to barrier request.
+-spec barrier_request(state(), barrier_request()) ->
+      {ok, #echo_reply{}, #state{}} | {error, atom(), #state{}}.
+barrier_request(State, #barrier_request{header = Header}) ->
+    BarrierReply = #barrier_reply{header = Header},
+    {ok, BarrierReply, State}.
 
 %% @doc Get switch description statistics.
--spec get_desc_stats(state(), desc_stats_request()) -> {ok, desc_stats_reply()}.
-get_desc_stats(#state{} = _State, #desc_stats_request{} = _StatsRequest) ->
-    {ok, #desc_stats_reply{}}.
+-spec get_desc_stats(state(), desc_stats_request()) ->
+      {ok, desc_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_desc_stats(State, #desc_stats_request{}) ->
+    {ok, #desc_stats_reply{}, State}.
 
 %% @doc Get flow entry statistics.
--spec get_flow_stats(state(), flow_stats_request()) -> {ok, flow_stats_reply()}.
-get_flow_stats(#state{} = _State, #flow_stats_request{} = _StatsRequest) ->
-    {ok, #flow_stats_reply{}}.
+-spec get_flow_stats(state(), flow_stats_request()) ->
+      {ok, flow_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_flow_stats(State, #flow_stats_request{}) ->
+    {ok, #flow_stats_reply{}, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec get_aggregate_stats(state(), aggregate_stats_request()) ->
-                                 {ok, aggregate_stats_reply()}.
-get_aggregate_stats(#state{} = _State,
-                    #aggregate_stats_request{} = _StatsRequest) ->
-    {ok, #aggregate_stats_reply{}}.
+      {ok, aggregate_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_aggregate_stats(State, #aggregate_stats_request{}) ->
+    {ok, #aggregate_stats_reply{}, State}.
 
 %% @doc Get flow table statistics.
 -spec get_table_stats(state(), table_stats_request()) ->
-                             {ok, table_stats_reply()}.
-get_table_stats(#state{} = _State, #table_stats_request{} = _StatsRequest) ->
-    {ok, #table_stats_reply{}}.
+      {ok, table_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_table_stats(State, #table_stats_request{}) ->
+    {ok, #table_stats_reply{}, State}.
 
 %% @doc Get port statistics.
--spec get_port_stats(state(), port_stats_request()) -> {ok, port_stats_reply()}.
-get_port_stats(#state{} = _State, #port_stats_request{} = _StatsRequest) ->
-    {ok, #port_stats_reply{}}.
+-spec get_port_stats(state(), port_stats_request()) ->
+      {ok, port_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_port_stats(State, #port_stats_request{}) ->
+    {ok, #port_stats_reply{}, State}.
 
 %% @doc Get queue statistics.
 -spec get_queue_stats(state(), queue_stats_request()) ->
-                             {ok, queue_stats_reply()}.
-get_queue_stats(#state{} = _State, #queue_stats_request{} = _StatsRequest) ->
-    {ok, #queue_stats_reply{}}.
+      {ok, queue_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_queue_stats(State, #queue_stats_request{}) ->
+    {ok, #queue_stats_reply{}, State}.
 
 %% @doc Get group statistics.
 -spec get_group_stats(state(), group_stats_request()) ->
-                             {ok, group_stats_reply()}.
-get_group_stats(#state{} = _State, #group_stats_request{} = _StatsRequest) ->
-    {ok, #group_stats_reply{}}.
+      {ok, group_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_group_stats(State, #group_stats_request{}) ->
+    {ok, #group_stats_reply{}, State}.
 
 %% @doc Get group description statistics.
 -spec get_group_desc_stats(state(), group_desc_stats_request()) ->
-                                  {ok, group_desc_stats_reply()}.
-get_group_desc_stats(#state{} = _State,
-                     #group_desc_stats_request{} = _StatsRequest) ->
-    {ok, #group_desc_stats_reply{}}.
+      {ok, group_desc_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_group_desc_stats(State, #group_desc_stats_request{}) ->
+    {ok, #group_desc_stats_reply{}, State}.
 
 %% @doc Get group features statistics.
 -spec get_group_features_stats(state(), group_features_stats_request()) ->
-                                      {ok, group_features_stats_reply()}.
-get_group_features_stats(#state{} = _State,
-                         #group_features_stats_request{} = _StatsRequest) ->
-    {ok, #group_features_stats_reply{}}.
-
-%% @doc Terminate the switch.
--spec terminate(state()) -> any().
-terminate(#state{} = _State) ->
-    ets:delete(flow_tables),
-    ets:delete(flow_entry_counters),
-    ok.
+      {ok, group_features_stats_reply(), #state{}} | {error, atom(), #state{}}.
+get_group_features_stats(State, #group_features_stats_request{}) ->
+    {ok, #group_features_stats_reply{}, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
@@ -180,7 +191,7 @@ apply_flow_mod(#flow_table{id = Id, entries = Entries} = Table,
                          flags = Flags} = FlowMod) ->
     case has_priority_overlap(Flags, Priority, Entries) of
         true ->
-            {error, overflow};
+            {error, overlap};
         false ->
             NewEntries = lists:keymerge(#flow_entry.priority,
                                         [create_flow_entry(FlowMod, Id)],

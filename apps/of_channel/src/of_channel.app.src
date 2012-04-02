@@ -5,7 +5,8 @@
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  of_protocol
                  ]},
   {mod, {ofc_app, []}},
   {env, []}

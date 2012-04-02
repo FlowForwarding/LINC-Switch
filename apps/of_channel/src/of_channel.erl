@@ -12,6 +12,7 @@
 -export([get_connection/1]).
 
 -include("of_channel.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
 
 -type host() :: atom() | binary() | string() | {integer(), integer(),
                                                 integer(), integer()}.
@@ -40,7 +41,8 @@ open(Controller, Port) ->
     {ok, Connection}.
 
 %% @doc Send message to the controller.
--spec send(record()) -> any().
+%% FIXME: there is no such function as ofc_logic:send/1
+-spec send(ofp_message()) -> any().
 send(Message) ->
     ofc_logic:send(Message).
 

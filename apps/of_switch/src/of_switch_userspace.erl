@@ -8,6 +8,9 @@
 
 -behaviour(gen_switch).
 
+%% Switch API
+-export([route/1]).
+
 %% gen_switch callbacks
 -export([init/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
          echo_request/2, get_desc_stats/2, get_flow_stats/2,
@@ -21,6 +24,15 @@
 -record(state, {}).
 
 -type state() :: #state{}.
+-type route_result() :: drop | controller | output.
+
+%%%-----------------------------------------------------------------------------
+%%% Switch API
+%%%-----------------------------------------------------------------------------
+
+-spec route(#ofs_pkt{}) -> route_result().
+route(Pkt) ->
+    do_route(Pkt, 0).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -159,3 +171,127 @@ has_priority_overlap(Flags, Priority, Entries) ->
     lists:member(check_overlap, Flags)
     andalso
     lists:keymember(Priority, #flow_entry.priority, Entries).
+
+-spec do_route(#ofs_pkt{}, integer()) -> route_result().
+do_route(Pkt, FlowId) ->
+    case apply_flow(Pkt, FlowId) of
+        {match, goto, NextFlowId, NewPkt} ->
+            do_route(NewPkt, NextFlowId);
+        {match, output, NewPkt} ->
+            NewPkt2 = execute_action_set(NewPkt),
+            route_to_output(NewPkt2),
+            output;
+        {nomatch, controller} ->
+            route_to_controller(Pkt),
+            controller;
+        {nomatch, drop} ->
+            drop;
+        {nomatch, continue, NextFlowId} ->
+            do_route(Pkt, NextFlowId)
+    end.
+
+-spec get_flow_table(integer()) -> #flow_table{} | noflow.
+get_flow_table(FlowId) ->
+    case ets:lookup(flow_tables, FlowId) of
+        [] ->
+            noflow;
+        [FlowTable] ->
+            FlowTable
+    end.
+
+-spec apply_flow(#ofs_pkt{}, #flow_entry{}) -> tuple().
+apply_flow(Pkt, FlowId) ->
+    case get_flow_table(FlowId) of
+        noflow ->
+            {nomatch, drop};
+        FlowTable ->
+            case match_flow_entries(Pkt, FlowTable#flow_table.entries) of
+                {match, goto, NextFlowId, NewPkt} ->
+                    {match, goto, NextFlowId, NewPkt};
+                {match, output, NewPkt} ->
+                    {match, output, NewPkt};
+                nomatch when FlowTable#flow_table.config == drop ->
+                    {nomatch, drop};
+                nomatch when FlowTable#flow_table.config == controller ->
+                    {nomatch, controller};
+                nomatch when FlowTable#flow_table.config == continue ->
+                    {nomatch, continue, FlowId + 1}
+            end
+    end.
+
+-spec match_flow_entries(#ofs_pkt{}, list(#flow_entry{})) -> tuple() | nomatch.
+match_flow_entries(Pkt, [FlowEntry | Rest]) ->
+    case match_flow_entry(Pkt, FlowEntry) of
+        {match, goto, NextFlowId, NewPkt} ->
+            {match, goto, NextFlowId, NewPkt};
+        {match, output, NewPkt} ->
+            {match, output, NewPkt};
+        nomatch ->
+            match_flow_entries(Rest, Pkt)
+    end;
+match_flow_entries(_Pkt, []) ->
+    nomatch.
+
+-spec match_flow_entry(#ofs_pkt{}, #flow_entry{}) -> match | nomatch.
+match_flow_entry(Pkt, FlowEntry) ->
+    case match_fields(Pkt#ofs_pkt.fields#match.oxm_fields,
+                      FlowEntry#flow_entry.match#match.oxm_fields) of
+        match ->
+            case apply_instructions(FlowEntry#flow_entry.instructions,
+                                    Pkt,
+                                    output) of
+                {NewPkt, goto, NextFlowId} ->
+                    {match, goto, NextFlowId, NewPkt};
+                {NewPkt, output} ->
+                    {match, output, NewPkt}
+            end;
+        nomatch ->
+            nomatch
+    end.
+
+-spec match_fields(list(#oxm_field{}), list(#oxm_field{})) -> match | nomatch.
+match_fields(PktFields, [FlowField | FlowRest]) ->
+    case has_field(FlowField, PktFields) of
+        true ->
+            match_fields(PktFields, FlowRest);
+        false ->
+            nomatch
+    end;
+match_fields(_PktFields, []) ->
+    match.
+
+-spec has_field(#oxm_field{}, list(#oxm_field{})) -> boolean().
+has_field(Field, List) ->
+    lists:member(Field, List).
+
+-spec apply_instructions(list(of_protocol:instruction()),
+                         #ofs_pkt{},
+                         output | {goto, integer()}) -> tuple().
+apply_instructions([#instruction_apply_actions{} | Rest], Pkt, NextStep) ->
+    apply_instructions(Rest, Pkt, NextStep);
+apply_instructions([#instruction_clear_actions{} | Rest], Pkt, NextStep) ->
+    apply_instructions(Rest, Pkt, NextStep);
+apply_instructions([#instruction_write_actions{} | Rest], Pkt, NextStep) ->
+    apply_instructions(Rest, Pkt, NextStep);
+apply_instructions([#instruction_write_metadata{} | Rest], Pkt, NextStep) ->
+    apply_instructions(Rest, Pkt, NextStep);
+apply_instructions([#instruction_goto_table{table_id = Id} | Rest],
+                   Pkt,
+                   _NextStep) ->
+    apply_instructions(Rest, Pkt, {goto, Id});
+apply_instructions([], Pkt, output) ->
+    {Pkt, output};
+apply_instructions([], Pkt, {goto, Id}) ->
+    {Pkt, goto, Id}.
+
+-spec execute_action_set(#ofs_pkt{}) -> #ofs_pkt{}.
+execute_action_set(Pkt) ->
+    Pkt.
+
+-spec route_to_controller(#ofs_pkt{}) -> ok.
+route_to_controller(Pkt) ->
+    ok.
+
+-spec route_to_output(#ofs_pkt{}) -> ok.
+route_to_output(Pkt) ->
+    ok.

@@ -44,6 +44,10 @@ init(_Opts) ->
     flow_tables = ets:new(flow_tables, [named_table,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
+    flow_entry_counters = ets:new(flow_entry_counters,
+                                  [named_table,
+                                   {keypos, #flow_entry_counter.key},
+                                   {read_concurrency, true}]),
     InitialTable = #flow_table{id = 0, entries = [], config = drop},
     ets:insert(flow_tables, InitialTable),
     {ok, #state{}}.
@@ -146,7 +150,7 @@ terminate(#state{} = _State) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
-apply_flow_mod(#flow_table{entries = Entries} = Table,
+apply_flow_mod(#flow_table{id = Id, entries = Entries} = Table,
                #flow_mod{command = add,
                          priority = Priority,
                          flags = Flags} = FlowMod) ->
@@ -155,17 +159,22 @@ apply_flow_mod(#flow_table{entries = Entries} = Table,
             {error, overflow};
         false ->
             NewEntries = lists:keymerge(#flow_entry.priority,
-                                        [flow_mod_to_entry(FlowMod)],
+                                        [flow_mod_to_entry(FlowMod, Id)],
                                         Entries),
             {ok, Table#flow_table{entries = NewEntries}}
     end.
 
 flow_mod_to_entry(#flow_mod{priority = Priority,
                             match = Match,
-                            instructions = Instructions}) ->
-    #flow_entry{priority = Priority,
-                match = Match,
-                instructions = Instructions}.
+                            instructions = Instructions},
+                  FlowTableId) ->
+    FlowEntry = #flow_entry{priority = Priority,
+                            match = Match,
+                            instructions = Instructions},
+    ets:insert(flow_entry_counter,
+               #flow_entry_counter{key = {FlowTableId, FlowEntry},
+                                   install_time = erlang:universaltime()}),
+    FlowEntry.
 
 has_priority_overlap(Flags, Priority, Entries) ->
     lists:member(check_overlap, Flags)
@@ -185,12 +194,12 @@ do_route(Pkt, FlowId) ->
                 false ->
                     drop
             end;
-        {nomatch, controller} ->
+        {table_miss, controller} ->
             route_to_controller(Pkt),
             controller;
-        {nomatch, drop} ->
+        {table_miss, drop} ->
             drop;
-        {nomatch, continue, NextFlowId} ->
+        {table_miss, continue, NextFlowId} ->
             do_route(Pkt, NextFlowId)
     end.
 
@@ -209,32 +218,62 @@ apply_flow(Pkt, FlowId) ->
         noflow ->
             {nomatch, drop};
         FlowTable ->
-            case match_flow_entries(Pkt, FlowTable#flow_table.entries) of
+            case match_flow_entries(Pkt,
+                                    FlowTable#flow_table.id,
+                                    FlowTable#flow_table.entries) of
                 {match, goto, NextFlowId, NewPkt} ->
+                    update_flow_table_match_counters(FlowTable#flow_table.id),
                     {match, goto, NextFlowId, NewPkt};
                 {match, output, NewPkt} ->
+                    update_flow_table_match_counters(FlowTable#flow_table.id),
                     {match, output, NewPkt};
-                nomatch when FlowTable#flow_table.config == drop ->
-                    {nomatch, drop};
-                nomatch when FlowTable#flow_table.config == controller ->
-                    {nomatch, controller};
-                nomatch when FlowTable#flow_table.config == continue ->
-                    {nomatch, continue, FlowId + 1}
+                table_miss when FlowTable#flow_table.config == drop ->
+                    update_flow_table_miss_counters(FlowTable#flow_table.id),
+                    {table_miss, drop};
+                table_miss when FlowTable#flow_table.config == controller ->
+                    update_flow_table_miss_counters(FlowTable#flow_table.id),
+                    {table_miss, controller};
+                table_miss when FlowTable#flow_table.config == continue ->
+                    update_flow_table_miss_counters(FlowTable#flow_table.id),
+                    {table_miss, continue, FlowId + 1}
             end
     end.
 
--spec match_flow_entries(#ofs_pkt{}, list(#flow_entry{})) -> tuple() | nomatch.
-match_flow_entries(Pkt, [FlowEntry | Rest]) ->
+-spec update_flow_table_match_counters(integer()) -> ok.
+update_flow_table_match_counters(FlowTableId) ->
+    ets:udpate_counter(flow_tables, FlowTableId, [{packet_lookups, 1},
+                                                  {packet_matches, 1}]).
+
+-spec update_flow_table_miss_counters(integer()) -> ok.
+update_flow_table_miss_counters(FlowTableId) ->
+    ets:udpate_counter(flow_tables, FlowTableId, [{packet_lookups, 1}]).
+
+-spec update_flow_entry_counters(integer(), #flow_entry{}, integer()) -> ok.
+update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
+    ets:update_counter(flow_entry_counters,
+                       {FlowTableId, FlowEntry},
+                       [{received_packets, 1},
+                        {received_bytes, PktSize}]).
+
+-spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
+                        -> tuple() | nomatch.
+match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
     case match_flow_entry(Pkt, FlowEntry) of
         {match, goto, NextFlowId, NewPkt} ->
+            update_flow_entry_counters(FlowTableId,
+                                       FlowEntry,
+                                       Pkt#ofs_pkt.size),
             {match, goto, NextFlowId, NewPkt};
         {match, output, NewPkt} ->
+            update_flow_entry_counters(FlowTableId,
+                                       FlowEntry,
+                                       Pkt#ofs_pkt.size),
             {match, output, NewPkt};
         nomatch ->
-            match_flow_entries(Pkt, Rest)
+            match_flow_entries(Pkt, FlowTableId, Rest)
     end;
-match_flow_entries(_Pkt, []) ->
-    nomatch.
+match_flow_entries(_Pkt, _FlowTableId, []) ->
+    table_miss.
 
 -spec match_flow_entry(#ofs_pkt{}, #flow_entry{}) -> match | nomatch.
 match_flow_entry(Pkt, FlowEntry) ->

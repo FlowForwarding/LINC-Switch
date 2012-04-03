@@ -64,9 +64,7 @@ init([]) ->
 handle_call({get_connection, Pid}, _From,
             #state{connections = Connections} = State) ->
     Connection = lists:keyfind(Pid, #connection.pid, Connections),
-    {reply, Connection, State};
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+    {reply, Connection, State}.
 
 handle_cast({register, Pid, Socket},
             #state{connections = Connections} = State) ->
@@ -81,9 +79,7 @@ handle_cast({message, From, Message},
     error_logger:info_msg("Received message from controller (~p): ~p~n",
                           [Connection, Message]),
     NewState = handle_message(Message, Connection, State),
-    {noreply, NewState};
-handle_cast(_Message, State) ->
-    {noreply, State}.
+    {noreply, NewState}.
 
 handle_info(_Info, State) ->
     {noreply, State}.

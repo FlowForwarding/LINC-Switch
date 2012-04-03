@@ -9,7 +9,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, open/2]).
+-export([start_link/0, open/2, close/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -26,6 +26,12 @@ open(Controller, Port) ->
     ChildSpec = {Id, {ofc_receiver, start_link, [Controller, Port]},
                  permanent, 5000, worker, [ofc_receiver]},
     supervisor:start_child(ofc_receiver_sup, ChildSpec).
+
+-spec close(string(), integer()) -> ok.
+close(Controller, Port) ->
+    Id = list_to_atom(Controller ++ "_" ++ integer_to_list(Port)),
+    supervisor:terminate_child(ofc_receiver_sup, Id),
+    supervisor:delete_child(ofc_receiver_sup, Id).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks

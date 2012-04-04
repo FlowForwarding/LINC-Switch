@@ -96,8 +96,7 @@ code_change(_OldVersion, State, _Extra) ->
 
 %% @doc Handle different kind of messages.
 -spec handle_message(ofp_message(), connection(),
-                     #state{}) -> {noreply, #state{}} |
-                                  {reply, ofp_message(), #state{}}.
+                     #state{}) -> #state{}.
 handle_message(#hello{header = #header{version = ReceivedVersion, xid = Xid}},
                #connection{pid = Pid, socket = Socket,
                            version = undefined} = Connection,
@@ -185,7 +184,7 @@ handle_message(#role_request{header = #header{xid = Xid}, role = Role,
     end;
 handle_message(_, _, State) ->
     %% Drop everything else.
-    {noreply, State}.
+    State.
 
 %%%-----------------------------------------------------------------------------
 %%% Helper functions

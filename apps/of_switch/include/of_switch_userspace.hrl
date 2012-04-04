@@ -21,6 +21,7 @@
           id :: integer(),
           entries :: [#flow_entry{}],
           config :: drop | controller | continue,
+          %% --- Counters ---
           %% Reference count is dynamically generated for the sake of simplicity
           %% reference_count = 0 :: integer(),
           packet_lookups = 0 :: integer(),
@@ -32,4 +33,25 @@
           actions = [] :: ordsets:ordset(ofp_structures:action()),
           metadata     :: binary(),
           size = 0     :: integer()
+         }).
+
+-type ofs_port_type() :: physical | logical | reserved.
+
+-record(ofs_port, {
+          number :: integer(),
+          type :: ofs_port_type(),
+          handle :: term(),
+          %% --- Counters ---
+          received_packets :: integer(),
+          transmitted_packets :: integer(),
+          received_bytes :: integer(),
+          transmitted_bytes :: integer(),
+          receive_drops :: integer(),
+          transmit_drops :: integer(),
+          receive_errors :: integer(),
+          transmit_errors :: integer(),
+          receive_frame_alignment_errors :: integer(),
+          receive_overrun_errors :: integer(),
+          receive_crc_errors :: integer(),
+          collisions :: integer()
          }).

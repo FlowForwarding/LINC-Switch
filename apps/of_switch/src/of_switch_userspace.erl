@@ -9,7 +9,10 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([route/1]).
+-export([route/1,
+         add_port/2,
+         remove_port/1
+        ]).
 
 %% gen_switch callbacks
 -export([init/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
@@ -34,6 +37,23 @@
 route(Pkt) ->
     do_route(Pkt, 0).
 
+-spec add_port(ofs_port_type(), integer()) -> ok.
+add_port(physical, PortNumber) ->
+    {ok, Pid} = supervisor:start_child(ofs_userspace_port_sup, []),
+    OfsPort = #ofs_port{number = PortNumber,
+                        type = physical,
+                        handle = Pid
+                       },
+    ets:insert(ofs_ports, OfsPort);
+add_port(logical, PortNumber) ->
+    ok;
+add_port(reserved, PortNumber) ->
+    ok.
+
+-spec remove_port(integer()) -> ok.
+remove_port(PortId) ->
+    ok.
+
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
 %%%-----------------------------------------------------------------------------
@@ -48,6 +68,9 @@ init(_Opts) ->
                                   [named_table,
                                    {keypos, #flow_entry_counter.key},
                                    {read_concurrency, true}]),
+    ofs_ports = ets:new(ofs_ports, [named_table,
+                                    {keypos, #ofs_port.number},
+                                    {read_concurrency, true}]),
     InitialTable = #flow_table{id = 0, entries = [], config = drop},
     ets:insert(flow_tables, InitialTable),
     {ok, #state{}}.

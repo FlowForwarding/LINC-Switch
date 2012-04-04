@@ -14,6 +14,9 @@
          remove_port/1
         ]).
 
+%% Spawns
+-export([do_route/2]).
+
 %% gen_switch callbacks
 -export([start/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
          echo_request/2, barrier_request/2, get_desc_stats/2, get_flow_stats/2,
@@ -67,11 +70,11 @@ remove_port(PortId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    flow_tables = ets:new(flow_tables, [named_table,
+    flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
     flow_entry_counters = ets:new(flow_entry_counters,
-                                  [named_table,
+                                  [named_table, public,
                                    {keypos, #flow_entry_counter.key},
                                    {read_concurrency, true}]),
     ofs_ports = ets:new(ofs_ports, [named_table,
@@ -443,8 +446,8 @@ apply_action_set([], Pkt) ->
 
 -spec route_to_controller(#ofs_pkt{}) -> ok.
 route_to_controller(Pkt) ->
-    of_channel:send(Pkt).
+    ok.
 
 -spec route_to_output(#action_output{}, #ofs_pkt{}) -> ok.
-route_to_output(Output, Pkt) ->
+route_to_output(_Output, _Pkt) ->
     ok.

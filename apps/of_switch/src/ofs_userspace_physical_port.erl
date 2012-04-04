@@ -11,7 +11,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         send/2,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -21,6 +23,8 @@
          terminate/2,
          code_change/3]).
 
+-include_lib("of_switch/include/of_switch_userspace.hrl").
+
 -record(state, {}).
 
 %%%===================================================================
@@ -29,7 +33,15 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link(?MODULE, [], []).
+
+-spec send(pid(), binary()) -> ok.
+send(Pid, Pkt) ->
+    gen_server:call(Pid, {send, Pkt}).
+
+-spec stop(pid()) -> ok.
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -49,18 +61,25 @@ init([]) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
+handle_call({send, Pkt}, _From, State) ->
+    {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
 -spec handle_cast(Msg :: term(), #state{}) -> {noreply, #state{}} |
                                               {noreply, #state{}, timeout()} |
                                               {stop, Reason :: term(), #state{}}.
+handle_cast(stop, State) ->
+    {stop, shutdown, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(Info :: term(), #state{}) -> {noreply, #state{}} |
                                                {noreply, #state{}, timeout()} |
                                                {stop, Reason :: term(), #state{}}.
+handle_info({pkt, _}, State) ->
+    OfsPkt = #ofs_pkt{},
+    of_switch_userspace:route(OfsPkt);
 handle_info(_Info, State) ->
     {noreply, State}.
 

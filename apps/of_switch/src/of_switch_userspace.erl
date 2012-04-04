@@ -35,7 +35,7 @@
 
 -spec route(#ofs_pkt{}) -> route_result().
 route(Pkt) ->
-    do_route(Pkt, 0).
+    proc_lib:spawn_link(?MODULE, do_route, [Pkt, 0]).
 
 -spec add_port(ofs_port_type(), integer()) -> ok.
 add_port(physical, PortNumber) ->
@@ -52,7 +52,13 @@ add_port(reserved, PortNumber) ->
 
 -spec remove_port(integer()) -> ok.
 remove_port(PortId) ->
-    ok.
+    case ets:lookup(PortId) of
+        [] ->
+            ok;
+        [#ofs_port{handle = Pid}] ->
+            ofs_userspace_port:stop(Pid),
+            ets:delete(PortId)
+    end.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks

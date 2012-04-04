@@ -144,6 +144,7 @@ get_group_features_stats(#state{} = _State,
 -spec terminate(state()) -> any().
 terminate(#state{} = _State) ->
     ets:delete(flow_tables),
+    ets:delete(flow_entry_counters),
     ok.
 
 %%%-----------------------------------------------------------------------------
@@ -159,19 +160,19 @@ apply_flow_mod(#flow_table{id = Id, entries = Entries} = Table,
             {error, overflow};
         false ->
             NewEntries = lists:keymerge(#flow_entry.priority,
-                                        [flow_mod_to_entry(FlowMod, Id)],
+                                        [create_flow_entry(FlowMod, Id)],
                                         Entries),
             {ok, Table#flow_table{entries = NewEntries}}
     end.
 
-flow_mod_to_entry(#flow_mod{priority = Priority,
+create_flow_entry(#flow_mod{priority = Priority,
                             match = Match,
                             instructions = Instructions},
                   FlowTableId) ->
     FlowEntry = #flow_entry{priority = Priority,
                             match = Match,
                             instructions = Instructions},
-    ets:insert(flow_entry_counter,
+    ets:insert(flow_entry_counters,
                #flow_entry_counter{key = {FlowTableId, FlowEntry},
                                    install_time = erlang:universaltime()}),
     FlowEntry.
@@ -241,19 +242,19 @@ apply_flow(Pkt, FlowId) ->
 
 -spec update_flow_table_match_counters(integer()) -> ok.
 update_flow_table_match_counters(FlowTableId) ->
-    ets:udpate_counter(flow_tables, FlowTableId, [{packet_lookups, 1},
-                                                  {packet_matches, 1}]).
+    ets:update_counter(flow_tables, FlowTableId, [{#flow_table.packet_lookups, 1},
+                                                  {#flow_table.packet_matches, 1}]).
 
 -spec update_flow_table_miss_counters(integer()) -> ok.
 update_flow_table_miss_counters(FlowTableId) ->
-    ets:udpate_counter(flow_tables, FlowTableId, [{packet_lookups, 1}]).
+    ets:update_counter(flow_tables, FlowTableId, [{#flow_table.packet_lookups, 1}]).
 
 -spec update_flow_entry_counters(integer(), #flow_entry{}, integer()) -> ok.
 update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
     ets:update_counter(flow_entry_counters,
                        {FlowTableId, FlowEntry},
-                       [{received_packets, 1},
-                        {received_bytes, PktSize}]).
+                       [{#flow_entry_counter.received_packets, 1},
+                        {#flow_entry_counter.received_bytes, PktSize}]).
 
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
                         -> tuple() | nomatch.

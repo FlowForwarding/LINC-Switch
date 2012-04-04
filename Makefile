@@ -9,7 +9,7 @@ rel: compile
 	./rebar generate -f
 
 test: compile
-	./rebar skip_deps=true apps=of_protocol,of_netlink,of_channel eunit
+	./rebar skip_deps=true apps=of_protocol,of_netlink,of_channel,of_switch eunit
 
 clean: rebar
 	./rebar clean

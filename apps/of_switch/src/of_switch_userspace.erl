@@ -86,6 +86,7 @@ start(_Opts) ->
 stop(_State) ->
     ets:delete(flow_tables),
     ets:delete(flow_entry_counters),
+    ets:delete(ofs_ports),
     ok.
 
 %% @doc Modify flow entry in the flow table.

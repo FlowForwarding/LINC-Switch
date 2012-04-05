@@ -35,7 +35,8 @@
           fields :: of_protocol:match(),
           actions = [] :: ordsets:ordset(ofp_structures:action()),
           metadata = << 0:64/integer >> :: binary(),
-          size = 0 :: integer()
+          size = 0 :: integer(),
+          packet :: [record() | binary()]
          }).
 
 -type ofs_port_type() :: physical | logical | reserved.

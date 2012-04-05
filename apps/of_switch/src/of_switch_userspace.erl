@@ -13,7 +13,7 @@
          route/1,
          add_port/3,
          remove_port/1,
-         pkt_to_ofs/1
+         pkt_to_ofs/2
         ]).
 
 %% Spawns
@@ -46,16 +46,17 @@ route(Pkt) ->
 -spec add_port(ofs_port_type(), integer(), string()) -> ok.
 add_port(physical, PortNumber, Interface) ->
     {ok, Pid} = supervisor:start_child(ofs_userspace_port_sup,
-                                       [[{interface, Interface}]]),
+                                       [[{interface, Interface},
+                                         {portnum, PortNumber}]]),
     OfsPort = #ofs_port{number = PortNumber,
                         type = physical,
                         handle = Pid
                        },
     ets:insert(ofs_ports, OfsPort),
     ets:insert(ofs_port_counters, #ofs_port_counter{number = PortNumber});
-add_port(logical, _PortNumber, Interface) ->
+add_port(logical, _PortNumber, _Interface) ->
     ok;
-add_port(reserved, _PortNumber, Interface) ->
+add_port(reserved, _PortNumber, _Interface) ->
     ok.
 
 -spec remove_port(integer()) -> ok.
@@ -68,10 +69,12 @@ remove_port(PortId) ->
             ets:delete(PortId)
     end.
 
--spec pkt_to_ofs([record()]) -> #ofs_pkt{}.
-pkt_to_ofs(Packet) ->
-    #ofs_pkt{fields = #match{type = oxm,
-                             oxm_fields = packet_fields(Packet)}}.
+-spec pkt_to_ofs([record()], integer()) -> #ofs_pkt{}.
+pkt_to_ofs(Packet, PortNum) ->
+    #ofs_pkt{packet = Packet,
+             fields = #match{type = oxm,
+                             oxm_fields = [oxm_field(in_port, PortNum) |
+                                           packet_fields(Packet)]}}.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -330,7 +333,6 @@ is_more_specific(#oxm_field{has_mask = true, mask = M1, value = V1},
 is_more_specific(_MoreSpecific, _LessSpecific) ->
     false.
 
-
 create_flow_entry(#flow_mod{priority = Priority,
                             match = Match,
                             instructions = Instructions},
@@ -504,8 +506,15 @@ apply_mask(Metadata, _Mask) ->
     Metadata.
 
 -spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
-apply_action_list([#action_output{} = Output | Rest], Pkt) ->
-    route_to_output(Output, Pkt),
+apply_action_list([#action_output{port = PortNum} | Rest], Pkt) ->
+    case ofs_userspace_port:send(PortNum, Pkt) of
+        ok ->
+            ok;
+        noport ->
+            lager:error("[~p] Port ~p missing when applying "
+                        "output action for packet ~p",
+                        [?MODULE, PortNum, Pkt])
+    end,
     apply_action_list(Rest, Pkt);
 apply_action_list([#action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,
@@ -562,10 +571,6 @@ apply_action_set([], Pkt) ->
 
 -spec route_to_controller(#ofs_pkt{}) -> ok.
 route_to_controller(_Pkt) ->
-    ok.
-
--spec route_to_output(#action_output{}, #ofs_pkt{}) -> ok.
-route_to_output(_Output, _Pkt) ->
     ok.
 
 %%% Packet conversion functions ------------------------------------------------

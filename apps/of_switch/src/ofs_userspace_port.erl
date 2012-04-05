@@ -26,8 +26,7 @@
 -include_lib("of_switch/include/of_switch_userspace.hrl").
 
 -record(state, {socket :: integer(),
-                length :: integer()
-               }).
+                port_num :: integer()}).
 
 %%%===================================================================
 %%% API
@@ -37,9 +36,14 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
--spec send(pid(), binary()) -> ok.
-send(Pid, Pkt) ->
-    gen_server:call(Pid, {send, Pkt}).
+-spec send(integer(), #ofs_pkt{}) -> noport | ok.
+send(PortId, OFSPkt) ->
+    case ets:lookup(ofs_ports, PortId) of
+        [] ->
+            noport;
+        [#ofs_port{handle = Pid}] ->
+            gen_server:call(Pid, {send, OFSPkt})
+    end.
 
 -spec stop(pid()) -> ok.
 stop(Pid) ->
@@ -58,11 +62,12 @@ init(Args) ->
                                       "tmp",
                                       "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, Args),
+    {portnum, PortNum} = lists:keyfind(portnum, 1, Args),
     epcap:start([{promiscous, true}, {interface, Interface}]),
-    {ok, Socket, Length} = bpf:open(Interface),
+    {ok, Socket, _Length} = bpf:open(Interface),
     bpf:ctl(Socket, setif, Interface),
     {ok, #state{socket = Socket,
-                length = Length}}.
+                port_num = PortNum}}.
 
 -spec handle_call(Request :: term(), From :: {pid(), Tag :: term()}, #state{}) ->
                          {reply, Reply :: term(), #state{}} |
@@ -71,7 +76,9 @@ init(Args) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
-handle_call({send, _Pkt}, _From, State) ->
+handle_call({send, OFSPkt}, _From, #state{socket = Socket} = State) ->
+    Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
+    procket:write(Socket, Frame),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -87,9 +94,10 @@ handle_cast(_Msg, State) ->
 -spec handle_info(Info :: term(), #state{}) -> {noreply, #state{}} |
                                                {noreply, #state{}, timeout()} |
                                                {stop, Reason :: term(), #state{}}.
-handle_info({packet, DataLinkType, Time, Length, Frame}, State) ->
+handle_info({packet, _DataLinkType, _Time, _Length, Frame},
+            #state{port_num = PortNum} = State) ->
     Packet = pkt:decapsulate(Frame),
-    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet),
+    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet, PortNum),
     of_switch_userspace:route(OFSPacket),
     {noreply, State};
 handle_info(_Info, State) ->

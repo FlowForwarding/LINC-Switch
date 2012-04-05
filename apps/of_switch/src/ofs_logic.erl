@@ -148,16 +148,14 @@ handle_message(#flow_mod{buffer_id = _BufferId} = FlowMod,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
                       backend_state = BackendState} = State) ->
-%%    FIXME: uncomment
-%%    case BackendMod:modify_flow(BackendState, FlowMod) of
-%%        {ok, NewBackendState} ->
-%%            %% XXX: look at _BufferId, emulate packet-out
-%%            ok;
-%%        {error, Reason, NewBackendState} ->
-%%            send_error_reply(Socket, FlowMod, Reason)
-%%    end,
-%%    State#state{backend_state = NewBackendState};
-    State;
+    case BackendMod:modify_flow(BackendState, FlowMod) of
+        {ok, NewBackendState} ->
+            ok;
+        {error, Reason, NewBackendState} ->
+            send_error_reply(Socket, FlowMod, Reason)
+    end,
+    %% XXX: look at _BufferId, emulate packet-out
+    State#state{backend_state = NewBackendState};
 handle_message(#role_request{header = #header{xid = Xid}, role = Role,
                              generation_id = GenerationId},
                #connection{pid = Pid, socket = Socket} = Connection,

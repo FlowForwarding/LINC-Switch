@@ -19,8 +19,8 @@
 
 -record(flow_table, {
           id :: integer(),
-          entries :: [#flow_entry{}],
-          config :: drop | controller | continue,
+          entries = [] :: [#flow_entry{}],
+          config = drop :: drop | controller | continue,
           %% --- Counters ---
           %% Reference count is dynamically generated for the sake of simplicity
           %% reference_count = 0 :: integer(),

@@ -198,6 +198,7 @@ get_desc_stats(State, #desc_stats_request{}) ->
 -spec get_flow_stats(state(), flow_stats_request()) ->
       {ok, flow_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_flow_stats(State, #flow_stats_request{}) ->
+    %% NOTE: re-use the logic from non_strict_match (spec, page 23)
     {ok, #flow_stats_reply{}, State}.
 
 %% @doc Get aggregated flow statistics.
@@ -280,11 +281,18 @@ delete_entries(TableId, FlowMod, MatchFun) ->
             ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
         end, get_flow_tables(TableId)).
 
-strict_match(#flow_entry{}, #flow_mod{}) ->
-    %% FIXME: non implemented
+%% strict match: use all match fields (including the masks) and the priority
+strict_match(#flow_entry{priority = Priority, match = Match},
+             #flow_mod{priority = Priority, match = Match}) ->
+    true;
+strict_match(_FlowEntry, _FlowMod) ->
     false.
 
 non_strict_match(#flow_entry{}, #flow_mod{}) ->
+    %% match more specific ones
+    %% ignore the priority
+    %% missing entries in flow_mod -> wildcards
+    %
     %% FIXME: non implemented
     false.
 

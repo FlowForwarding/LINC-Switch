@@ -8,9 +8,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2]).
--export([register_receiver/2, unregister_receiver/1, message/2]).
--export([get_connection/1]).
+-export([
+         start_link/2,
+         message/2,
+         send/1,
+         register_receiver/2,
+         unregister_receiver/1,
+         get_connection/1
+        ]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -36,6 +41,16 @@ start_link(BackendMod, BackendOpts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE,
                           [BackendMod, BackendOpts], []).
 
+%% @doc Deliver message to the OF Switch logic.
+-spec message(ofp_message(), pid()) -> any().
+message(Message, From) ->
+    gen_server:cast(?MODULE, {message, From, Message}).
+
+%% @doc Send message out to controllers.
+-spec send(ofp_message()) -> any().
+send(Message) ->
+    gen_server:cast(?MODULE, {send, Message}).
+
 %% @doc Register receiver.
 -spec register_receiver(pid(), port()) -> any().
 register_receiver(Pid, Socket) ->
@@ -45,11 +60,6 @@ register_receiver(Pid, Socket) ->
 -spec unregister_receiver(pid()) -> any().
 unregister_receiver(Pid) ->
     gen_server:cast(?MODULE, {unregister, Pid}).
-
-%% @doc Deliver message to the switch logic.
--spec message(ofp_message(), pid()) -> any().
-message(Message, From) ->
-    gen_server:cast(?MODULE, {message, From, Message}).
 
 %% @doc Get connection information.
 -spec get_connection(pid()) -> any().
@@ -83,7 +93,11 @@ handle_cast({message, From, Message},
     error_logger:info_msg("Received message from controller (~p): ~p~n",
                           [Connection, Message]),
     NewState = handle_message(Message, Connection, State),
-    {noreply, NewState}.
+    {noreply, NewState};
+handle_cast({send, Message}, #state{connections = Connections} = State) ->
+    %% TODO: Do not send certain messages to slave controllers.
+    [do_send(Socket, Message) || #connection{socket = Socket} <- Connections],
+    {noreply, State}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -102,7 +116,7 @@ code_change(_OldVersion, State, _Extra) ->
 %% @doc Handle different kind of messages.
 -spec handle_message(ofp_message(), connection(),
                      #state{}) -> #state{}.
-handle_message(#hello{header = #header{version = ReceivedVersion, xid = Xid}},
+handle_message(#hello{header = #header{version = ReceivedVersion}} = Hello,
                #connection{pid = Pid, socket = Socket,
                            version = undefined} = Connection,
                #state{connections = Connections} = State) ->
@@ -114,7 +128,7 @@ handle_message(#hello{header = #header{version = ReceivedVersion, xid = Xid}},
                                               NewConnection),
             State#state{connections = NewConnections};
         error ->
-            do_send(Socket, error_hello_failed(Xid)),
+            send_error_reply(Socket, Hello, incompatible),
             State
     end;
 handle_message(_Message, #connection{version = undefined}, State) ->
@@ -128,6 +142,22 @@ handle_message(#error_msg{type = hello_failed},
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
     State;
+handle_message(#flow_mod{} = FlowMod,
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify flows.
+    send_error_reply(Socket, FlowMod, is_slave),
+    State;
+handle_message(#role_request{} = RoleRequest,
+               #connection{socket = Socket} = Connection,
+               #state{} = State) ->
+    case handle_role(RoleRequest, Connection, State) of
+        {ok, RoleReply, NewState} ->
+            do_send(Socket, RoleReply);
+        {error, Reason, NewState} ->
+            send_error_reply(Socket, RoleRequest, Reason)
+    end,
+    NewState;
 handle_message(#echo_request{} = EchoRequest,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
@@ -139,11 +169,6 @@ handle_message(#echo_request{} = EchoRequest,
             send_error_reply(Socket, EchoRequest, Reason)
     end,
     State#state{backend_state = NewBackendState};
-handle_message(#flow_mod{header = #header{xid = Xid}},
-               #connection{socket = Socket, role = slave},
-               State) ->
-    do_send(Socket, error_is_slave(Xid)),
-    State;
 handle_message(#flow_mod{buffer_id = _BufferId} = FlowMod,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
@@ -156,51 +181,6 @@ handle_message(#flow_mod{buffer_id = _BufferId} = FlowMod,
     end,
     %% XXX: look at _BufferId, emulate packet-out
     State#state{backend_state = NewBackendState};
-handle_message(#role_request{header = #header{xid = Xid}, role = Role,
-                             generation_id = GenerationId},
-               #connection{pid = Pid, socket = Socket} = Connection,
-               #state{connections = Connections,
-                      generation_id = CurrentGenId} = State) ->
-    case Role of
-        equal ->
-            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
-                                        Connection#connection{role = equal}),
-            do_send(Socket, #role_reply{header = #header{xid = Xid},
-                                        role = Role,
-                                        generation_id = GenerationId}),
-            State#state{connections = NewConns};
-        _ ->
-            if
-                (CurrentGenId /= undefined)
-                andalso (GenerationId - CurrentGenId < 0) ->
-                    do_send(Socket, error_stale(Xid)),
-                    State;
-                true ->
-                    NewConn = Connection#connection{role = Role},
-                    NewConns = lists:keyreplace(Pid, #connection.pid,
-                                                Connections, NewConn),
-                    case Role of
-                        master ->
-                            Fun = fun(Conn = #connection{role = R}) ->
-                                          case R of
-                                              master ->
-                                                  Conn#connection{role = slave};
-                                              _ ->
-                                                  Conn
-                                          end
-                                  end,
-                            NewConns2 = lists:map(Fun, NewConns);
-                        slave ->
-                            NewConns2 = NewConns
-                    end,
-                    NewState = State#state{connections = NewConns2,
-                                           generation_id = GenerationId},
-                    do_send(Socket, #role_reply{header = #header{xid = Xid},
-                                                role = Role,
-                                                generation_id = GenerationId}),
-                    NewState
-            end
-    end;
 handle_message(_, _, State) ->
     %% Drop everything else.
     State.
@@ -226,27 +206,69 @@ decide_on_version(ReceivedVersion) ->
             {ok, ProposedVersion}
     end.
 
--spec error_hello_failed(integer()) -> error_msg().
-error_hello_failed(Xid) ->
-    #error_msg{header = #header{xid = Xid},
-               type = hello_failed, code = incompatible}.
-
--spec error_is_slave(integer()) -> error_msg().
-error_is_slave(Xid) ->
-    #error_msg{header = #header{xid = Xid},
-               type = bad_request, code = is_slave}.
-
--spec error_stale(integer()) -> error_msg().
-error_stale(Xid) ->
-    #error_msg{header = #header{xid = Xid},
-               type = role_request_failed,
-               code = stale}.
+-spec handle_role(role_request(), connection(), #state{}) ->
+                         {ok, ofp_message(), #state{}} |
+                         {error, atom(), #state{}}.
+handle_role(#role_request{header = Header, role = Role,
+                          generation_id = GenerationId},
+            #connection{pid = Pid} = Connection,
+            #state{connections = Connections,
+                   generation_id = CurrentGenId} = State) ->
+    case Role of
+        equal ->
+            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
+                                        Connection#connection{role = equal}),
+            RoleReply = #role_reply{header = Header,
+                                    role = Role,
+                                    generation_id = GenerationId},
+            {ok, RoleReply, State#state{connections = NewConns}};
+        _ ->
+            if
+                (CurrentGenId /= undefined)
+                andalso (GenerationId - CurrentGenId < 0) ->
+                    {error, stale, State};
+                true ->
+                    NewConn = Connection#connection{role = Role},
+                    NewConns = lists:keyreplace(Pid, #connection.pid,
+                                                Connections, NewConn),
+                    case Role of
+                        master ->
+                            Fun = fun(Conn = #connection{role = R}) ->
+                                          case R of
+                                              master ->
+                                                  Conn#connection{role = slave};
+                                              _ ->
+                                                  Conn
+                                          end
+                                  end,
+                            NewConns2 = lists:map(Fun, NewConns);
+                        slave ->
+                            NewConns2 = NewConns
+                    end,
+                    NewState = State#state{connections = NewConns2,
+                                           generation_id = GenerationId},
+                    RoleReply = #role_reply{header = Header,
+                                            role = Role,
+                                            generation_id = GenerationId},
+                    {ok, RoleReply, NewState}
+            end
+    end.
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->
     {ok, EncodedMessage} = of_protocol:encode(Message),
     gen_tcp:send(Socket, EncodedMessage).
 
+-spec error_msg(header(), atom(), atom()) -> error_msg().
+error_msg(Header, Type, Code) ->
+    #error_msg{header = Header, type = Type, code = Code}.
+
+send_error_reply(Socket, #hello{header = Header}, incompatible) ->
+    do_send(Socket, error_msg(Header, hello_failed, incompatible));
+send_error_reply(Socket, #flow_mod{header = Header}, is_slave) ->
+    do_send(Socket, error_msg(Header, bad_request, is_slave));
+send_error_reply(Socket, #role_request{header = Header}, stale) ->
+    do_send(Socket, error_msg(Header, role_request_failed, stale));
 send_error_reply(_Socket, Request, Reason) ->
     error_logger:info_msg("Unsupported error reason (~p) "
                           "when handling ~p~n", [Reason, Request]).

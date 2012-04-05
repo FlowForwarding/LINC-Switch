@@ -50,7 +50,8 @@ add_port(physical, PortNumber) ->
                         type = physical,
                         handle = Pid
                        },
-    ets:insert(ofs_ports, OfsPort);
+    ets:insert(ofs_ports, OfsPort),
+    ets:insert(ofs_port_counters, #ofs_port_counter{number = PortNumber});
 add_port(logical, _PortNumber) ->
     ok;
 add_port(reserved, _PortNumber) ->
@@ -81,23 +82,29 @@ start(_Opts) ->
     flow_tables = ets:new(flow_tables, [named_table,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
-    flow_table_counters = ets:new(flow_table_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_table_counter.id},
-                                   {read_concurrency, true}]),
-    flow_entry_counters = ets:new(flow_entry_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_entry_counter.key},
-                                   {read_concurrency, true}]),
-    ofs_ports = ets:new(ofs_ports, [named_table,
-                                    {keypos, #ofs_port.number},
-                                    {read_concurrency, true}]),
     ets:insert(flow_tables, [#flow_table{id = Id,
                                          entries = [],
                                          config = drop}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
+    ofs_ports = ets:new(ofs_ports, [named_table,
+                                    {keypos, #ofs_port.number},
+                                    {read_concurrency, true}]),
+
+    %% Counters
+    flow_table_counters = ets:new(flow_table_counters,
+                                  [named_table, public,
+                                   {keypos, #flow_table_counter.id},
+                                   {read_concurrency, true}]),
     ets:insert(flow_table_counters, [#flow_table_counter{id = Id}
                                      || Id <- lists:seq(0, ?OFPTT_MAX)]),
+    flow_entry_counters = ets:new(flow_entry_counters,
+                                  [named_table, public,
+                                   {keypos, #flow_entry_counter.key},
+                                   {read_concurrency, true}]),
+    ofs_port_counters = ets:new(ofs_port_counters,
+                                [named_table, public,
+                                 {keypos, #ofs_port_counter.number},
+                                 {read_concurrency, true}]),
     {ok, #state{}}.
 
 %% @doc Stop the switch.

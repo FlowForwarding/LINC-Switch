@@ -43,18 +43,21 @@
 -record(ofs_port, {
           number :: integer(),
           type :: ofs_port_type(),
-          handle :: term(),
-          %% --- Counters ---
-          received_packets :: integer(),
-          transmitted_packets :: integer(),
-          received_bytes :: integer(),
-          transmitted_bytes :: integer(),
-          receive_drops :: integer(),
-          transmit_drops :: integer(),
-          receive_errors :: integer(),
-          transmit_errors :: integer(),
-          receive_frame_alignment_errors :: integer(),
-          receive_overrun_errors :: integer(),
-          receive_crc_errors :: integer(),
-          collisions :: integer()
+          handle :: term()
+         }).
+
+-record(ofs_port_counter, {
+          number :: integer(),
+          received_packets = 0 :: integer(),
+          transmitted_packets = 0 :: integer(),
+          received_bytes = 0 :: integer(),
+          transmitted_bytes = 0 :: integer(),
+          receive_drops = 0 :: integer(),
+          transmit_drops = 0 :: integer(),
+          receive_errors = 0 :: integer(),
+          transmit_errors = 0 :: integer(),
+          receive_frame_alignment_errors = 0 :: integer(),
+          receive_overrun_errors = 0 :: integer(),
+          receive_crc_errors = 0 :: integer(),
+          collisions = 0 :: integer()
          }).

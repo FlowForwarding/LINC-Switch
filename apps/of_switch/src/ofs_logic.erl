@@ -95,8 +95,21 @@ handle_cast({message, From, Message},
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
 handle_cast({send, Message}, #state{connections = Connections} = State) ->
-    %% TODO: Do not send certain messages to slave controllers.
-    [do_send(Socket, Message) || #connection{socket = Socket} <- Connections],
+    Target = if
+                 (is_record(Message, port_status))
+                 orelse (is_record(Message, error_msg)) ->
+                     Connections;
+                 (is_record(Message, packet_in))
+                 orelse (is_record(Message, flow_removed)) ->
+                     lists:filter(fun(#connection{role = slave}) ->
+                                          false;
+                                     (#connection{role = _}) ->
+                                          true
+                                  end, Connections);
+                 true ->
+                     []
+             end,
+    [do_send(Socket, Message) || #connection{socket = Socket} <- Target],
     {noreply, State}.
 
 handle_info(_Info, State) ->

@@ -9,9 +9,11 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([route/1,
+-export([
+         route/1,
          add_port/2,
-         remove_port/1
+         remove_port/1,
+         pkt_to_ofs/1
         ]).
 
 %% Spawns
@@ -24,6 +26,7 @@
          get_queue_stats/2, get_group_stats/2, get_group_desc_stats/2,
          get_group_features_stats/2, stop/1]).
 
+-include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include("of_switch_userspace.hrl").
 
@@ -48,9 +51,9 @@ add_port(physical, PortNumber) ->
                         handle = Pid
                        },
     ets:insert(ofs_ports, OfsPort);
-add_port(logical, PortNumber) ->
+add_port(logical, _PortNumber) ->
     ok;
-add_port(reserved, PortNumber) ->
+add_port(reserved, _PortNumber) ->
     ok.
 
 -spec remove_port(integer()) -> ok.
@@ -62,6 +65,11 @@ remove_port(PortId) ->
             ofs_userspace_port:stop(Pid),
             ets:delete(PortId)
     end.
+
+-spec pkt_to_ofs([record()]) -> #ofs_pkt{}.
+pkt_to_ofs(Packet) ->
+    #ofs_pkt{fields = #match{type = oxm,
+                             oxm_fields = packet_fields(Packet)}}.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -283,6 +291,8 @@ has_priority_overlap(Flags, Priority, Tables) ->
                                   Table#flow_table.entries)
               end, Tables).
 
+%%% Routing functions ----------------------------------------------------------
+
 -spec do_route(#ofs_pkt{}, integer()) -> route_result().
 do_route(Pkt, FlowId) ->
     case apply_flow(Pkt, FlowId) of
@@ -428,7 +438,7 @@ apply_instructions([], Pkt, {goto, Id}) ->
     {Pkt, goto, Id}.
 
 -spec apply_mask(binary(), binary()) -> binary().
-apply_mask(Metadata, Mask) ->
+apply_mask(Metadata, _Mask) ->
     Metadata.
 
 -spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
@@ -489,9 +499,59 @@ apply_action_set([], Pkt) ->
     Pkt.
 
 -spec route_to_controller(#ofs_pkt{}) -> ok.
-route_to_controller(Pkt) ->
+route_to_controller(_Pkt) ->
     ok.
 
 -spec route_to_output(#action_output{}, #ofs_pkt{}) -> ok.
 route_to_output(_Output, _Pkt) ->
     ok.
+
+%%% Packet conversion functions ------------------------------------------------
+
+-spec packet_fields([record()]) -> [oxm_field()].
+packet_fields(Packet) ->
+    packet_fields(Packet, []).
+
+-spec packet_fields([record()], [oxm_field()]) -> [oxm_field()].
+packet_fields([], Fields) ->
+    Fields;
+packet_fields([#ether{type = Type,
+                      dhost = DHost,
+                      shost = SHost} | Rest], Fields) ->
+    NewFields = [oxm_field(eth_type, Type),
+                 oxm_field(eth_dst, DHost),
+                 oxm_field(eth_src, SHost)],
+    packet_fields(Rest, Fields ++ NewFields);
+packet_fields([#ipv4{p = Proto,
+                     saddr = SAddr,
+                     daddr = DAddr} | Rest], Fields) ->
+    NewFields = [oxm_field(ip_proto, Proto),
+                 oxm_field(ipv4_src, SAddr),
+                 oxm_field(ipv4_dst, DAddr)],
+    packet_fields(Rest, Fields ++ NewFields);
+packet_fields([#ipv6{next = Proto,
+                     saddr = SAddr,
+                     daddr = DAddr} | Rest], Fields) ->
+    NewFields = [oxm_field(ip_proto, Proto),
+                 oxm_field(ipv6_src, SAddr),
+                 oxm_field(ipv6_dst, DAddr)],
+    packet_fields(Rest, Fields ++ NewFields);
+packet_fields([#tcp{sport = SPort,
+                    dport = DPort} | Rest], Fields) ->
+    NewFields = [oxm_field(tcp_src, SPort),
+                 oxm_field(tcp_dst, DPort)],
+    packet_fields(Rest, Fields ++ NewFields);
+packet_fields([#udp{sport = SPort,
+                    dport = DPort} | Rest], Fields) ->
+    NewFields = [oxm_field(udp_src, SPort),
+                 oxm_field(udp_dst, DPort)],
+    packet_fields(Rest, Fields ++ NewFields);
+packet_fields([_Other | Rest], Fields) ->
+    packet_fields(Rest, Fields).
+
+-spec oxm_field(atom(), binary() | integer()) -> oxm_field().
+oxm_field(Field, Value) ->
+    #oxm_field{class = openflow_basic,
+               field = Field,
+               has_mask = false,
+               value = Value}.

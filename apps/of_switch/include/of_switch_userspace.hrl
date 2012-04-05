@@ -29,10 +29,10 @@
          }).
 
 -record(ofs_pkt, {
-          fields       :: of_protocol:match(),
+          fields :: of_protocol:match(),
           actions = [] :: ordsets:ordset(ofp_structures:action()),
-          metadata     :: binary(),
-          size = 0     :: integer()
+          metadata = << 0:64/integer >> :: binary(),
+          size = 0 :: integer()
          }).
 
 -type ofs_port_type() :: physical | logical | reserved.

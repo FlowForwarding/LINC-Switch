@@ -61,7 +61,7 @@ init([]) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
-handle_call({send, Pkt}, _From, State) ->
+handle_call({send, _Pkt}, _From, State) ->
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -77,9 +77,10 @@ handle_cast(_Msg, State) ->
 -spec handle_info(Info :: term(), #state{}) -> {noreply, #state{}} |
                                                {noreply, #state{}, timeout()} |
                                                {stop, Reason :: term(), #state{}}.
-handle_info({pkt, _}, State) ->
-    OfsPkt = #ofs_pkt{},
-    of_switch_userspace:route(OfsPkt);
+handle_info({pkt, Packet}, State) ->
+    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet),
+    of_switch_userspace:route(OFSPacket),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 

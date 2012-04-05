@@ -74,8 +74,8 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{socket = Socket}) ->
-    gen_tcp:close(Socket),
     ofs_logic:unregister_receiver(self()),
+    gen_tcp:close(Socket),
     ok.
 
 code_change(_OldVersion, State, _Extra) ->

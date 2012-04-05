@@ -1,6 +1,6 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @doc OpenFlow Channel module.
+%%% @doc OpenFlow Logical Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_logic).
@@ -30,7 +30,7 @@
 %%% API functions
 %%%-----------------------------------------------------------------------------
 
-%% @doc Start the OF Channel gen_server.
+%% @doc Start the OF Switch logic.
 -spec start_link(atom(), term()) -> {ok, pid()} | {error, any()}.
 start_link(BackendMod, BackendOpts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE,
@@ -211,7 +211,7 @@ handle_message(_, _, State) ->
 
 -spec decide_on_version(integer()) -> {ok, integer()} | error.
 decide_on_version(ReceivedVersion) ->
-    %% TODO: Get supported version from switch configuration.
+    %% TODO: Get supported versions from switch configuration.
     SupportedVersions = [3],
     ProposedVersion = lists:max(SupportedVersions),
     if

@@ -1,8 +1,8 @@
-%%%===================================================================
+%%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @doc Records used by userspace implementation of OpenFlow switch
+%%% @doc Header file for userspace implementation of OpenFlow switch.
 %%% @end
-%%%===================================================================
+%%%-----------------------------------------------------------------------------
 
 -record(flow_entry, {
           priority :: integer(),

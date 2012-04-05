@@ -1,6 +1,5 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc OpenFlow Logical Switch main supervisor module.
 %%% @end
 %%%-----------------------------------------------------------------------------
@@ -14,7 +13,6 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--define(SERVER, ?MODULE).
 -define(CHILD(I, Type), {I, {I, start_link, []}, transient, 5000, Type, [I]}).
 
 %%%-----------------------------------------------------------------------------
@@ -23,16 +21,26 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    {ok, _} = supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
 -spec init(list()) -> {ok, {SupFlags :: tuple(), [ChildSpec :: tuple()]}} |
-                      ignore |
-                      {error, term()}.
+                      ignore | {error, term()}.
 init([]) ->
+    SwitchLogic = {ofs_logic,
+                   {ofs_logic, start_link, [of_switch_userspace, []]},
+                   permanent, 5000, worker, [ofs_logic]},
+    ReceiverSup = {ofs_receiver_sup,
+                   {ofs_receiver_sup, start_link, []},
+                   permanent, 5000, supervisor, [ofs_receiver_sup]},
+    UserspacePortSup = {ofs_userspace_port_sup,
+                        {ofs_userspace_port_sup, start_link, []},
+                        permanent, 5000, supervisor, [ofs_userspace_port_sup]},
     {ok, {{one_for_all, 5, 10}, [
-                                 ?CHILD(ofs_userspace_port_sup, supervisor)
+                                 ReceiverSup,
+                                 SwitchLogic,
+                                 UserspacePortSup
                                 ]}}.

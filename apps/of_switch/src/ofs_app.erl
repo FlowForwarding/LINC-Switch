@@ -1,6 +1,5 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc Callback module for OpenFlow Logical Switch application.
 %%% @end
 %%%-----------------------------------------------------------------------------

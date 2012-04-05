@@ -1,10 +1,9 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc OpenFlow Channel module.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofc_logic).
+-module(ofs_logic).
 
 -behaviour(gen_server).
 
@@ -17,7 +16,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("of_channel.hrl").
+-include("of_switch.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 
 -record(state, {
@@ -127,7 +126,7 @@ handle_message(#hello{}, _, State) ->
 handle_message(#error_msg{type = hello_failed},
                #connection{pid = Pid}, State) ->
     %% Disconnect when hello_failed was received.
-    ofc_receiver:stop(Pid),
+    ofs_receiver:stop(Pid),
     State;
 handle_message(#echo_request{} = EchoRequest,
                #connection{socket = Socket},

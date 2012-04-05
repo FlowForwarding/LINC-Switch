@@ -1,10 +1,9 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc OpenFlow Channel receiver module.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofc_receiver).
+-module(ofs_receiver).
 
 -behaviour(gen_server).
 
@@ -44,7 +43,7 @@ init({Controller, Port}) ->
     Opts = [binary, {active, once}],
     case gen_tcp:connect(Controller, Port, Opts) of
         {ok, Socket} ->
-            ofc_logic:register_receiver(self(), Socket),
+            ofs_logic:register_receiver(self(), Socket),
             {ok, Parser} = ofp_parser:new(),
             {ok, #state{socket = Socket, parser = Parser}};
         {error, Reason} ->
@@ -64,7 +63,7 @@ handle_info({tcp, Socket, Data}, #state{socket = Socket,
     inet:setopts(Socket, [{active, once}]),
     {ok, NewParser, Messages} = ofp_parser:parse(Parser, Data),
     lists:foreach(fun(Message) ->
-                          ofc_logic:message(Message, self())
+                          ofs_logic:message(Message, self())
                   end, Messages),
     {noreply, State#state{parser = NewParser}};
 handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
@@ -76,7 +75,7 @@ handle_info(_Info, State) ->
 
 terminate(_Reason, #state{socket = Socket}) ->
     gen_tcp:close(Socket),
-    ofc_logic:unregister_receiver(self()),
+    ofs_logic:unregister_receiver(self()),
     ok.
 
 code_change(_OldVersion, State, _Extra) ->

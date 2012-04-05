@@ -6,7 +6,6 @@
   {applications, [
                   kernel,
                   stdlib,
-                  of_channel,
                   sasl
                  ]},
   {mod, {ofs_app, []}},

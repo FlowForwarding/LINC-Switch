@@ -95,8 +95,21 @@ handle_cast({message, From, Message},
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
 handle_cast({send, Message}, #state{connections = Connections} = State) ->
-    %% TODO: Do not send certain messages to slave controllers.
-    [do_send(Socket, Message) || #connection{socket = Socket} <- Connections],
+    Target = if
+                 (is_record(Message, port_status))
+                 orelse (is_record(Message, error_msg)) ->
+                     Connections;
+                 (is_record(Message, packet_in))
+                 orelse (is_record(Message, flow_removed)) ->
+                     lists:filter(fun(#connection{role = slave}) ->
+                                          false;
+                                     (#connection{role = _}) ->
+                                          true
+                                  end, Connections);
+                 true ->
+                     []
+             end,
+    [do_send(Socket, Message) || #connection{socket = Socket} <- Target],
     {noreply, State}.
 
 handle_info(_Info, State) ->
@@ -116,7 +129,7 @@ code_change(_OldVersion, State, _Extra) ->
 %% @doc Handle different kind of messages.
 -spec handle_message(ofp_message(), connection(),
                      #state{}) -> #state{}.
-handle_message(#hello{header = #header{version = ReceivedVersion}} = Hello,
+handle_message(#hello{header = #header{version = ReceivedVersion} = Header},
                #connection{pid = Pid, socket = Socket,
                            version = undefined} = Connection,
                #state{connections = Connections} = State) ->
@@ -128,7 +141,8 @@ handle_message(#hello{header = #header{version = ReceivedVersion}} = Hello,
                                               NewConnection),
             State#state{connections = NewConnections};
         error ->
-            send_error_reply(Socket, Hello, incompatible),
+            send_error_reply(Socket, Header, #error_msg{type = hello_failed,
+                                                        code = incompatible}),
             State
     end;
 handle_message(_Message, #connection{version = undefined}, State) ->
@@ -142,42 +156,61 @@ handle_message(#error_msg{type = hello_failed},
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
     State;
-handle_message(#flow_mod{} = FlowMod,
+handle_message(#flow_mod{header = Header},
                #connection{socket = Socket, role = slave},
                State) ->
     %% Don't allow slave controllers to modify flows.
-    send_error_reply(Socket, FlowMod, is_slave),
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
+handle_message(#group_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify groups.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
+handle_message(#port_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify ports.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
+handle_message(#table_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify tables.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
     State;
 handle_message(#role_request{} = RoleRequest,
                #connection{socket = Socket} = Connection,
                #state{} = State) ->
-    case handle_role(RoleRequest, Connection, State) of
-        {ok, RoleReply, NewState} ->
-            do_send(Socket, RoleReply);
-        {error, Reason, NewState} ->
-            send_error_reply(Socket, RoleRequest, Reason)
-    end,
+    {Reply, NewState} = handle_role(RoleRequest, Connection, State),
+    do_send(Socket, Reply),
     NewState;
-handle_message(#echo_request{} = EchoRequest,
+handle_message(#echo_request{header = Header} = EchoRequest,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
                       backend_state = BackendState} = State) ->
     case BackendMod:echo_request(BackendState, EchoRequest) of
         {ok, EchoReply, NewBackendState} ->
             do_send(Socket, EchoReply);
-        {error, Reason, NewBackendState} ->
-            send_error_reply(Socket, EchoRequest, Reason)
+        {error, Message, NewBackendState} ->
+            send_error_reply(Socket, Header, Message)
     end,
     State#state{backend_state = NewBackendState};
-handle_message(#flow_mod{buffer_id = _BufferId} = FlowMod,
+handle_message(#flow_mod{header = Header,
+                         buffer_id = _BufferId} = FlowMod,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
                       backend_state = BackendState} = State) ->
     case BackendMod:modify_flow(BackendState, FlowMod) of
         {ok, NewBackendState} ->
             ok;
-        {error, Reason, NewBackendState} ->
-            send_error_reply(Socket, FlowMod, Reason)
+        {error, Message, NewBackendState} ->
+            send_error_reply(Socket, Header, Message)
     end,
     %% XXX: look at _BufferId, emulate packet-out
     State#state{backend_state = NewBackendState};
@@ -207,8 +240,7 @@ decide_on_version(ReceivedVersion) ->
     end.
 
 -spec handle_role(role_request(), connection(), #state{}) ->
-                         {ok, ofp_message(), #state{}} |
-                         {error, atom(), #state{}}.
+                         {ofp_message(), #state{}}.
 handle_role(#role_request{header = Header, role = Role,
                           generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
@@ -221,12 +253,15 @@ handle_role(#role_request{header = Header, role = Role,
             RoleReply = #role_reply{header = Header,
                                     role = Role,
                                     generation_id = GenerationId},
-            {ok, RoleReply, State#state{connections = NewConns}};
+            {RoleReply, State#state{connections = NewConns}};
         _ ->
             if
                 (CurrentGenId /= undefined)
                 andalso (GenerationId - CurrentGenId < 0) ->
-                    {error, stale, State};
+                    ErrorReply = #error_msg{header = Header,
+                                            type = role_request_failed,
+                                            code = stale},
+                    {ErrorReply, State};
                 true ->
                     NewConn = Connection#connection{role = Role},
                     NewConns = lists:keyreplace(Pid, #connection.pid,
@@ -250,7 +285,7 @@ handle_role(#role_request{header = Header, role = Role,
                     RoleReply = #role_reply{header = Header,
                                             role = Role,
                                             generation_id = GenerationId},
-                    {ok, RoleReply, NewState}
+                    {RoleReply, NewState}
             end
     end.
 
@@ -259,16 +294,5 @@ do_send(Socket, Message) ->
     {ok, EncodedMessage} = of_protocol:encode(Message),
     gen_tcp:send(Socket, EncodedMessage).
 
--spec error_msg(header(), atom(), atom()) -> error_msg().
-error_msg(Header, Type, Code) ->
-    #error_msg{header = Header, type = Type, code = Code}.
-
-send_error_reply(Socket, #hello{header = Header}, incompatible) ->
-    do_send(Socket, error_msg(Header, hello_failed, incompatible));
-send_error_reply(Socket, #flow_mod{header = Header}, is_slave) ->
-    do_send(Socket, error_msg(Header, bad_request, is_slave));
-send_error_reply(Socket, #role_request{header = Header}, stale) ->
-    do_send(Socket, error_msg(Header, role_request_failed, stale));
-send_error_reply(_Socket, Request, Reason) ->
-    error_logger:info_msg("Unsupported error reason (~p) "
-                          "when handling ~p~n", [Reason, Request]).
+send_error_reply(Socket, Header, Message) ->
+    do_send(Socket, Message#error_msg{header = Header}).

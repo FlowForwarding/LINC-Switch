@@ -150,6 +150,27 @@ handle_message(#flow_mod{header = Header},
     send_error_reply(Socket, Header, #error_msg{type = bad_request,
                                                 code = is_slave}),
     State;
+handle_message(#group_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify groups.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
+handle_message(#port_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify ports.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
+handle_message(#table_mod{header = Header},
+               #connection{socket = Socket, role = slave},
+               State) ->
+    %% Don't allow slave controllers to modify tables.
+    send_error_reply(Socket, Header, #error_msg{type = bad_request,
+                                                code = is_slave}),
+    State;
 handle_message(#role_request{} = RoleRequest,
                #connection{socket = Socket} = Connection,
                #state{} = State) ->

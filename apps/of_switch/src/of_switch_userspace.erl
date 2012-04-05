@@ -111,9 +111,10 @@ start(_Opts) ->
 -spec stop(state()) -> any().
 stop(_State) ->
     ets:delete(flow_tables),
+    ets:delete(ofs_ports),
     ets:delete(flow_table_counters),
     ets:delete(flow_entry_counters),
-    ets:delete(ofs_ports),
+    ets:delete(ofs_port_counters),
     ok.
 
 %% @doc Modify flow entry in the flow table.

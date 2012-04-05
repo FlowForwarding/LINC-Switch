@@ -132,7 +132,9 @@ modify_flow(State, #flow_mod{command = add,
     Tables = get_flow_tables(TableId),
     case has_priority_overlap(Flags, Priority, Tables) of
         true ->
-            {error, overlap, State};
+            OverlapError = #error_msg{type = flow_mod_failed,
+                                      code = overlap},
+            {error, OverlapError, State};
         false ->
             lists:foreach(AddFlowEntry, Tables),
             {ok, State}
@@ -156,87 +158,87 @@ modify_flow(State, #flow_mod{command = delete_strict,
 
 %% @doc Modify flow table configuration.
 -spec modify_table(state(), table_mod()) ->
-      {ok, #state{}} | {error, atom(), #state{}}.
+      {ok, #state{}} | {error, error_msg(), #state{}}.
 modify_table(State, #table_mod{} = _TableMod) ->
     {ok, State}.
 
 %% @doc Modify port configuration.
 -spec modify_port(state(), port_mod()) ->
-      {ok, #state{}} | {error, atom(), #state{}}.
+      {ok, #state{}} | {error, error_msg(), #state{}}.
 modify_port(State, #port_mod{} = _PortMod) ->
     {ok, State}.
 
 %% @doc Modify group entry in the group table.
 -spec modify_group(state(), group_mod()) ->
-      {ok, #state{}} | {error, atom(), #state{}}.
+      {ok, #state{}} | {error, error_msg(), #state{}}.
 modify_group(State, #group_mod{} = _GroupMod) ->
     {ok, State}.
 
 %% @doc Reply to echo request.
 -spec echo_request(state(), echo_request()) ->
-      {ok, #echo_reply{}, #state{}} | {error, atom(), #state{}}.
+      {ok, #echo_reply{}, #state{}} | {error, error_msg(), #state{}}.
 echo_request(State, #echo_request{header = Header, data = Data}) ->
     EchoReply = #echo_reply{header = Header, data = Data},
     {ok, EchoReply, State}.
 
 %% @doc Reply to barrier request.
 -spec barrier_request(state(), barrier_request()) ->
-      {ok, #echo_reply{}, #state{}} | {error, atom(), #state{}}.
+      {ok, #echo_reply{}, #state{}} | {error, error_msg(), #state{}}.
 barrier_request(State, #barrier_request{header = Header}) ->
     BarrierReply = #barrier_reply{header = Header},
     {ok, BarrierReply, State}.
 
 %% @doc Get switch description statistics.
 -spec get_desc_stats(state(), desc_stats_request()) ->
-      {ok, desc_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, desc_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_desc_stats(State, #desc_stats_request{}) ->
     {ok, #desc_stats_reply{}, State}.
 
 %% @doc Get flow entry statistics.
 -spec get_flow_stats(state(), flow_stats_request()) ->
-      {ok, flow_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, flow_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_flow_stats(State, #flow_stats_request{}) ->
     {ok, #flow_stats_reply{}, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec get_aggregate_stats(state(), aggregate_stats_request()) ->
-      {ok, aggregate_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, aggregate_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_aggregate_stats(State, #aggregate_stats_request{}) ->
     {ok, #aggregate_stats_reply{}, State}.
 
 %% @doc Get flow table statistics.
 -spec get_table_stats(state(), table_stats_request()) ->
-      {ok, table_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, table_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_table_stats(State, #table_stats_request{}) ->
     {ok, #table_stats_reply{}, State}.
 
 %% @doc Get port statistics.
 -spec get_port_stats(state(), port_stats_request()) ->
-      {ok, port_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, port_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_port_stats(State, #port_stats_request{}) ->
     {ok, #port_stats_reply{}, State}.
 
 %% @doc Get queue statistics.
 -spec get_queue_stats(state(), queue_stats_request()) ->
-      {ok, queue_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, queue_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_queue_stats(State, #queue_stats_request{}) ->
     {ok, #queue_stats_reply{}, State}.
 
 %% @doc Get group statistics.
 -spec get_group_stats(state(), group_stats_request()) ->
-      {ok, group_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, group_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_group_stats(State, #group_stats_request{}) ->
     {ok, #group_stats_reply{}, State}.
 
 %% @doc Get group description statistics.
 -spec get_group_desc_stats(state(), group_desc_stats_request()) ->
-      {ok, group_desc_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, group_desc_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_group_desc_stats(State, #group_desc_stats_request{}) ->
     {ok, #group_desc_stats_reply{}, State}.
 
 %% @doc Get group features statistics.
 -spec get_group_features_stats(state(), group_features_stats_request()) ->
-      {ok, group_features_stats_reply(), #state{}} | {error, atom(), #state{}}.
+      {ok, group_features_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
 get_group_features_stats(State, #group_features_stats_request{}) ->
     {ok, #group_features_stats_reply{}, State}.
 

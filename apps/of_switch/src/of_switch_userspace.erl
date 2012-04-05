@@ -140,22 +140,18 @@ modify_flow(State, #flow_mod{command = add,
             lists:foreach(AddFlowEntry, Tables),
             {ok, State}
     end;
-modify_flow(State, #flow_mod{command = modify,
-                             table_id = TableId} = FlowMod) ->
-    modify_entries(TableId, FlowMod, fun non_strict_match/2),
-    {ok, State};
-modify_flow(State, #flow_mod{command = modify_strict,
-                             table_id = TableId} = FlowMod) ->
-    modify_entries(TableId, FlowMod, fun strict_match/2),
-    {ok, State};
-modify_flow(State, #flow_mod{command = delete,
-                             table_id = TableId} = FlowMod) ->
-    delete_entries(TableId, FlowMod, fun non_strict_match/2),
-    {ok, State};
-modify_flow(State, #flow_mod{command = delete_strict,
-                             table_id = TableId} = FlowMod) ->
-    delete_entries(TableId, FlowMod, fun strict_match/2),
-    {ok, State}.
+modify_flow(State, #flow_mod{command = modify} = FlowMod) ->
+    apply_flow_mod(State, FlowMod, fun modify_entries/2,
+                   fun non_strict_match/2);
+modify_flow(State, #flow_mod{command = modify_strict} = FlowMod) ->
+    apply_flow_mod(State, FlowMod, fun modify_entries/2,
+                   fun strict_match/2);
+modify_flow(State, #flow_mod{command = delete} = FlowMod) ->
+    apply_flow_mod(State, FlowMod, fun delete_entries/2,
+                   fun non_strict_match/2);
+modify_flow(State, #flow_mod{command = delete_strict} = FlowMod) ->
+    apply_flow_mod(State, FlowMod, fun delete_entries/2,
+                   fun strict_match/2).
 
 %% @doc Modify flow table configuration.
 -spec modify_table(state(), table_mod()) ->
@@ -254,7 +250,15 @@ get_flow_tables(all) ->
 get_flow_tables(TableId) when is_integer(TableId) ->
     ets:lookup(flow_tables, TableId).
 
-modify_entries(TableId, FlowMod, MatchFun) ->
+apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
+    try
+        ModFun(FlowMod, MatchFun),
+        {ok, State}
+    catch #error_msg{} = Error ->
+        {error, Error, State}
+    end.
+
+modify_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
         fun(#flow_table{entries = Entries} = Table) ->
             NewEntries = [modify_flow_entry(Entry, FlowMod, MatchFun)
@@ -273,7 +277,7 @@ modify_flow_entry(#flow_entry{} = Entry,
             Entry
     end.
 
-delete_entries(TableId, FlowMod, MatchFun) ->
+delete_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
         fun(#flow_table{entries = Entries} = Table) ->
             NewEntries = lists:filter(fun(Entry) ->
@@ -289,13 +293,43 @@ strict_match(#flow_entry{priority = Priority, match = Match},
 strict_match(_FlowEntry, _FlowMod) ->
     false.
 
-non_strict_match(#flow_entry{}, #flow_mod{}) ->
-    %% match more specific ones
-    %% ignore the priority
-    %% missing entries in flow_mod -> wildcards
-    %
-    %% FIXME: non implemented
+%% non-strict match: match more specific fields, ignore the priority
+non_strict_match(#flow_entry{match = #match{type = oxm,
+                                            oxm_fields = EntryFields}},
+                 #flow_mod{match = #match{type = oxm,
+                                          oxm_fields = FlowModFields}}) ->
+    lists:all(fun(#oxm_field{field = Field} = FlowModField) ->
+        case lists:keyfind(Field, #oxm_field.field, EntryFields) of
+            #oxm_field{} = EntryField ->
+                is_more_specific(EntryField, FlowModField);
+            false ->
+                false
+        end
+    end, FlowModFields);
+non_strict_match(_FlowEntry, _FlowMod) ->
+    throw(#error_msg{type = flow_mod_failed, code = bad_type}).
+
+is_more_specific(#oxm_field{class = Cls1}, #oxm_field{class = Cls2}) when
+        Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
+    throw(#error_msg{type = flow_mod_failed, code = bad_field});
+is_more_specific(#oxm_field{has_mask = true},
+                 #oxm_field{has_mask = false}) ->
+    false; %% masked is less specific than non-masked
+is_more_specific(#oxm_field{has_mask = false, value = Value},
+                 #oxm_field{has_mask = _____, value = Value}) ->
+    true; %% value match with no mask is more specific
+is_more_specific(#oxm_field{has_mask = true, mask = M1, value = V1},
+                 #oxm_field{has_mask = true, mask = M2, value = V2}) ->
+    %% M1 is more specific than M2 (has all of it's bits)
+    %% and V1*M2 == V2*M2
+    [ML1, ML2, VL1, VL2] = [binary_to_list(Bin) || Bin <- [M1, M2, V1, V2]],
+    lists:all(fun({BM1, BM2}) -> BM1 bor BM2 == BM1 end, lists:zip(ML1, ML2))
+    andalso
+    lists:all(fun({BV1, BV2, BM2}) -> BV1 band BM2 == BV2 band BM2 end,
+              lists:zip3(VL1, VL2, ML2));
+is_more_specific(_MoreSpecific, _LessSpecific) ->
     false.
+
 
 create_flow_entry(#flow_mod{priority = Priority,
                             match = Match,

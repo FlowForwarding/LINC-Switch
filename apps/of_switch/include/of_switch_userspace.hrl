@@ -7,7 +7,7 @@
 -record(flow_entry, {
           priority :: integer(),
           match :: of_protocol:match(),
-          instructions :: ordsets:ordered_set(of_protocol:instruction())
+          instructions = [] :: ordsets:ordered_set(of_protocol:instruction())
          }).
 
 -record(flow_entry_counter, {
@@ -20,8 +20,11 @@
 -record(flow_table, {
           id :: integer(),
           entries = [] :: [#flow_entry{}],
-          config = drop :: drop | controller | continue,
-          %% --- Counters ---
+          config = drop :: drop | controller | continue
+         }).
+
+-record(flow_table_counter, {
+          id :: integer(),
           %% Reference count is dynamically generated for the sake of simplicity
           %% reference_count = 0 :: integer(),
           packet_lookups = 0 :: integer(),

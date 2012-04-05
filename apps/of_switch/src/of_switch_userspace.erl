@@ -78,9 +78,13 @@ pkt_to_ofs(Packet) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    flow_tables = ets:new(flow_tables, [named_table, public,
+    flow_tables = ets:new(flow_tables, [named_table,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
+    flow_table_counters = ets:new(flow_table_counters,
+                                  [named_table, public,
+                                   {keypos, #flow_table_counter.id},
+                                   {read_concurrency, true}]),
     flow_entry_counters = ets:new(flow_entry_counters,
                                   [named_table, public,
                                    {keypos, #flow_entry_counter.key},
@@ -92,12 +96,15 @@ start(_Opts) ->
                                          entries = [],
                                          config = drop}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
+    ets:insert(flow_table_counters, [#flow_table_counter{id = Id}
+                                     || Id <- lists:seq(0, ?OFPTT_MAX)]),
     {ok, #state{}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
 stop(_State) ->
     ets:delete(flow_tables),
+    ets:delete(flow_table_counters),
     ets:delete(flow_entry_counters),
     ets:delete(ofs_ports),
     ok.
@@ -340,12 +347,14 @@ apply_flow(Pkt, FlowId) ->
 
 -spec update_flow_table_match_counters(integer()) -> ok.
 update_flow_table_match_counters(FlowTableId) ->
-    ets:update_counter(flow_tables, FlowTableId, [{#flow_table.packet_lookups, 1},
-                                                  {#flow_table.packet_matches, 1}]).
+    ets:update_counter(flow_table_counters, FlowTableId,
+                       [{#flow_table_counter.packet_lookups, 1},
+                        {#flow_table_counter.packet_matches, 1}]).
 
 -spec update_flow_table_miss_counters(integer()) -> ok.
 update_flow_table_miss_counters(FlowTableId) ->
-    ets:update_counter(flow_tables, FlowTableId, [{#flow_table.packet_lookups, 1}]).
+    ets:update_counter(flow_table_counters, FlowTableId,
+                       [{#flow_table_counter.packet_lookups, 1}]).
 
 -spec update_flow_entry_counters(integer(), #flow_entry{}, integer()) -> ok.
 update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->

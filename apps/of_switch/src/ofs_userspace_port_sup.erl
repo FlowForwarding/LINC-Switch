@@ -33,8 +33,7 @@ start_link() ->
                       {error, term()}.
 init([]) ->
     {ok, { {simple_one_for_one, 5, 10}, [
-                                         ?CHILD(ofs_userspace_physical_port,
-                                                worker)
+                                         ?CHILD(ofs_userspace_port, worker)
                                         ]} }.
 
 %%%===================================================================

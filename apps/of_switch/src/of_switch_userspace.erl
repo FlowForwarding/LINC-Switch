@@ -11,7 +11,7 @@
 %% Switch API
 -export([
          route/1,
-         add_port/2,
+         add_port/3,
          remove_port/1,
          pkt_to_ofs/1
         ]).
@@ -43,18 +43,19 @@
 route(Pkt) ->
     proc_lib:spawn_link(?MODULE, do_route, [Pkt, 0]).
 
--spec add_port(ofs_port_type(), integer()) -> ok.
-add_port(physical, PortNumber) ->
-    {ok, Pid} = supervisor:start_child(ofs_userspace_port_sup, []),
+-spec add_port(ofs_port_type(), integer(), string()) -> ok.
+add_port(physical, PortNumber, Interface) ->
+    {ok, Pid} = supervisor:start_child(ofs_userspace_port_sup,
+                                       [[{interface, Interface}]]),
     OfsPort = #ofs_port{number = PortNumber,
                         type = physical,
                         handle = Pid
                        },
     ets:insert(ofs_ports, OfsPort),
     ets:insert(ofs_port_counters, #ofs_port_counter{number = PortNumber});
-add_port(logical, _PortNumber) ->
+add_port(logical, _PortNumber, Interface) ->
     ok;
-add_port(reserved, _PortNumber) ->
+add_port(reserved, _PortNumber, Interface) ->
     ok.
 
 -spec remove_port(integer()) -> ok.
@@ -86,7 +87,7 @@ start(_Opts) ->
                                          entries = [],
                                          config = drop}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    ofs_ports = ets:new(ofs_ports, [named_table,
+    ofs_ports = ets:new(ofs_ports, [named_table, public,
                                     {keypos, #ofs_port.number},
                                     {read_concurrency, true}]),
 

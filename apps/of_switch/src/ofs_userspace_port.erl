@@ -6,12 +6,12 @@
 %%% @end
 %%% Created :  4 Apr 2012 by Konrad Kaplita <konrad.kaplita@erlang-solutions.com>
 %%%-------------------------------------------------------------------
--module(ofs_userspace_physical_port).
+-module(ofs_userspace_port).
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,
+-export([start_link/1,
          send/2,
          stop/1]).
 
@@ -25,15 +25,17 @@
 
 -include_lib("of_switch/include/of_switch_userspace.hrl").
 
--record(state, {}).
+-record(state, {socket :: integer(),
+                length :: integer()
+               }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
+-spec start_link(list(tuple())) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
 
 -spec send(pid(), binary()) -> ok.
 send(Pid, Pkt) ->
@@ -47,12 +49,20 @@ stop(Pid) ->
 %%% gen_server callbacks
 %%%===================================================================
 
--spec init(list()) -> {ok, #state{}} |
-                      {ok, #state{}, timeout()} |
-                      ignore |
-                      {stop, Reason :: term()}.
-init([]) ->
-    {ok, #state{}}.
+-spec init(list(tuple())) -> {ok, #state{}} |
+                             {ok, #state{}, timeout()} |
+                             ignore |
+                             {stop, Reason :: term()}.
+init(Args) ->
+    filelib:ensure_dir(filename:join([code:priv_dir(epcap),
+                                      "tmp",
+                                      "ensure"])),
+    {interface, Interface} = lists:keyfind(interface, 1, Args),
+    epcap:start([{promiscous, true}, {interface, Interface}]),
+    {ok, Socket, Length} = bpf:open(Interface),
+    bpf:ctl(Socket, setif, Interface),
+    {ok, #state{socket = Socket,
+                length = Length}}.
 
 -spec handle_call(Request :: term(), From :: {pid(), Tag :: term()}, #state{}) ->
                          {reply, Reply :: term(), #state{}} |
@@ -77,7 +87,8 @@ handle_cast(_Msg, State) ->
 -spec handle_info(Info :: term(), #state{}) -> {noreply, #state{}} |
                                                {noreply, #state{}, timeout()} |
                                                {stop, Reason :: term(), #state{}}.
-handle_info({pkt, Packet}, State) ->
+handle_info({packet, DataLinkType, Time, Length, Frame}, State) ->
+    Packet = pkt:decapsulate(Frame),
     OFSPacket = of_switch_userspace:pkt_to_ofs(Packet),
     of_switch_userspace:route(OFSPacket),
     {noreply, State};

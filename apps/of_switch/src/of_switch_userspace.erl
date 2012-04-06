@@ -159,7 +159,10 @@ modify_flow(State, #flow_mod{command = delete_strict} = FlowMod) ->
 %% @doc Modify flow table configuration.
 -spec modify_table(state(), table_mod()) ->
       {ok, #state{}} | {error, error_msg(), #state{}}.
-modify_table(State, #table_mod{} = _TableMod) ->
+modify_table(State, #table_mod{table_id = TableId, config = Config}) ->
+    lists:foreach(fun(FlowTable) ->
+        ets:insert(flow_tables, FlowTable#flow_table{config = Config})
+    end, get_flow_tables(TableId)),
     {ok, State}.
 
 %% @doc Modify port configuration.

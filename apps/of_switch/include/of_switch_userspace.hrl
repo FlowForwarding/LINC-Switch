@@ -20,7 +20,7 @@
 -record(flow_table, {
           id :: integer(),
           entries = [] :: [#flow_entry{}],
-          config = drop :: drop | controller | continue
+          config = drop :: of_protocol:table_config()
          }).
 
 -record(flow_table_counter, {

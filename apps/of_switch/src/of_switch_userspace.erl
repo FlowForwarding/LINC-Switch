@@ -325,13 +325,26 @@ is_more_specific(#oxm_field{has_mask = true, mask = M1, value = V1},
                  #oxm_field{has_mask = true, mask = M2, value = V2}) ->
     %% M1 is more specific than M2 (has all of it's bits)
     %% and V1*M2 == V2*M2
-    [ML1, ML2, VL1, VL2] = [binary_to_list(Bin) || Bin <- [M1, M2, V1, V2]],
-    lists:all(fun({BM1, BM2}) -> BM1 bor BM2 == BM1 end, lists:zip(ML1, ML2))
+    is_mask_more_specific(M1, M2)
     andalso
-    lists:all(fun({BV1, BV2, BM2}) -> BV1 band BM2 == BV2 band BM2 end,
-              lists:zip3(VL1, VL2, ML2));
+    mask_match(V1, V2, M2);
 is_more_specific(_MoreSpecific, _LessSpecific) ->
     false.
+
+-spec is_mask_more_specific(binary(), binary()) -> boolean().
+is_mask_more_specific(<<B1,Rest1/binary>>, <<B2,Rest2/binary>>) ->
+    B1 bor B2 == B1
+    andalso
+    is_mask_more_specific(Rest1, Rest2);
+is_mask_more_specific(<<>>, <<>>) ->
+    true.
+
+mask_match(<<V1,Rest1/binary>>, <<V2,Rest2/binary>>, <<M,Rest3/binary>>) ->
+    V1 band M == V2 band M
+    andalso
+    mask_match(Rest1, Rest2, Rest3);
+mask_match(<<>>, <<>>, <<>>) ->
+    true.
 
 create_flow_entry(#flow_mod{priority = Priority,
                             match = Match,
@@ -440,9 +453,9 @@ match_flow_entries(_Pkt, _FlowTableId, []) ->
 
 -spec match_flow_entry(#ofs_pkt{}, #flow_entry{}) -> match | nomatch.
 match_flow_entry(Pkt, FlowEntry) ->
-    case match_fields(Pkt#ofs_pkt.fields#match.oxm_fields,
+    case fields_match(Pkt#ofs_pkt.fields#match.oxm_fields,
                       FlowEntry#flow_entry.match#match.oxm_fields) of
-        match ->
+        true ->
             case apply_instructions(FlowEntry#flow_entry.instructions,
                                     Pkt,
                                     output) of
@@ -451,24 +464,30 @@ match_flow_entry(Pkt, FlowEntry) ->
                 {NewPkt, output} ->
                     {match, output, NewPkt}
             end;
-        nomatch ->
+        false ->
             nomatch
     end.
 
--spec match_fields(list(#oxm_field{}), list(#oxm_field{})) -> match | nomatch.
-match_fields(PktFields, [FlowField | FlowRest]) ->
-    case has_field(FlowField, PktFields) of
-        true ->
-            match_fields(PktFields, FlowRest);
-        false ->
-            nomatch
-    end;
-match_fields(_PktFields, []) ->
-    match.
+-spec fields_match(list(#oxm_field{}), list(#oxm_field{})) -> boolean().
+fields_match(PktFields, FlowFields) ->
+    lists:all(fun(#oxm_field{field = F1} = PktField) ->
+                  %% TODO: check for class other than openflow_basic
+                  lists:all(fun(#oxm_field{field = F2} = FlowField) ->
+                                F1 =/= F2 %% field is not relevant here
+                                orelse
+                                two_fields_match(PktField, FlowField)
+                            end, FlowFields)
+              end, PktFields).
 
--spec has_field(#oxm_field{}, list(#oxm_field{})) -> boolean().
-has_field(Field, List) ->
-    lists:member(Field, List).
+
+two_fields_match(#oxm_field{value=Val},
+                 #oxm_field{value=Val, has_mask = false}) ->
+    true;
+two_fields_match(#oxm_field{value=Val1},
+                 #oxm_field{value=Val2, has_mask = true, mask = Mask}) ->
+    mask_match(Val1, Val2, Mask);
+two_fields_match(_, _) ->
+    false.
 
 -spec apply_instructions(list(of_protocol:instruction()),
                          #ofs_pkt{},

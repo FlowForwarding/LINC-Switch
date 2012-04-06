@@ -183,11 +183,11 @@ handle_message(#table_mod{header = Header},
     send_error_reply(Socket, Header, #error_msg{type = bad_request,
                                                 code = is_slave}),
     State;
-handle_message(#table_mod{header = Header} = FlowMod,
+handle_message(#table_mod{header = Header} = TableMod,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
                       backend_state = BackendState} = State) ->
-    case BackendMod:modify_table(BackendState, FlowMod) of
+    case BackendMod:modify_table(BackendState, TableMod) of
         {ok, NewBackendState} ->
             ok;
         {error, Message, NewBackendState} ->

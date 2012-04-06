@@ -310,11 +310,11 @@ non_strict_match(#flow_entry{match = #match{type = oxm,
         end
     end, FlowModFields);
 non_strict_match(_FlowEntry, _FlowMod) ->
-    throw(#error_msg{type = flow_mod_failed, code = bad_type}).
+    throw(#error_msg{type = bad_match, code = bad_type}).
 
 is_more_specific(#oxm_field{class = Cls1}, #oxm_field{class = Cls2}) when
         Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
-    throw(#error_msg{type = flow_mod_failed, code = bad_field});
+    throw(#error_msg{type = bad_match, code = bad_field});
 is_more_specific(#oxm_field{has_mask = true},
                  #oxm_field{has_mask = false}) ->
     false; %% masked is less specific than non-masked

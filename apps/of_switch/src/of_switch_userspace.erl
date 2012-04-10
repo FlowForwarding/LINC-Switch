@@ -75,7 +75,8 @@ pkt_to_ofs(Packet, PortNum) ->
     #ofs_pkt{packet = Packet,
              fields = #match{type = oxm,
                              oxm_fields = [oxm_field(in_port, PortNum) |
-                                           packet_fields(Packet)]}}.
+                                           packet_fields(Packet)]},
+             in_port = PortNum}.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -529,13 +530,7 @@ apply_mask(Metadata, _Mask) ->
 
 -spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
 apply_action_list([#action_output{port = PortNum} | Rest], Pkt) ->
-    case ofs_userspace_port:send(PortNum, Pkt) of
-        ok ->
-            ok;
-        noport ->
-            ?ERROR("[~p] Port ~p missing when applying "
-                   "output action for packet ~p", [?MODULE, PortNum, Pkt])
-    end,
+    route_to_output(PortNum, Pkt),
     apply_action_list(Rest, Pkt);
 apply_action_list([#action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,
@@ -593,6 +588,28 @@ apply_action_set([], Pkt) ->
 -spec route_to_controller(#ofs_pkt{}) -> ok.
 route_to_controller(_Pkt) ->
     ok.
+
+-spec route_to_output(#ofs_pkt{}, integer() | atom()) -> any().
+route_to_output(Pkt = #ofs_pkt{in_port = InPort}, all) ->
+    Ports = ets:tab2list(ofs_ports),
+    [ofs_userspace_port:send(PortNum, Pkt)
+     || #ofs_port{number = PortNum} <- Ports, PortNum /= InPort];
+route_to_output(Pkt, controller) ->
+    route_to_controller(Pkt);
+route_to_output(Pkt, table) ->
+    %% FIXME: Only valid in an output action in the
+    %%        action list of a packet-out message.
+    ok;
+route_to_output(Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
+    ofs_userspace_port:send(InPort, Pkt);
+route_to_output(Pkt, PortNum) when is_integer(PortNum) ->
+    case ofs_userspace_port:send(PortNum, Pkt) of
+        ok ->
+            ok;
+        noport ->
+            ?ERROR("[~p] Port ~p missing when applying "
+                   "output action for packet ~p", [?MODULE, PortNum, Pkt])
+    end.
 
 %%% Packet conversion functions ------------------------------------------------
 

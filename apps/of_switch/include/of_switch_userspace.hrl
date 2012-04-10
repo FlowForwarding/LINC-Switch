@@ -36,7 +36,8 @@
           actions = [] :: ordsets:ordset(ofp_structures:action()),
           metadata = << 0:64/integer >> :: binary(),
           size = 0 :: integer(),
-          packet :: [record() | binary()]
+          in_port :: integer(),
+          packet :: pkt:packet()
          }).
 
 -type ofs_port_type() :: physical | logical | reserved.

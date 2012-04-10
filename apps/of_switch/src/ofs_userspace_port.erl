@@ -39,7 +39,7 @@ send(PortId, OFSPkt) ->
         [] ->
             noport;
         [#ofs_port{handle = Pid}] ->
-            gen_server:call(Pid, {send, OFSPkt})
+            gen_server:call(Pid, {send, PortId, OFSPkt})
     end.
 
 -spec stop(pid()) -> ok.
@@ -73,9 +73,10 @@ init(Args) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
-handle_call({send, OFSPkt}, _From, #state{socket = Socket} = State) ->
+handle_call({send, PortId, OFSPkt}, _From, #state{socket = Socket} = State) ->
     Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
     procket:write(Socket, Frame),
+    update_port_transmitted_counters(PortId, byte_size(Frame)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -97,6 +98,7 @@ handle_info({packet, _DataLinkType, _Time, _Length, Frame},
             #state{port_num = PortNum} = State) ->
     Packet = pkt:decapsulate(Frame),
     OFSPacket = of_switch_userspace:pkt_to_ofs(Packet, PortNum),
+    update_port_received_counters(PortNum, byte_size(Frame)),
     of_switch_userspace:route(OFSPacket),
     {noreply, State};
 handle_info(_Info, State) ->
@@ -113,6 +115,18 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
+%%%-----------------------------------------------------------------------------
 %%% Internal functions
-%%%===================================================================
+%%%-----------------------------------------------------------------------------
+
+-spec update_port_received_counters(integer(), integer()) -> any().
+update_port_received_counters(PortNum, Bytes) ->
+    ets:update_counter(ofs_port_counters, PortNum,
+                       [{#ofs_port_counter.received_packets, 1},
+                        {#ofs_port_counter.received_bytes, Bytes}]).
+
+-spec update_port_transmitted_counters(integer(), integer()) -> any().
+update_port_transmitted_counters(PortNum, Bytes) ->
+    ets:update_counter(ofs_port_counters, PortNum,
+                       [{#ofs_port_counter.transmitted_packets, 1},
+                        {#ofs_port_counter.transmitted_bytes, Bytes}]).

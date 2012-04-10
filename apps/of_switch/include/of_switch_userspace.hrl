@@ -45,7 +45,8 @@
 -record(ofs_port, {
           number :: integer(),
           type :: ofs_port_type(),
-          handle :: term()
+          handle :: term(),
+          config :: [atom()]
          }).
 
 -record(ofs_port_counter, {

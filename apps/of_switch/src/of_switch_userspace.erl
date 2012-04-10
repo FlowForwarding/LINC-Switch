@@ -603,20 +603,14 @@ route_to_output(Pkt = #ofs_pkt{in_port = InPort}, all) ->
      || #ofs_port{number = PortNum} <- Ports, PortNum /= InPort];
 route_to_output(Pkt, controller) ->
     route_to_controller(Pkt);
-route_to_output(Pkt, table) ->
+route_to_output(_Pkt, table) ->
     %% FIXME: Only valid in an output action in the
     %%        action list of a packet-out message.
     ok;
 route_to_output(Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
     ofs_userspace_port:send(InPort, Pkt);
 route_to_output(Pkt, PortNum) when is_integer(PortNum) ->
-    case ofs_userspace_port:send(PortNum, Pkt) of
-        ok ->
-            ok;
-        noport ->
-            ?ERROR("[~p] Port ~p missing when applying "
-                   "output action for packet ~p", [?MODULE, PortNum, Pkt])
-    end.
+    ofs_userspace_port:send(PortNum, Pkt).
 
 %%% Packet conversion functions ------------------------------------------------
 

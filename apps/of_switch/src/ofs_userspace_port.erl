@@ -22,7 +22,8 @@
          code_change/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_switch/include/of_switch_userspace.hrl").
+-include("of_switch.hrl").
+-include("of_switch_userspace.hrl").
 
 -record(state, {socket :: integer(),
                 port_num :: integer()}).
@@ -35,13 +36,18 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
--spec send(integer(), #ofs_pkt{}) -> noport | ok.
+-spec send(integer(), #ofs_pkt{}) -> ok.
 send(PortId, OFSPkt) ->
     case ets:lookup(ofs_ports, PortId) of
         [] ->
-            noport;
-        [#ofs_port{handle = Pid}] ->
-            gen_server:call(Pid, {send, PortId, OFSPkt})
+            ?ERROR("Port ~p does not exist", [PortId]);
+        [#ofs_port{handle = Pid, config = Config}] ->
+            case lists:member(no_fwd, Config) of
+                true ->
+                    ?WARNING("Forwarding to port ~p disabled", [PortId]);
+                false ->
+                    gen_server:call(Pid, {send, PortId, OFSPkt})
+            end
     end.
 
 -spec change_config(integer(), #port_mod{}) ->

@@ -397,23 +397,22 @@ do_route(Pkt, FlowId) ->
 -spec apply_flow(#ofs_pkt{}, #flow_entry{}) -> tuple().
 apply_flow(Pkt, FlowId) ->
     [FlowTable] = ets:lookup(flow_tables, FlowId),
-    case match_flow_entries(Pkt,
-                            FlowTable#flow_table.id,
-                            FlowTable#flow_table.entries) of
+    FlowTableId = FlowTable#flow_table.id,
+    case match_flow_entries(Pkt, FlowTableId, FlowTable#flow_table.entries) of
         {match, goto, NextFlowId, NewPkt} ->
-            update_flow_table_match_counters(FlowTable#flow_table.id),
+            update_flow_table_match_counters(FlowTableId),
             {match, goto, NextFlowId, NewPkt};
         {match, output, NewPkt} ->
-            update_flow_table_match_counters(FlowTable#flow_table.id),
+            update_flow_table_match_counters(FlowTableId),
             {match, output, NewPkt};
         table_miss when FlowTable#flow_table.config == drop ->
-            update_flow_table_miss_counters(FlowTable#flow_table.id),
+            update_flow_table_miss_counters(FlowTableId),
             {table_miss, drop};
         table_miss when FlowTable#flow_table.config == controller ->
-            update_flow_table_miss_counters(FlowTable#flow_table.id),
+            update_flow_table_miss_counters(FlowTableId),
             {table_miss, controller};
         table_miss when FlowTable#flow_table.config == continue ->
-            update_flow_table_miss_counters(FlowTable#flow_table.id),
+            update_flow_table_miss_counters(FlowTableId),
             {table_miss, continue, FlowId + 1}
     end.
 

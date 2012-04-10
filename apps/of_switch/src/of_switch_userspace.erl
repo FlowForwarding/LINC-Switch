@@ -170,8 +170,15 @@ modify_table(State, #table_mod{table_id = TableId, config = Config}) ->
 %% @doc Modify port configuration.
 -spec modify_port(state(), port_mod()) ->
       {ok, #state{}} | {error, error_msg(), #state{}}.
-modify_port(State, #port_mod{} = _PortMod) ->
-    {ok, State}.
+modify_port(State, #port_mod{port_no = PortNo} = PortMod) ->
+    case ofs_userspace_port:change_config(PortNo, PortMod) of
+        {error, Code} ->
+            Error = #error_msg{type = port_mod_failed,
+                               code = Code},
+            {error, Error, State};
+        ok ->
+            {ok, State}
+    end.
 
 %% @doc Modify group entry in the group table.
 -spec modify_group(state(), group_mod()) ->

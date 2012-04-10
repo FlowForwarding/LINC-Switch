@@ -176,6 +176,17 @@ handle_message(#port_mod{header = Header},
     send_error_reply(Socket, Header, #error_msg{type = bad_request,
                                                 code = is_slave}),
     State;
+handle_message(#port_mod{header = Header} = PortMod,
+               #connection{socket = Socket},
+               #state{backend_mod = BackendMod,
+                      backend_state = BackendState} = State) ->
+    case BackendMod:modify_port(BackendState, PortMod) of
+        {ok, NewBackendState} ->
+            ok;
+        {error, Message, NewBackendState} ->
+            send_error_reply(Socket, Header, Message)
+    end,
+    State#state{backend_state = NewBackendState};
 handle_message(#table_mod{header = Header},
                #connection{socket = Socket, role = slave},
                State) ->

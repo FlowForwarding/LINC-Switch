@@ -10,6 +10,7 @@
 %% API
 -export([start_link/1,
          send/2,
+         change_config/2,
          stop/1]).
 
 %% gen_server callbacks
@@ -20,6 +21,7 @@
          terminate/2,
          code_change/3]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_switch/include/of_switch_userspace.hrl").
 
 -record(state, {socket :: integer(),
@@ -40,6 +42,18 @@ send(PortId, OFSPkt) ->
             noport;
         [#ofs_port{handle = Pid}] ->
             gen_server:call(Pid, {send, PortId, OFSPkt})
+    end.
+
+-spec change_config(integer(), #port_mod{}) ->
+        {error, bad_port | bad_hw_addr} | ok.
+change_config(PortId, PortMod) ->
+    case ets:lookup(ofs_ports, PortId) of
+        [] ->
+            {error, bad_port};
+        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
+        %%           {error, bad_hw_addr};
+        [#ofs_port{handle = Pid}] ->
+            gen_server:cast(Pid, {change_config, PortMod})
     end.
 
 -spec stop(pid()) -> ok.
@@ -85,6 +99,9 @@ handle_call(_Request, _From, State) ->
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
+handle_cast({change_config, #port_mod{}}, State) ->
+    %% FIXME: implement
+    {noreply, State};
 handle_cast(stop, State) ->
     {stop, shutdown, State};
 handle_cast(_Msg, State) ->

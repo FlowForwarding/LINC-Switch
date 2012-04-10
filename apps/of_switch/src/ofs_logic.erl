@@ -128,7 +128,7 @@ code_change(_OldVersion, State, _Extra) ->
 %% @doc Handle different kind of messages.
 -spec handle_message(ofp_message(), connection(),
                      #state{}) -> #state{}.
-handle_message(#hello{header = #header{version = ReceivedVersion} = Header},
+handle_message(#hello{header = #ofp_header{version = ReceivedVersion} = Header},
                #connection{pid = Pid, socket = Socket,
                            version = undefined} = Connection,
                #state{connections = Connections} = State) ->

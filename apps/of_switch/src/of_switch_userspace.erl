@@ -11,7 +11,7 @@
 %% Switch API
 -export([
          route/1,
-         add_port/3,
+         add_port/2,
          remove_port/1,
          pkt_to_ofs/2
         ]).
@@ -44,20 +44,14 @@
 route(Pkt) ->
     proc_lib:spawn_link(?MODULE, do_route, [Pkt, 0]).
 
--spec add_port(ofs_port_type(), integer(), string()) -> ok.
-add_port(physical, PortNumber, Interface) ->
-    {ok, Pid} = supervisor:start_child(ofs_userspace_port_sup,
-                                       [[{interface, Interface},
-                                         {portnum, PortNumber}]]),
-    OfsPort = #ofs_port{number = PortNumber,
-                        type = physical,
-                        handle = Pid
-                       },
-    ets:insert(ofs_ports, OfsPort),
-    ets:insert(ofs_port_counters, #ofs_port_counter{number = PortNumber});
-add_port(logical, _PortNumber, _Interface) ->
+-spec add_port(ofs_port_type(), list(tuple(interface |
+                                           ofs_port_num |
+                                           ip, string()))) -> ok.
+add_port(physical, Opts) ->
+    {ok, _Pid} = supervisor:start_child(ofs_userspace_port_sup, [Opts]);
+add_port(logical, _Opts) ->
     ok;
-add_port(reserved, _PortNumber, _Interface) ->
+add_port(reserved, _Opts) ->
     ok.
 
 -spec remove_port(integer()) -> ok.
@@ -111,6 +105,8 @@ start(_Opts) ->
                                 [named_table, public,
                                  {keypos, #ofs_port_counter.number},
                                  {read_concurrency, true}]),
+    {ok, Ports} = application:get_env(of_switch, ports),
+    [add_port(physical, PortOpts) || PortOpts <- Ports],
     {ok, #state{}}.
 
 %% @doc Stop the switch.
@@ -133,7 +129,7 @@ modify_flow(State, #flow_mod{command = add,
                 NewEntry = create_flow_entry(FlowMod, TableId),
                 NewEntries = ordsets:add_element(NewEntry, Entries),
                 NewTable = Table#flow_table{entries = NewEntries},
-                ets:insert(flow_tables, NewTable)
+                    ets:insert(flow_tables, NewTable)
             end,
     Tables = get_flow_tables(TableId),
     case has_priority_overlap(Flags, Priority, Tables) of
@@ -397,6 +393,7 @@ do_route(Pkt, FlowId) ->
             route_to_controller(Pkt),
             controller;
         {table_miss, drop} ->
+            ofs_userspace_port:send(2, Pkt),
             drop;
         {table_miss, continue, NextFlowId} ->
             do_route(Pkt, NextFlowId)

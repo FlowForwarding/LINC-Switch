@@ -25,8 +25,10 @@
 -include("of_switch.hrl").
 -include("of_switch_userspace.hrl").
 
--record(state, {socket :: integer(),
-                port_num :: integer()}).
+-record(state, {port :: port(),
+                socket :: integer(),
+                ofs_port_num :: integer(),
+                interface :: string()}).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -37,16 +39,16 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 -spec send(integer(), #ofs_pkt{}) -> ok.
-send(PortId, OFSPkt) ->
-    case ets:lookup(ofs_ports, PortId) of
+send(OutPort, OFSPkt) ->
+    case ets:lookup(ofs_ports, OutPort) of
         [] ->
-            ?ERROR("Port ~p does not exist", [PortId]);
+            ?ERROR("Port ~p does not exist", [OutPort]);
         [#ofs_port{handle = Pid, config = Config}] ->
             case lists:member(no_fwd, Config) of
                 true ->
-                    ?WARNING("Forwarding to port ~p disabled", [PortId]);
+                    ?WARNING("Forwarding to port ~p disabled", [OutPort]);
                 false ->
-                    gen_server:call(Pid, {send, PortId, OFSPkt})
+                    gen_server:call(Pid, {send, OFSPkt})
             end
     end.
 
@@ -78,12 +80,31 @@ init(Args) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, Args),
-    {portnum, PortNum} = lists:keyfind(portnum, 1, Args),
-    epcap:start([{promiscous, true}, {interface, Interface}]),
-    {ok, Socket, _Length} = bpf:open(Interface),
-    bpf:ctl(Socket, setif, Interface),
-    {ok, #state{socket = Socket,
-                port_num = PortNum}}.
+    {ofs_port_num, OfsPortNum} = lists:keyfind(ofs_port_num, 1, Args),
+    lager:info("Creating port: ~p", [Args]),
+    State = case re:run(Interface, "tap*", [{capture, none}]) of
+                match ->
+                    {ip, IP} = lists:keyfind(ip, 1, Args),
+                    {ok, Ref} = tuncer:create(Interface),
+                    ok = tuncer:up(Ref, IP),
+                    Fd = tuncer:getfd(Ref),
+                    Port = open_port({fd, Fd, Fd}, [binary]),
+                    #state{port = Port, ofs_port_num = OfsPortNum};
+                nomatch ->
+                    epcap:start([{promiscous, true}, {interface, Interface}]),
+                    {ok, Socket, _Length} = bpf:open(Interface),
+                    bpf:ctl(Socket, setif, Interface),
+                    #state{socket = Socket, ofs_port_num = OfsPortNum}
+            end,
+    OfsPort = #ofs_port{number = OfsPortNum,
+                        type = physical,
+                        handle = self()
+                       },
+    ets:insert(ofs_ports, OfsPort),
+    ets:insert(ofs_port_counters,
+               #ofs_port_counter{number = OfsPortNum}),
+    {ok, State#state{interface = Interface,
+                     ofs_port_num = OfsPortNum}}.
 
 -spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
                   #state{}) ->
@@ -93,10 +114,21 @@ init(Args) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
-handle_call({send, PortId, OFSPkt}, _From, #state{socket = Socket} = State) ->
+handle_call({send, OFSPkt}, _From, #state{socket = Socket,
+                                          port = undefined,
+                                          ofs_port_num = OutPort} = State) ->
     Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
+    lager:info("OutSocket InPort: ~p, OutPort: ~p", [OFSPkt#ofs_pkt.in_port, OutPort]),
     procket:write(Socket, Frame),
-    update_port_transmitted_counters(PortId, byte_size(Frame)),
+    update_port_transmitted_counters(OutPort, byte_size(Frame)),
+    {reply, ok, State};
+handle_call({send, OFSPkt}, _From, #state{socket = undefined,
+                                          port = ErlangPort,
+                                          ofs_port_num = OutPort} = State) ->
+    Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
+    lager:info("OutPort InPort: ~p, OutPort: ~p", [OFSPkt#ofs_pkt.in_port, OutPort]),
+    port_command(ErlangPort, Frame),
+    update_port_transmitted_counters(OutPort, byte_size(Frame)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -118,11 +150,12 @@ handle_cast(_Msg, State) ->
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
-            #state{port_num = PortNum} = State) ->
-    Packet = pkt:decapsulate(Frame),
-    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet, PortNum),
-    update_port_received_counters(PortNum, byte_size(Frame)),
-    of_switch_userspace:route(OFSPacket),
+            #state{ofs_port_num = OfsPortNum} = State) ->
+    handle_frame(Frame, OfsPortNum),
+    {noreply, State};
+handle_info({Port, {data, Frame}}, #state{ofs_port_num = OfsPortNum,
+                                          port = Port} = State) ->
+    handle_frame(Frame, OfsPortNum),
     {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -141,6 +174,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 %%% Internal functions
 %%%-----------------------------------------------------------------------------
+
+handle_frame(Frame, OfsPortNum) ->
+    Packet = pkt:decapsulate(Frame),
+    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet, OfsPortNum),
+    update_port_received_counters(OfsPortNum, byte_size(Frame)),
+    of_switch_userspace:route(OFSPacket).
 
 -spec update_port_received_counters(integer(), integer()) -> any().
 update_port_received_counters(PortNum, Bytes) ->

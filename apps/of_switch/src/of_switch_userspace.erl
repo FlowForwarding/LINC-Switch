@@ -537,7 +537,7 @@ apply_mask(Metadata, _Mask) ->
 
 -spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
 apply_action_list([#action_output{port = PortNum} | Rest], Pkt) ->
-    route_to_output(PortNum, Pkt),
+    route_to_output(Pkt, PortNum),
     apply_action_list(Rest, Pkt);
 apply_action_list([#action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,

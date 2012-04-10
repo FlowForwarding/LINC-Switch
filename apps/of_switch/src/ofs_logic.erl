@@ -90,8 +90,7 @@ handle_cast({unregister, Pid}, #state{connections = Connections} = State) ->
 handle_cast({message, From, Message},
             #state{connections = Connections} = State) ->
     Connection = lists:keyfind(From, #connection.pid, Connections),
-    error_logger:info_msg("Received message from controller (~p): ~p~n",
-                          [Connection, Message]),
+    ?INFO("Received message from controller (~p): ~p~n", [Connection, Message]),
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
 handle_cast({send, Message}, #state{connections = Connections} = State) ->

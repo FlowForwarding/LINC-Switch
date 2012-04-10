@@ -28,6 +28,7 @@
 
 -include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include("of_switch.hrl").
 -include("of_switch_userspace.hrl").
 
 -record(state, {}).
@@ -533,9 +534,8 @@ apply_action_list([#action_output{port = PortNum} | Rest], Pkt) ->
         ok ->
             ok;
         noport ->
-            lager:error("[~p] Port ~p missing when applying "
-                        "output action for packet ~p",
-                        [?MODULE, PortNum, Pkt])
+            ?ERROR("[~p] Port ~p missing when applying "
+                   "output action for packet ~p", [?MODULE, PortNum, Pkt])
     end,
     apply_action_list(Rest, Pkt);
 apply_action_list([#action_group{} | Rest], Pkt) ->

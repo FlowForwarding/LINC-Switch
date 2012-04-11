@@ -196,7 +196,7 @@ packet_out(State, #packet_out{actions = Actions,
                               in_port = InPort,
                               data = Data}) ->
     Pkt = pkt:decapsulate(Data),
-    apply_action_list(Actions, pkt_to_ofs(Pkt, InPort)),
+    apply_action_list(0, Actions, pkt_to_ofs(Pkt, InPort)),
     {ok, State}.
 
 %% @doc Modify group entry in the group table.
@@ -277,6 +277,12 @@ get_group_features_stats(State, #group_features_stats_request{}) ->
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+-spec xid() -> integer().
+xid() ->
+    %% TODO: think about sequental XIDs
+    %% XID is a 32 bit integer
+    random:uniform(1 bsl 32) - 1.
 
 -spec get_flow_tables(integer() | all) -> [#flow_table{}].
 get_flow_tables(all) ->
@@ -408,13 +414,13 @@ do_route(Pkt, FlowId) ->
         {match, output, NewPkt} ->
             case lists:keymember(action_output, 1, NewPkt#ofs_pkt.actions) of
                 true ->
-                    apply_action_set(NewPkt#ofs_pkt.actions, NewPkt),
+                    apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
                     output;
                 false ->
                     drop
             end;
         {table_miss, controller} ->
-            route_to_controller(Pkt),
+            route_to_controller(FlowId, Pkt, no_match),
             controller;
         {table_miss, drop} ->
             drop;
@@ -465,7 +471,7 @@ update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
                         -> tuple() | nomatch.
 match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
-    case match_flow_entry(Pkt, FlowEntry) of
+    case match_flow_entry(Pkt, FlowTableId, FlowEntry) of
         {match, goto, NextFlowId, NewPkt} ->
             update_flow_entry_counters(FlowTableId,
                                        FlowEntry,
@@ -482,12 +488,13 @@ match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
 match_flow_entries(_Pkt, _FlowTableId, []) ->
     table_miss.
 
--spec match_flow_entry(#ofs_pkt{}, #flow_entry{}) -> match | nomatch.
-match_flow_entry(Pkt, FlowEntry) ->
+-spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
     case fields_match(Pkt#ofs_pkt.fields#match.oxm_fields,
                       FlowEntry#flow_entry.match#match.oxm_fields) of
         true ->
-            case apply_instructions(FlowEntry#flow_entry.instructions,
+            case apply_instructions(FlowTableId,
+                                    FlowEntry#flow_entry.instructions,
                                     Pkt,
                                     output) of
                 {NewPkt, goto, NextFlowId} ->
@@ -520,118 +527,141 @@ two_fields_match(#oxm_field{value=Val1},
 two_fields_match(_, _) ->
     false.
 
--spec apply_instructions(list(of_protocol:instruction()),
+-spec apply_instructions(integer(),
+                         list(of_protocol:instruction()),
                          #ofs_pkt{},
                          output | {goto, integer()}) -> tuple().
-apply_instructions([#instruction_apply_actions{actions = Actions} | Rest],
+apply_instructions(TableId,
+                   [#instruction_apply_actions{actions = Actions} | Rest],
                    Pkt,
                    NextStep) ->
-    NewPkt = apply_action_list(Actions, Pkt),
-    apply_instructions(Rest, NewPkt, NextStep);
-apply_instructions([#instruction_clear_actions{} | Rest], Pkt, NextStep) ->
-    apply_instructions(Rest, Pkt#ofs_pkt{actions = []}, NextStep);
-apply_instructions([#instruction_write_actions{actions = Actions} | Rest],
+    NewPkt = apply_action_list(TableId, Actions, Pkt),
+    apply_instructions(TableId, Rest, NewPkt, NextStep);
+apply_instructions(TableId,
+                   [#instruction_clear_actions{} | Rest],
+                   Pkt,
+                   NextStep) ->
+    apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = []}, NextStep);
+apply_instructions(TableId,
+                   [#instruction_write_actions{actions = Actions} | Rest],
                    #ofs_pkt{actions = OldActions} = Pkt,
                    NextStep) ->
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
-    apply_instructions(Rest, Pkt#ofs_pkt{actions = NewActions}, NextStep);
-apply_instructions([#instruction_write_metadata{metadata = Metadata,
+    apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = NewActions},
+                       NextStep);
+apply_instructions(TableId,
+                   [#instruction_write_metadata{metadata = Metadata,
                                                 metadata_mask = Mask} | Rest],
                    Pkt,
                    NextStep) ->
     MaskedMetadata = apply_mask(Metadata, Mask),
-    apply_instructions(Rest, Pkt#ofs_pkt{metadata = MaskedMetadata}, NextStep);
-apply_instructions([#instruction_goto_table{table_id = Id} | Rest],
+    apply_instructions(TableId, Rest, Pkt#ofs_pkt{metadata = MaskedMetadata},
+                       NextStep);
+apply_instructions(TableId,
+                   [#instruction_goto_table{table_id = Id} | Rest],
                    Pkt,
                    _NextStep) ->
-    apply_instructions(Rest, Pkt, {goto, Id});
-apply_instructions([], Pkt, output) ->
+    apply_instructions(TableId, Rest, Pkt, {goto, Id});
+apply_instructions(_TableId, [], Pkt, output) ->
     {Pkt, output};
-apply_instructions([], Pkt, {goto, Id}) ->
+apply_instructions(_TableId, [], Pkt, {goto, Id}) ->
     {Pkt, goto, Id}.
 
 -spec apply_mask(binary(), binary()) -> binary().
 apply_mask(Metadata, _Mask) ->
     Metadata.
 
--spec apply_action_list(list(ofp_structures:action()), #ofs_pkt{}) -> #ofs_pkt{}.
-apply_action_list([#action_output{port = PortNum} | Rest], Pkt) ->
-    route_to_output(Pkt, PortNum),
-    apply_action_list(Rest, Pkt);
-apply_action_list([#action_group{} | Rest], Pkt) ->
+-spec apply_action_list(integer(),
+                        list(ofp_structures:action()),
+                        #ofs_pkt{}) -> #ofs_pkt{}.
+apply_action_list(TableId, [#action_output{port = PortNum} | Rest], Pkt) ->
+    route_to_output(TableId, Pkt, PortNum),
+    apply_action_list(TableId, Rest, Pkt);
+apply_action_list(TableId, [#action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_set_queue{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_set_queue{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_set_mpls_ttl{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_set_mpls_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_dec_mpls_ttl{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_dec_mpls_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_set_nw_ttl{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_set_nw_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_dec_nw_ttl{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_dec_nw_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_copy_ttl_out{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_copy_ttl_out{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_copy_ttl_in{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_copy_ttl_in{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_push_vlan{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_push_vlan{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_pop_vlan{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_pop_vlan{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_push_mpls{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_push_mpls{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_pop_mpls{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_pop_mpls{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_set_field{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_set_field{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([#action_experimenter{} | Rest], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId, [#action_experimenter{} | Rest], Pkt) ->
     NewPkt = Pkt,
-    apply_action_list(Rest, NewPkt);
-apply_action_list([], Pkt) ->
+    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(_TableId, [], Pkt) ->
     Pkt.
 
--spec apply_action_set(ordsets:ordset(ofp_structures:action()), #ofs_pkt{})
-                      -> #ofs_pkt{}.
-apply_action_set([Action | Rest], Pkt) ->
-    NewPkt = apply_action_list([Action], Pkt),
-    apply_action_set(Rest, NewPkt);
-apply_action_set([], Pkt) ->
+-spec apply_action_set(integer(),
+                       ordsets:ordset(ofp_structures:action()),
+                       #ofs_pkt{}) -> #ofs_pkt{}.
+apply_action_set(TableId, [Action | Rest], Pkt) ->
+    NewPkt = apply_action_list(TableId, [Action], Pkt),
+    apply_action_set(TableId, Rest, NewPkt);
+apply_action_set(_TableId, [], Pkt) ->
     Pkt.
 
--spec route_to_controller(#ofs_pkt{}) -> ok.
-route_to_controller(_Pkt) ->
-    ok.
+-spec route_to_controller(integer(), #ofs_pkt{}, atom()) -> ok.
+route_to_controller(TableId,
+                    #ofs_pkt{fields = Fields,
+                             packet = Packet},
+                    Reason) ->
+    ofs_logic:send(#packet_in{
+        header = #ofp_header{xid = xid()},
+        buffer_id = ?OFPCML_NO_BUFFER, %% TODO: use no_buffer
+        reason = Reason,
+        table_id = TableId,
+        match = Fields,
+        data = pkt:encapsulate(Packet)
+    }).
 
--spec route_to_output(#ofs_pkt{}, integer() | atom()) -> any().
-route_to_output(Pkt = #ofs_pkt{in_port = InPort}, all) ->
+-spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
+route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, all) ->
     Ports = ets:tab2list(ofs_ports),
     [ofs_userspace_port:send(PortNum, Pkt)
      || #ofs_port{number = PortNum} <- Ports, PortNum /= InPort];
-route_to_output(Pkt, controller) ->
-    route_to_controller(Pkt);
-route_to_output(_Pkt, table) ->
+route_to_output(TableId, Pkt, controller) ->
+    route_to_controller(TableId, Pkt, action);
+route_to_output(_TableId, _Pkt, table) ->
     %% FIXME: Only valid in an output action in the
     %%        action list of a packet-out message.
     ok;
-route_to_output(Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
+route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
     ofs_userspace_port:send(InPort, Pkt);
-route_to_output(Pkt, PortNum) when is_integer(PortNum) ->
+route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
     ofs_userspace_port:send(PortNum, Pkt);
-route_to_output(_Pkt, OtherPort) ->
+route_to_output(_TableId, _Pkt, OtherPort) ->
     lager:warning("unsupported port type: ~p", [OtherPort]).
 
 %%% Packet conversion functions ------------------------------------------------

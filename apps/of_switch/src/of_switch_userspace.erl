@@ -81,7 +81,7 @@ remove_port(PortId) ->
 pkt_to_ofs(Packet, PortNum) ->
     #ofs_pkt{packet = Packet,
              fields = #match{type = oxm,
-                             oxm_fields = [oxm_field(in_port, PortNum) |
+                             oxm_fields = [oxm_field(in_port, <<PortNum:32>>) |
                                            packet_fields(Packet)]},
              in_port = PortNum}.
 

@@ -20,11 +20,24 @@
 -export([do_route/2]).
 
 %% gen_switch callbacks
--export([start/1, modify_flow/2, modify_table/2, modify_port/2, modify_group/2,
-         echo_request/2, barrier_request/2, get_desc_stats/2, get_flow_stats/2,
-         get_aggregate_stats/2, get_table_stats/2, get_port_stats/2,
-         get_queue_stats/2, get_group_stats/2, get_group_desc_stats/2,
-         get_group_features_stats/2, stop/1]).
+-export([start/1,
+         modify_flow/2,
+         modify_table/2,
+         modify_port/2,
+         modify_group/2,
+         packet_out/2,
+         echo_request/2,
+         barrier_request/2,
+         get_desc_stats/2,
+         get_flow_stats/2,
+         get_aggregate_stats/2,
+         get_table_stats/2,
+         get_port_stats/2,
+         get_queue_stats/2,
+         get_group_stats/2,
+         get_group_desc_stats/2,
+         get_group_features_stats/2,
+         stop/1]).
 
 -include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -175,6 +188,16 @@ modify_port(State, #port_mod{port_no = PortNo} = PortMod) ->
         ok ->
             {ok, State}
     end.
+
+%% @doc Send packet to controller
+-spec packet_out(state(), packet_out()) ->
+      {ok, #state{}} | {error, error_msg(), #state{}}.
+packet_out(State, #packet_out{actions = Actions,
+                              in_port = InPort,
+                              data = Data}) ->
+    Pkt = pkt:decapsulate(Data),
+    apply_action_list(Actions, pkt_to_ofs(Pkt, InPort)),
+    {ok, State}.
 
 %% @doc Modify group entry in the group table.
 -spec modify_group(state(), group_mod()) ->
@@ -607,7 +630,9 @@ route_to_output(_Pkt, table) ->
 route_to_output(Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
     ofs_userspace_port:send(InPort, Pkt);
 route_to_output(Pkt, PortNum) when is_integer(PortNum) ->
-    ofs_userspace_port:send(PortNum, Pkt).
+    ofs_userspace_port:send(PortNum, Pkt);
+route_to_output(_Pkt, OtherPort) ->
+    lager:warning("unsupported port type: ~p", [OtherPort]).
 
 %%% Packet conversion functions ------------------------------------------------
 

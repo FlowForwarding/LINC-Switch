@@ -37,6 +37,12 @@
     {ok, NewState :: term()} |
     {error, of_protocol:error_msg(), NewState :: term()}.
 
+%% @doc Send packet to controller
+-callback packet_out(State :: term(),
+                     of_protocol:packet_out()) ->
+    {ok, NewState :: term()} |
+    {error, of_protocol:error_msg(), NewState :: term()}.
+
 %% @doc Reply to echo request.
 -callback echo_request(State :: term(),
                        of_protocol:echo_request()) ->

@@ -225,7 +225,8 @@ handle_message(#echo_request{header = Header} = EchoRequest,
     end,
     State#state{backend_state = NewBackendState};
 handle_message(#flow_mod{header = Header,
-                         buffer_id = _BufferId} = FlowMod,
+                         command = Command,
+                         buffer_id = BufferId} = FlowMod,
                #connection{socket = Socket},
                #state{backend_mod = BackendMod,
                       backend_state = BackendState} = State) ->
@@ -235,7 +236,24 @@ handle_message(#flow_mod{header = Header,
         {error, Message, NewBackendState} ->
             send_error_reply(Socket, Header, Message)
     end,
-    %% XXX: look at _BufferId, emulate packet-out
+    case should_do_flow_mod_packet_out(Command, BufferId) of
+        true ->
+            ok; %% TODO: emulate packet_out
+        false ->
+            do_nothing
+    end,
+    State#state{backend_state = NewBackendState};
+handle_message(#packet_out{header = Header,
+                           buffer_id = _BufferId} = PacketOut,
+               #connection{socket = Socket},
+               #state{backend_mod = BackendMod,
+                      backend_state = BackendState} = State) ->
+    case BackendMod:packet_out(BackendState, PacketOut) of
+        {ok, NewBackendState} ->
+            ok;
+        {error, Message, NewBackendState} ->
+            send_error_reply(Socket, Header, Message)
+    end,
     State#state{backend_state = NewBackendState};
 handle_message(_, _, State) ->
     %% Drop everything else.
@@ -311,6 +329,15 @@ handle_role(#role_request{header = Header, role = Role,
                     {RoleReply, NewState}
             end
     end.
+
+should_do_flow_mod_packet_out(delete, _) ->
+    false;
+should_do_flow_mod_packet_out(delete_strict, _) ->
+    false;
+should_do_flow_mod_packet_out(_, no_buffer) ->
+    false;
+should_do_flow_mod_packet_out(_, _) ->
+    true.
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->

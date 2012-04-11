@@ -301,12 +301,13 @@ modify_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
         end, get_flow_tables(TableId)).
 
 modify_flow_entry(#flow_entry{} = Entry,
-                  #flow_mod{} = FlowMod,
+                  #flow_mod{match = NewMatch,
+                            instructions = NewInstructions} = FlowMod,
                   MatchFun) ->
     case MatchFun(Entry, FlowMod) of
         true ->
-            %% FIXME: implement
-            do_the_work;
+            Entry#flow_entry{match = NewMatch,
+                             instructions = NewInstructions};
         false ->
             Entry
     end.

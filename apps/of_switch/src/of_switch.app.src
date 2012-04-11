@@ -8,5 +8,5 @@
                   stdlib
                  ]},
   {mod, {ofs_app, []}},
-  {env, []}
+  {env, [{ports, []}]}
  ]}.

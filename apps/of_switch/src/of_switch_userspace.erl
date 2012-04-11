@@ -647,33 +647,33 @@ packet_fields([], Fields) ->
 packet_fields([#ether{type = Type,
                       dhost = DHost,
                       shost = SHost} | Rest], Fields) ->
-    NewFields = [oxm_field(eth_type, Type),
+    NewFields = [oxm_field(eth_type, <<Type:16>>),
                  oxm_field(eth_dst, DHost),
                  oxm_field(eth_src, SHost)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#ipv4{p = Proto,
                      saddr = SAddr,
                      daddr = DAddr} | Rest], Fields) ->
-    NewFields = [oxm_field(ip_proto, Proto),
+    NewFields = [oxm_field(ip_proto, <<Proto:8>>),
                  oxm_field(ipv4_src, SAddr),
                  oxm_field(ipv4_dst, DAddr)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#ipv6{next = Proto,
                      saddr = SAddr,
                      daddr = DAddr} | Rest], Fields) ->
-    NewFields = [oxm_field(ip_proto, Proto),
+    NewFields = [oxm_field(ip_proto, <<Proto:8>>),
                  oxm_field(ipv6_src, SAddr),
                  oxm_field(ipv6_dst, DAddr)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#tcp{sport = SPort,
                     dport = DPort} | Rest], Fields) ->
-    NewFields = [oxm_field(tcp_src, SPort),
-                 oxm_field(tcp_dst, DPort)],
+    NewFields = [oxm_field(tcp_src, <<SPort:16>>),
+                 oxm_field(tcp_dst, <<DPort:16>>)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#udp{sport = SPort,
                     dport = DPort} | Rest], Fields) ->
-    NewFields = [oxm_field(udp_src, SPort),
-                 oxm_field(udp_dst, DPort)],
+    NewFields = [oxm_field(udp_src, <<SPort:16>>),
+                 oxm_field(udp_dst, <<DPort:16>>)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([_Other | Rest], Fields) ->
     packet_fields(Rest, Fields).

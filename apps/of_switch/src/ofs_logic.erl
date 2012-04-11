@@ -71,6 +71,8 @@ get_connection(Pid) ->
 %%%-----------------------------------------------------------------------------
 
 init([BackendMod, BackendOpts]) ->
+    {ok, Controllers} = application:get_env(of_switch, controllers),
+    [ofs_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
     {ok, BackendState} = BackendMod:start(BackendOpts),
     {ok, #state{backend_mod = BackendMod,
                 backend_state = BackendState}}.

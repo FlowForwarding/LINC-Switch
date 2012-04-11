@@ -92,7 +92,7 @@ pkt_to_ofs(Packet, PortNum) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    flow_tables = ets:new(flow_tables, [named_table,
+    flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
     ets:insert(flow_tables, [#flow_table{id = Id,
@@ -138,12 +138,12 @@ modify_flow(State, #flow_mod{command = add,
                              priority = Priority,
                              flags = Flags} = FlowMod) ->
     AddFlowEntry =
-            fun(#flow_table{entries = Entries} = Table) ->
+        fun(#flow_table{entries = Entries} = Table) ->
                 NewEntry = create_flow_entry(FlowMod, TableId),
                 NewEntries = ordsets:add_element(NewEntry, Entries),
                 NewTable = Table#flow_table{entries = NewEntries},
-                    ets:insert(flow_tables, NewTable)
-            end,
+                ets:insert(flow_tables, NewTable)
+        end,
     Tables = get_flow_tables(TableId),
     case has_priority_overlap(Flags, Priority, Tables) of
         true ->
@@ -417,7 +417,6 @@ do_route(Pkt, FlowId) ->
             route_to_controller(Pkt),
             controller;
         {table_miss, drop} ->
-            ofs_userspace_port:send(2, Pkt),
             drop;
         {table_miss, continue, NextFlowId} ->
             do_route(Pkt, NextFlowId)

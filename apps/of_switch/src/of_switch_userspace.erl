@@ -360,7 +360,7 @@ get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
                  priority = Entry#flow_entry.priority,
                  idle_timeout = -1, %% FIXME
                  hard_timeout = -1, %% FIXME
-                 cookie = <<"FIXME">>, %% FIXME: add cookie
+                 cookie = Entry#flow_entry.cookie,
                  packet_count = EntryStats#flow_entry_counter.received_packets,
                  byte_count = EntryStats#flow_entry_counter.received_bytes,
                  match = Entry#flow_entry.match,
@@ -371,17 +371,19 @@ get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
                 timer:now_diff(now(), Entry#flow_entry.install_time)
                ]].
 
-%% TODO: match on cookie
 %% strict match: use all match fields (including the masks) and the priority
-fm_strict_match(#flow_entry{priority = Priority, match = Match},
-                #flow_mod{priority = Priority, match = Match}) ->
-    true;
+fm_strict_match(#flow_entry{priority = Priority, match = Match} = Entry,
+                #flow_mod{priority = Priority, match = Match} = FlowMod) ->
+    cookie_match(Entry, FlowMod#flow_mod.cookie, FlowMod#flow_mod.cookie_mask);
 fm_strict_match(_FlowEntry, _FlowMod) ->
     false.
 
-%% TODO: match on cookie
 %% non-strict match: match more specific fields, ignore the priority
-fm_non_strict_match(FlowEntry, #flow_mod{match = Match}) ->
+fm_non_strict_match(FlowEntry, #flow_mod{match = Match,
+                                         cookie = Cookie,
+                                         cookie_mask = CookieMask}) ->
+    cookie_match(FlowEntry, Cookie, CookieMask)
+    andalso
     non_strict_match(FlowEntry, Match).
 
 non_strict_match(#flow_entry{match = #match{type = oxm,
@@ -433,10 +435,12 @@ mask_match(<<>>, <<>>, <<>>) ->
     true.
 
 create_flow_entry(#flow_mod{priority = Priority,
+                            cookie = Cookie,
                             match = Match,
                             instructions = Instructions},
                   FlowTableId) ->
     FlowEntry = #flow_entry{priority = Priority,
+                            cookie = Cookie,
                             match = Match,
                             install_time = erlang:now(),
                             instructions = Instructions},
@@ -581,8 +585,8 @@ port_match(_, _) ->
 group_match(_, _) ->
     true. %% FIXME: implement
 
-cookie_match(_Entry, _Cookie, _CookieMask) ->
-    true. %% FIXME: implement cookies
+cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
+    mask_match(Cookie1, Cookie2, CookieMask).
 
 -spec apply_instructions(integer(),
                          list(of_protocol:instruction()),

@@ -7,6 +7,7 @@
 -record(flow_entry, {
           priority :: integer(),
           match :: of_protocol:match(),
+          cookie :: binary(),
           install_time :: tuple(calendar:date(), calendar:time()),
           instructions = [] :: ordsets:ordered_set(of_protocol:instruction())
          }).

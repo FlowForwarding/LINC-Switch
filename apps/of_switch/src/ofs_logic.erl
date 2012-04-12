@@ -178,104 +178,41 @@ handle_message(#get_config_request{header = Header},
                                     miss_send_len = ?OFPCML_NO_BUFFER},
     do_send(Socket, ConfigReply),
     State;
-handle_message(#flow_mod{header = Header},
+handle_message(ModRequest,
                #connection{socket = Socket, role = slave},
-               State) ->
-    %% Don't allow slave controllers to modify flows.
+               State) when is_record(ModRequest, flow_mod);
+                           is_record(ModRequest, group_mod);
+                           is_record(ModRequest, port_mod);
+                           is_record(ModRequest, table_mod) ->
+    %% Don't allow slave controllers to modify flows, groups, ports and tables.
+    Header = get_header(ModRequest),
     send_error_reply(Socket, Header, #error_msg{type = bad_request,
                                                 code = is_slave}),
     State;
-handle_message(#group_mod{header = Header},
-               #connection{socket = Socket, role = slave},
-               State) ->
-    %% Don't allow slave controllers to modify groups.
-    send_error_reply(Socket, Header, #error_msg{type = bad_request,
-                                                code = is_slave}),
-    State;
-handle_message(#port_mod{header = Header},
-               #connection{socket = Socket, role = slave},
-               State) ->
-    %% Don't allow slave controllers to modify ports.
-    send_error_reply(Socket, Header, #error_msg{type = bad_request,
-                                                code = is_slave}),
-    State;
-handle_message(#port_mod{header = Header} = PortMod,
-               #connection{socket = Socket},
-               #state{backend_mod = BackendMod,
-                      backend_state = BackendState} = State) ->
-    case BackendMod:modify_port(BackendState, PortMod) of
-        {ok, NewBackendState} ->
-            ok;
-        {error, Message, NewBackendState} ->
-            send_error_reply(Socket, Header, Message)
-    end,
-    State#state{backend_state = NewBackendState};
-handle_message(#table_mod{header = Header},
-               #connection{socket = Socket, role = slave},
-               State) ->
-    %% Don't allow slave controllers to modify tables.
-    send_error_reply(Socket, Header, #error_msg{type = bad_request,
-                                                code = is_slave}),
-    State;
-handle_message(#table_mod{header = Header} = TableMod,
-               #connection{socket = Socket},
-               #state{backend_mod = BackendMod,
-                      backend_state = BackendState} = State) ->
-    case BackendMod:modify_table(BackendState, TableMod) of
-        {ok, NewBackendState} ->
-            ok;
-        {error, Message, NewBackendState} ->
-            send_error_reply(Socket, Header, Message)
-    end,
-    State#state{backend_state = NewBackendState};
+handle_message(#port_mod{} = PortMod, Connection, State) ->
+    handle_in_backend(modify_port, PortMod, Connection, State);
+handle_message(#table_mod{} = TableMod, Connection, State) ->
+    handle_in_backend(modify_table, TableMod, Connection, State);
 handle_message(#role_request{} = RoleRequest,
                #connection{socket = Socket} = Connection,
                #state{} = State) ->
     {Reply, NewState} = handle_role(RoleRequest, Connection, State),
     do_send(Socket, Reply),
     NewState;
-handle_message(#echo_request{header = Header} = EchoRequest,
-               #connection{socket = Socket},
-               #state{backend_mod = BackendMod,
-                      backend_state = BackendState} = State) ->
-    case BackendMod:echo_request(BackendState, EchoRequest) of
-        {ok, EchoReply, NewBackendState} ->
-            do_send(Socket, EchoReply);
-        {error, Message, NewBackendState} ->
-            send_error_reply(Socket, Header, Message)
-    end,
-    State#state{backend_state = NewBackendState};
-handle_message(#flow_mod{header = Header,
-                         command = Command,
-                         buffer_id = BufferId} = FlowMod,
-               #connection{socket = Socket},
-               #state{backend_mod = BackendMod,
-                      backend_state = BackendState} = State) ->
-    case BackendMod:modify_flow(BackendState, FlowMod) of
-        {ok, NewBackendState} ->
-            ok;
-        {error, Message, NewBackendState} ->
-            send_error_reply(Socket, Header, Message)
-    end,
+handle_message(#echo_request{} = Request, Connection, State) ->
+    handle_in_backend(echo_request, Request, Connection, State);
+handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
+               Connection, State) ->
+    NewState = handle_in_backend(modify_flow, FlowMod, Connection, State),
     case should_do_flow_mod_packet_out(Command, BufferId) of
         true ->
             ok; %% TODO: emulate packet_out
         false ->
             do_nothing
     end,
-    State#state{backend_state = NewBackendState};
-handle_message(#packet_out{header = Header,
-                           buffer_id = _BufferId} = PacketOut,
-               #connection{socket = Socket},
-               #state{backend_mod = BackendMod,
-                      backend_state = BackendState} = State) ->
-    case BackendMod:packet_out(BackendState, PacketOut) of
-        {ok, NewBackendState} ->
-            ok;
-        {error, Message, NewBackendState} ->
-            send_error_reply(Socket, Header, Message)
-    end,
-    State#state{backend_state = NewBackendState};
+    NewState;
+handle_message(#packet_out{} = PacketOut, Connection, State) ->
+    handle_in_backend(packet_out, PacketOut, Connection, State);
 handle_message(_, _, State) ->
     %% Drop everything else.
     State.
@@ -358,6 +295,25 @@ should_do_flow_mod_packet_out(_, no_buffer) ->
     false;
 should_do_flow_mod_packet_out(_, _) ->
     true.
+
+-spec handle_in_backend(atom(), record(), #connection{}, #state{}) -> #state{}.
+handle_in_backend(BackendFun, Request, #connection{socket = Socket},
+                  #state{backend_mod = BackendMod,
+                         backend_state = BackendState} = State) ->
+    case BackendMod:BackendFun(BackendState, Request) of
+        {ok, NewBackendState} ->
+            ok;
+        {ok, Reply, NewBackendState} ->
+            do_send(Socket, Reply);
+        {error, Message, NewBackendState} ->
+            Header = get_header(Request),
+            send_error_reply(Socket, Header, Message)
+    end,
+    State#state{backend_state = NewBackendState}.
+
+-spec get_header(record()) -> #ofp_header{}.
+get_header(Packet) ->
+    element(2, Packet).
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->

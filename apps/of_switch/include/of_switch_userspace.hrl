@@ -7,14 +7,14 @@
 -record(flow_entry, {
           priority :: integer(),
           match :: of_protocol:match(),
+          install_time :: tuple(calendar:date(), calendar:time()),
           instructions = [] :: ordsets:ordered_set(of_protocol:instruction())
          }).
 
 -record(flow_entry_counter, {
           key :: {FlowTableId :: integer(), #flow_entry{}},
           received_packets = 0 :: integer(),
-          received_bytes = 0 :: integer(),
-          install_time :: tuple(calendar:date(), calendar:time())
+          received_bytes = 0 :: integer()
          }).
 
 -record(flow_table, {

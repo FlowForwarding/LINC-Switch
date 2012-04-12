@@ -156,16 +156,16 @@ flow_mod(State, #flow_mod{command = add,
     end;
 flow_mod(State, #flow_mod{command = modify} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun modify_entries/2,
-                   fun non_strict_match/2);
+                   fun fm_non_strict_match/2);
 flow_mod(State, #flow_mod{command = modify_strict} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun modify_entries/2,
-                   fun strict_match/2);
+                   fun fm_strict_match/2);
 flow_mod(State, #flow_mod{command = delete} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun delete_entries/2,
-                   fun non_strict_match/2);
+                   fun fm_non_strict_match/2);
 flow_mod(State, #flow_mod{command = delete_strict} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun delete_entries/2,
-                   fun strict_match/2).
+                   fun fm_strict_match/2).
 
 %% @doc Modify flow table configuration.
 -spec table_mod(state(), table_mod()) ->
@@ -235,9 +235,18 @@ desc_stats_request(State, #desc_stats_request{header = Header}) ->
 %% @doc Get flow entry statistics.
 -spec flow_stats_request(state(), flow_stats_request()) ->
       {ok, flow_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-flow_stats_request(State, #flow_stats_request{}) ->
-    %% NOTE: re-use the logic from non_strict_match (spec, page 23)
-    {ok, #flow_stats_reply{}, State}.
+flow_stats_request(State, #flow_stats_request{header = Header,
+                                              table_id = TableId} = Request) ->
+    try
+        Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
+                                  get_flow_stats(TID, Entries, Request)
+                              end, get_flow_tables(TableId)),
+        {ok, #flow_stats_reply{header = Header,
+                               flags = [],
+                               stats = Stats}, State}
+    catch #error_msg{} = ErrorMsg ->
+        {error, ErrorMsg, State}
+    end.
 
 %% @doc Get aggregated flow statistics.
 -spec aggregate_stats_request(state(), aggregate_stats_request()) ->
@@ -319,6 +328,7 @@ modify_flow_entry(#flow_entry{} = Entry,
                   MatchFun) ->
     case MatchFun(Entry, FlowMod) of
         true ->
+            %% TODO: update counters
             Entry#flow_entry{match = NewMatch,
                              instructions = NewInstructions};
         false ->
@@ -334,18 +344,49 @@ delete_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
             ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
         end, get_flow_tables(TableId)).
 
+get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
+                                                 out_group = OutGroup,
+                                                 cookie = Cookie,
+                                                 cookie_mask = CookieMask,
+                                                 match = Match}) ->
+    MatchingEntries = [Entry || Entry <- Entries,
+                                non_strict_match(Entry, Match),
+                                port_match(Entry, OutPort),
+                                group_match(Entry, OutGroup),
+                                cookie_match(Entry, Cookie, CookieMask)],
+    [#flow_stats{table_id = TID,
+                 duration_sec = DurationUSec div 1000000,
+                 duration_nsec = (DurationUSec rem 1000000) * 1000,
+                 priority = Entry#flow_entry.priority,
+                 idle_timeout = -1, %% FIXME
+                 hard_timeout = -1, %% FIXME
+                 cookie = <<"FIXME">>, %% FIXME: add cookie
+                 packet_count = EntryStats#flow_entry_counter.received_packets,
+                 byte_count = EntryStats#flow_entry_counter.received_bytes,
+                 match = Entry#flow_entry.match,
+                 instructions = Entry#flow_entry.instructions}
+            || Entry <- MatchingEntries,
+               EntryStats <- ets:lookup(flow_entry_counters, {TID, Entry}),
+               DurationUSec <- [
+                timer:now_diff(now(), Entry#flow_entry.install_time)
+               ]].
+
+%% TODO: match on cookie
 %% strict match: use all match fields (including the masks) and the priority
-strict_match(#flow_entry{priority = Priority, match = Match},
-             #flow_mod{priority = Priority, match = Match}) ->
+fm_strict_match(#flow_entry{priority = Priority, match = Match},
+                #flow_mod{priority = Priority, match = Match}) ->
     true;
-strict_match(_FlowEntry, _FlowMod) ->
+fm_strict_match(_FlowEntry, _FlowMod) ->
     false.
 
+%% TODO: match on cookie
 %% non-strict match: match more specific fields, ignore the priority
+fm_non_strict_match(FlowEntry, #flow_mod{match = Match}) ->
+    non_strict_match(FlowEntry, Match).
+
 non_strict_match(#flow_entry{match = #match{type = oxm,
                                             oxm_fields = EntryFields}},
-                 #flow_mod{match = #match{type = oxm,
-                                          oxm_fields = FlowModFields}}) ->
+                 #match{type = oxm, oxm_fields = FlowModFields}) ->
     lists:all(fun(#oxm_field{field = Field} = FlowModField) ->
         case lists:keyfind(Field, #oxm_field.field, EntryFields) of
             #oxm_field{} = EntryField ->
@@ -354,7 +395,7 @@ non_strict_match(#flow_entry{match = #match{type = oxm,
                 false
         end
     end, FlowModFields);
-non_strict_match(_FlowEntry, _FlowMod) ->
+non_strict_match(_FlowEntry, _Match) ->
     throw(#error_msg{type = bad_match, code = bad_type}).
 
 is_more_specific(#oxm_field{class = Cls1}, #oxm_field{class = Cls2}) when
@@ -397,10 +438,10 @@ create_flow_entry(#flow_mod{priority = Priority,
                   FlowTableId) ->
     FlowEntry = #flow_entry{priority = Priority,
                             match = Match,
+                            install_time = erlang:now(),
                             instructions = Instructions},
     ets:insert(flow_entry_counters,
-               #flow_entry_counter{key = {FlowTableId, FlowEntry},
-                                   install_time = erlang:universaltime()}),
+               #flow_entry_counter{key = {FlowTableId, FlowEntry}}),
     FlowEntry.
 
 has_priority_overlap(Flags, Priority, Tables) ->
@@ -533,6 +574,15 @@ two_fields_match(#oxm_field{value=Val1},
     mask_match(Val1, Val2, Mask);
 two_fields_match(_, _) ->
     false.
+
+port_match(_, _) ->
+    true. %% FIXME: implement
+
+group_match(_, _) ->
+    true. %% FIXME: implement
+
+cookie_match(_Entry, _Cookie, _CookieMask) ->
+    true. %% FIXME: implement cookies
 
 -spec apply_instructions(integer(),
                          list(of_protocol:instruction()),

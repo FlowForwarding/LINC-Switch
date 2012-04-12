@@ -214,7 +214,8 @@ handle_message(#echo_request{} = Request, Connection, State) ->
 handle_message(#packet_out{} = PacketOut, Connection, State) ->
     handle_in_backend(PacketOut, Connection, State);
 handle_message(StatsRequest, Connection, State)
-        when is_record(StatsRequest, desc_stats_request) ->
+        when is_record(StatsRequest, desc_stats_request);
+             is_record(StatsRequest, flow_stats_request) ->
     %% handle stats requests in backend
     handle_in_backend(StatsRequest, Connection, State);
 handle_message(_, _, State) ->

@@ -157,6 +157,16 @@ handle_message(#error_msg{type = hello_failed},
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
     State;
+handle_message(#features_request{header = Header},
+               #connection{socket = Socket},
+               State) ->
+    FeaturesReply = #features_reply{header = Header,
+                                    datapath_mac = <<0:48>>,
+                                    datapath_id = 0,
+                                    n_buffers = 0,
+                                    n_tables = 255},
+    do_send(Socket, FeaturesReply),
+    State;
 handle_message(#flow_mod{header = Header},
                #connection{socket = Socket, role = slave},
                State) ->
@@ -265,8 +275,7 @@ handle_message(_, _, State) ->
 
 -spec decide_on_version(integer()) -> {ok, integer()} | error.
 decide_on_version(ReceivedVersion) ->
-    %% TODO: Get supported versions from switch configuration.
-    SupportedVersions = [3],
+    {ok, SupportedVersions} = application:get_env(of_switch, supported_versions),
     ProposedVersion = lists:max(SupportedVersions),
     if
         ProposedVersion > ReceivedVersion ->

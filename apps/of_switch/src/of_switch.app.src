@@ -8,6 +8,7 @@
                   stdlib
                  ]},
   {mod, {ofs_app, []}},
-  {env, [{ports, []},
-         {controllers, []}]}
+  {env, [{supported_versions, [1, 2, 3]},
+         {controllers, []},
+         {ports, []}]}
  ]}.

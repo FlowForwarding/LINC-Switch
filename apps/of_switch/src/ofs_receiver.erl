@@ -45,6 +45,11 @@ init({Controller, Port}) ->
         {ok, Socket} ->
             ofs_logic:register_receiver(self(), Socket),
             {ok, Parser} = ofp_parser:new(),
+
+            Hello = #hello{header = #ofp_header{xid = 1}},
+            {ok, HelloBin} = of_protocol:encode(Hello),
+            ok = gen_tcp:send(Socket, HelloBin),
+
             {ok, #state{socket = Socket, parser = Parser}};
         {error, Reason} ->
             {stop, Reason}

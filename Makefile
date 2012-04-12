@@ -18,4 +18,5 @@ deep-clean: clean
 	./rebar delete-deps
 
 rebar:
-	wget -q http://cloud.github.com/downloads/basho/rebar/rebar && chmod u+x rebar
+	wget -q http://cloud.github.com/downloads/basho/rebar/rebar
+	chmod u+x rebar

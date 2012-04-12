@@ -167,6 +167,17 @@ handle_message(#features_request{header = Header},
                                     n_tables = 255},
     do_send(Socket, FeaturesReply),
     State;
+handle_message(#set_config{}, _, State) ->
+    %% TODO: persist incoming configuration
+    State;
+handle_message(#get_config_request{header = Header},
+               #connection{socket = Socket},
+               State) ->
+    ConfigReply = #get_config_reply{header = Header,
+                                    flags = [],
+                                    miss_send_len = ?OFPCML_NO_BUFFER},
+    do_send(Socket, ConfigReply),
+    State;
 handle_message(#flow_mod{header = Header},
                #connection{socket = Socket, role = slave},
                State) ->

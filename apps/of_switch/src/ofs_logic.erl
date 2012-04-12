@@ -190,9 +190,9 @@ handle_message(ModRequest,
                                                 code = is_slave}),
     State;
 handle_message(#port_mod{} = PortMod, Connection, State) ->
-    handle_in_backend(modify_port, PortMod, Connection, State);
+    handle_in_backend(PortMod, Connection, State);
 handle_message(#table_mod{} = TableMod, Connection, State) ->
-    handle_in_backend(modify_table, TableMod, Connection, State);
+    handle_in_backend(TableMod, Connection, State);
 handle_message(#role_request{} = RoleRequest,
                #connection{socket = Socket} = Connection,
                #state{} = State) ->
@@ -200,10 +200,10 @@ handle_message(#role_request{} = RoleRequest,
     do_send(Socket, Reply),
     NewState;
 handle_message(#echo_request{} = Request, Connection, State) ->
-    handle_in_backend(echo_request, Request, Connection, State);
+    handle_in_backend(Request, Connection, State);
 handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
                Connection, State) ->
-    NewState = handle_in_backend(modify_flow, FlowMod, Connection, State),
+    NewState = handle_in_backend(FlowMod, Connection, State),
     case should_do_flow_mod_packet_out(Command, BufferId) of
         true ->
             ok; %% TODO: emulate packet_out
@@ -212,7 +212,7 @@ handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
     end,
     NewState;
 handle_message(#packet_out{} = PacketOut, Connection, State) ->
-    handle_in_backend(packet_out, PacketOut, Connection, State);
+    handle_in_backend(PacketOut, Connection, State);
 handle_message(_, _, State) ->
     %% Drop everything else.
     State.
@@ -296,11 +296,12 @@ should_do_flow_mod_packet_out(_, no_buffer) ->
 should_do_flow_mod_packet_out(_, _) ->
     true.
 
--spec handle_in_backend(atom(), record(), #connection{}, #state{}) -> #state{}.
-handle_in_backend(BackendFun, Request, #connection{socket = Socket},
+-spec handle_in_backend(record(), #connection{}, #state{}) -> #state{}.
+handle_in_backend(Request, #connection{socket = Socket},
                   #state{backend_mod = BackendMod,
                          backend_state = BackendState} = State) ->
-    case BackendMod:BackendFun(BackendState, Request) of
+    RequestName = element(1, Request),
+    case BackendMod:RequestName(BackendState, Request) of
         {ok, NewBackendState} ->
             ok;
         {ok, Reply, NewBackendState} ->

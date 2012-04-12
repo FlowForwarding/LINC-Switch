@@ -222,8 +222,15 @@ barrier_request(State, #barrier_request{header = Header}) ->
 %% @doc Get switch description statistics.
 -spec desc_stats_request(state(), desc_stats_request()) ->
       {ok, desc_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-desc_stats_request(State, #desc_stats_request{}) ->
-    {ok, #desc_stats_reply{}, State}.
+desc_stats_request(State, #desc_stats_request{header = Header}) ->
+    {ok, #desc_stats_reply{header = Header,
+                           flags = [],
+                           mfr_desc = <<"Dummy mfr_desc">>,
+                           hw_desc = <<"Dummy hw_desc">>,
+                           sw_desc = <<"Dummy sw_desc">>,
+                           serial_num = <<"Dummy serial_num">>,
+                           dp_desc = <<"Dummy dp_desc">>
+                       }, State}.
 
 %% @doc Get flow entry statistics.
 -spec flow_stats_request(state(), flow_stats_request()) ->

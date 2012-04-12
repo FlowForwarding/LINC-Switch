@@ -178,6 +178,12 @@ handle_message(#get_config_request{header = Header},
                                     miss_send_len = ?OFPCML_NO_BUFFER},
     do_send(Socket, ConfigReply),
     State;
+handle_message(#role_request{} = RoleRequest,
+               #connection{socket = Socket} = Connection,
+               #state{} = State) ->
+    {Reply, NewState} = handle_role(RoleRequest, Connection, State),
+    do_send(Socket, Reply),
+    NewState;
 handle_message(ModRequest,
                #connection{socket = Socket, role = slave},
                State) when is_record(ModRequest, flow_mod);
@@ -189,18 +195,6 @@ handle_message(ModRequest,
     send_error_reply(Socket, Header, #error_msg{type = bad_request,
                                                 code = is_slave}),
     State;
-handle_message(#port_mod{} = PortMod, Connection, State) ->
-    handle_in_backend(PortMod, Connection, State);
-handle_message(#table_mod{} = TableMod, Connection, State) ->
-    handle_in_backend(TableMod, Connection, State);
-handle_message(#role_request{} = RoleRequest,
-               #connection{socket = Socket} = Connection,
-               #state{} = State) ->
-    {Reply, NewState} = handle_role(RoleRequest, Connection, State),
-    do_send(Socket, Reply),
-    NewState;
-handle_message(#echo_request{} = Request, Connection, State) ->
-    handle_in_backend(Request, Connection, State);
 handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
                Connection, State) ->
     NewState = handle_in_backend(FlowMod, Connection, State),
@@ -211,8 +205,18 @@ handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
             do_nothing
     end,
     NewState;
+handle_message(#port_mod{} = PortMod, Connection, State) ->
+    handle_in_backend(PortMod, Connection, State);
+handle_message(#table_mod{} = TableMod, Connection, State) ->
+    handle_in_backend(TableMod, Connection, State);
+handle_message(#echo_request{} = Request, Connection, State) ->
+    handle_in_backend(Request, Connection, State);
 handle_message(#packet_out{} = PacketOut, Connection, State) ->
     handle_in_backend(PacketOut, Connection, State);
+handle_message(StatsRequest, Connection, State)
+        when is_record(StatsRequest, desc_stats_request) ->
+    %% handle stats requests in backend
+    handle_in_backend(StatsRequest, Connection, State);
 handle_message(_, _, State) ->
     %% Drop everything else.
     State.

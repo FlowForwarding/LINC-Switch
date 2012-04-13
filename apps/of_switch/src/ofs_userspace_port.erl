@@ -84,6 +84,10 @@ init(Args) ->
     {interface, Interface} = lists:keyfind(interface, 1, Args),
     {ofs_port_num, OfsPortNum} = lists:keyfind(ofs_port_num, 1, Args),
     State = case re:run(Interface, "tap*", [{capture, none}]) of
+                %% When switch connects to a tap interface, erlang receives file
+                %% descriptor to read/write ethernet frames directly from the
+                %% desired /dev/tapX character device. No socket communication
+                %% is involved.
                 match ->
                     {ip, IP} = lists:keyfind(ip, 1, Args),
                     case tuncer:create(Interface) of
@@ -97,6 +101,13 @@ init(Args) ->
                                         [Error, Interface]),
                             {stop, shutdown}
                     end;
+                %% When switch connects to a hardware interface such as eth0
+                %% then communication is handled by two channels:
+                %% * receiving ethernet frames is done by libpcap wrapped-up by
+                %%   a epcap application
+                %% * sending ethernet frames is done by writing to
+                %%   a RAW socket binded with given network interface.
+                %%   Handling of RAW sockets differs between OSes.
                 nomatch ->
                     {ok, _Pid} = epcap:start([{promiscuous, true},
                                              {interface, Interface},

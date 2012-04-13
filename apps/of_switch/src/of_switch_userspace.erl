@@ -21,26 +21,27 @@
 
 %% gen_switch callbacks
 -export([start/1,
-         flow_mod/2,
-         table_mod/2,
-         port_mod/2,
-         group_mod/2,
-         packet_out/2,
-         echo_request/2,
-         barrier_request/2,
-         desc_stats_request/2,
-         flow_stats_request/2,
-         aggregate_stats_request/2,
-         table_stats_request/2,
-         port_stats_request/2,
-         queue_stats_request/2,
-         group_stats_request/2,
-         group_desc_stats_request/2,
-         group_features_stats_request/2,
+         ofp_flow_mod/2,
+         ofp_table_mod/2,
+         ofp_port_mod/2,
+         ofp_group_mod/2,
+         ofp_packet_out/2,
+         ofp_echo_request/2,
+         ofp_barrier_request/2,
+         ofp_desc_stats_request/2,
+         ofp_flow_stats_request/2,
+         ofp_aggregate_stats_request/2,
+         ofp_table_stats_request/2,
+         ofp_port_stats_request/2,
+         ofp_queue_stats_request/2,
+         ofp_group_stats_request/2,
+         ofp_group_desc_stats_request/2,
+         ofp_group_features_stats_request/2,
          stop/1]).
 
 -include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include("of_switch.hrl").
 -include("of_switch_userspace.hrl").
 
@@ -86,8 +87,8 @@ remove_port(PortId) ->
 -spec pkt_to_ofs([record()], integer()) -> #ofs_pkt{}.
 pkt_to_ofs(Packet, PortNum) ->
     #ofs_pkt{packet = Packet,
-             fields = #match{type = oxm,
-                             oxm_fields = [oxm_field(in_port, <<PortNum:32>>) |
+             fields = #ofp_match{type = oxm,
+                             oxm_fields = [ofp_field(in_port, <<PortNum:32>>) |
                                            packet_fields(Packet)]},
              in_port = PortNum}.
 
@@ -139,7 +140,7 @@ stop(_State) ->
     ok.
 
 %% @doc Modify flow entry in the flow table.
-flow_mod(State, #flow_mod{command = add,
+ofp_flow_mod(State, #ofp_flow_mod{command = add,
                           table_id = TableId,
                           priority = Priority,
                           flags = Flags} = FlowMod) ->
@@ -153,42 +154,42 @@ flow_mod(State, #flow_mod{command = add,
     Tables = get_flow_tables(TableId),
     case has_priority_overlap(Flags, Priority, Tables) of
         true ->
-            OverlapError = #error_msg{type = flow_mod_failed,
+            OverlapError = #ofp_error{type = flow_mod_failed,
                                       code = overlap},
             {error, OverlapError, State};
         false ->
             lists:foreach(AddFlowEntry, Tables),
             {ok, State}
     end;
-flow_mod(State, #flow_mod{command = modify} = FlowMod) ->
+ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun modify_entries/2,
                    fun fm_non_strict_match/2);
-flow_mod(State, #flow_mod{command = modify_strict} = FlowMod) ->
+ofp_flow_mod(State, #ofp_flow_mod{command = modify_strict} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun modify_entries/2,
                    fun fm_strict_match/2);
-flow_mod(State, #flow_mod{command = delete} = FlowMod) ->
+ofp_flow_mod(State, #ofp_flow_mod{command = delete} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun delete_entries/2,
                    fun fm_non_strict_match/2);
-flow_mod(State, #flow_mod{command = delete_strict} = FlowMod) ->
+ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
     apply_flow_mod(State, FlowMod, fun delete_entries/2,
                    fun fm_strict_match/2).
 
 %% @doc Modify flow table configuration.
--spec table_mod(state(), table_mod()) ->
-      {ok, #state{}} | {error, error_msg(), #state{}}.
-table_mod(State, #table_mod{table_id = TableId, config = Config}) ->
+-spec ofp_table_mod(state(), ofp_table_mod()) ->
+      {ok, #state{}} | {error, ofp_error(), #state{}}.
+ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
     lists:foreach(fun(FlowTable) ->
         ets:insert(flow_tables, FlowTable#flow_table{config = Config})
     end, get_flow_tables(TableId)),
     {ok, State}.
 
 %% @doc Modify port configuration.
--spec port_mod(state(), port_mod()) ->
-      {ok, #state{}} | {error, error_msg(), #state{}}.
-port_mod(State, #port_mod{port_no = PortNo} = PortMod) ->
+-spec ofp_port_mod(state(), ofp_port_mod()) ->
+      {ok, #state{}} | {error, ofp_error(), #state{}}.
+ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
     case ofs_userspace_port:change_config(PortNo, PortMod) of
         {error, Code} ->
-            Error = #error_msg{type = port_mod_failed,
+            Error = #ofp_error{type = port_mod_failed,
                                code = Code},
             {error, Error, State};
         ok ->
@@ -196,15 +197,15 @@ port_mod(State, #port_mod{port_no = PortNo} = PortMod) ->
     end.
 
 %% @doc Modify group entry in the group table.
--spec group_mod(state(), group_mod()) ->
-      {ok, #state{}} | {error, error_msg(), #state{}}.
-group_mod(State, #group_mod{} = _GroupMod) ->
+-spec ofp_group_mod(state(), ofp_group_mod()) ->
+      {ok, #state{}} | {error, ofp_error(), #state{}}.
+ofp_group_mod(State, #ofp_group_mod{} = _GroupMod) ->
     {ok, State}.
 
 %% @doc Send packet to controller
--spec packet_out(state(), packet_out()) ->
-      {ok, #state{}} | {error, error_msg(), #state{}}.
-packet_out(State, #packet_out{actions = Actions,
+-spec ofp_packet_out(state(), ofp_packet_out()) ->
+      {ok, #state{}} | {error, ofp_error(), #state{}}.
+ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                               in_port = InPort,
                               data = Data}) ->
     Pkt = pkt:decapsulate(Data),
@@ -212,25 +213,24 @@ packet_out(State, #packet_out{actions = Actions,
     {ok, State}.
 
 %% @doc Reply to echo request.
--spec echo_request(state(), echo_request()) ->
-      {ok, #echo_reply{}, #state{}} | {error, error_msg(), #state{}}.
-echo_request(State, #echo_request{header = Header, data = Data}) ->
-    EchoReply = #echo_reply{header = Header, data = Data},
+-spec ofp_echo_request(state(), ofp_echo_request()) ->
+      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error(), #state{}}.
+ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
+    EchoReply = #ofp_echo_reply{data = Data},
     {ok, EchoReply, State}.
 
 %% @doc Reply to barrier request.
--spec barrier_request(state(), barrier_request()) ->
-      {ok, #echo_reply{}, #state{}} | {error, error_msg(), #state{}}.
-barrier_request(State, #barrier_request{header = Header}) ->
-    BarrierReply = #barrier_reply{header = Header},
+-spec ofp_barrier_request(state(), ofp_barrier_request()) ->
+      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error(), #state{}}.
+ofp_barrier_request(State, #ofp_barrier_request{}) ->
+    BarrierReply = #ofp_barrier_reply{},
     {ok, BarrierReply, State}.
 
 %% @doc Get switch description statistics.
--spec desc_stats_request(state(), desc_stats_request()) ->
-      {ok, desc_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-desc_stats_request(State, #desc_stats_request{header = Header}) ->
-    {ok, #desc_stats_reply{header = Header,
-                           flags = [],
+-spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
+      {ok, ofp_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
+    {ok, #ofp_desc_stats_reply{flags = [],
                            mfr_desc = <<"Dummy mfr_desc">>,
                            hw_desc = <<"Dummy hw_desc">>,
                            sw_desc = <<"Dummy sw_desc">>,
@@ -239,62 +239,60 @@ desc_stats_request(State, #desc_stats_request{header = Header}) ->
                        }, State}.
 
 %% @doc Get flow entry statistics.
--spec flow_stats_request(state(), flow_stats_request()) ->
-      {ok, flow_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-flow_stats_request(State, #flow_stats_request{header = Header,
-                                              table_id = TableId} = Request) ->
+-spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
+      {ok, ofp_flow_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_flow_stats_request(State, #ofp_flow_stats_request{table_id = TableId} = Request) ->
     try
         Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
                                   get_flow_stats(TID, Entries, Request)
                               end, get_flow_tables(TableId)),
-        {ok, #flow_stats_reply{header = Header,
-                               flags = [],
+        {ok, #ofp_flow_stats_reply{flags = [],
                                stats = Stats}, State}
-    catch #error_msg{} = ErrorMsg ->
+    catch #ofp_error{} = ErrorMsg ->
         {error, ErrorMsg, State}
     end.
 
 %% @doc Get aggregated flow statistics.
--spec aggregate_stats_request(state(), aggregate_stats_request()) ->
-      {ok, aggregate_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-aggregate_stats_request(State, #aggregate_stats_request{}) ->
-    {ok, #aggregate_stats_reply{}, State}.
+-spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
+      {ok, ofp_aggregate_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{}) ->
+    {ok, #ofp_aggregate_stats_reply{}, State}.
 
 %% @doc Get flow table statistics.
--spec table_stats_request(state(), table_stats_request()) ->
-      {ok, table_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-table_stats_request(State, #table_stats_request{}) ->
-    {ok, #table_stats_reply{}, State}.
+-spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
+      {ok, ofp_table_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
+    {ok, #ofp_table_stats_reply{}, State}.
 
 %% @doc Get port statistics.
--spec port_stats_request(state(), port_stats_request()) ->
-      {ok, port_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-port_stats_request(State, #port_stats_request{}) ->
-    {ok, #port_stats_reply{}, State}.
+-spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
+      {ok, ofp_port_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_port_stats_request(State, #ofp_port_stats_request{}) ->
+    {ok, #ofp_port_stats_reply{}, State}.
 
 %% @doc Get queue statistics.
--spec queue_stats_request(state(), queue_stats_request()) ->
-      {ok, queue_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-queue_stats_request(State, #queue_stats_request{}) ->
-    {ok, #queue_stats_reply{}, State}.
+-spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
+      {ok, ofp_queue_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_queue_stats_request(State, #ofp_queue_stats_request{}) ->
+    {ok, #ofp_queue_stats_reply{}, State}.
 
 %% @doc Get group statistics.
--spec group_stats_request(state(), group_stats_request()) ->
-      {ok, group_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-group_stats_request(State, #group_stats_request{}) ->
-    {ok, #group_stats_reply{}, State}.
+-spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
+      {ok, ofp_group_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_group_stats_request(State, #ofp_group_stats_request{}) ->
+    {ok, #ofp_group_stats_reply{}, State}.
 
 %% @doc Get group description statistics.
--spec group_desc_stats_request(state(), group_desc_stats_request()) ->
-      {ok, group_desc_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-group_desc_stats_request(State, #group_desc_stats_request{}) ->
-    {ok, #group_desc_stats_reply{}, State}.
+-spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
+      {ok, ofp_group_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
+    {ok, #ofp_group_desc_stats_reply{}, State}.
 
 %% @doc Get group features statistics.
--spec group_features_stats_request(state(), group_features_stats_request()) ->
-      {ok, group_features_stats_reply(), #state{}} | {error, error_msg(), #state{}}.
-group_features_stats_request(State, #group_features_stats_request{}) ->
-    {ok, #group_features_stats_reply{}, State}.
+-spec ofp_group_features_stats_request(state(), ofp_group_features_stats_request()) ->
+      {ok, ofp_group_features_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
+    {ok, #ofp_group_features_stats_reply{}, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
@@ -316,11 +314,11 @@ apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
     try
         ModFun(FlowMod, MatchFun),
         {ok, State}
-    catch #error_msg{} = Error ->
+    catch #ofp_error{} = Error ->
         {error, Error, State}
     end.
 
-modify_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
+modify_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
         fun(#flow_table{entries = Entries} = Table) ->
             NewEntries = [modify_flow_entry(Entry, FlowMod, MatchFun)
@@ -329,7 +327,7 @@ modify_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
         end, get_flow_tables(TableId)).
 
 modify_flow_entry(#flow_entry{} = Entry,
-                  #flow_mod{match = NewMatch,
+                  #ofp_flow_mod{match = NewMatch,
                             instructions = NewInstructions} = FlowMod,
                   MatchFun) ->
     case MatchFun(Entry, FlowMod) of
@@ -341,7 +339,7 @@ modify_flow_entry(#flow_entry{} = Entry,
             Entry
     end.
 
-delete_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
+delete_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
         fun(#flow_table{entries = Entries} = Table) ->
             NewEntries = lists:filter(fun(Entry) ->
@@ -350,7 +348,7 @@ delete_entries(#flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
             ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
         end, get_flow_tables(TableId)).
 
-get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
+get_flow_stats(TID, Entries, #ofp_flow_stats_request{out_port = OutPort,
                                                  out_group = OutGroup,
                                                  cookie = Cookie,
                                                  cookie_mask = CookieMask,
@@ -360,7 +358,7 @@ get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
                                 port_match(Entry, OutPort),
                                 group_match(Entry, OutGroup),
                                 cookie_match(Entry, Cookie, CookieMask)],
-    [#flow_stats{table_id = TID,
+    [#ofp_flow_stats{table_id = TID,
                  duration_sec = DurationUSec div 1000000,
                  duration_nsec = (DurationUSec rem 1000000) * 1000,
                  priority = Entry#flow_entry.priority,
@@ -379,44 +377,44 @@ get_flow_stats(TID, Entries, #flow_stats_request{out_port = OutPort,
 
 %% strict match: use all match fields (including the masks) and the priority
 fm_strict_match(#flow_entry{priority = Priority, match = Match} = Entry,
-                #flow_mod{priority = Priority, match = Match} = FlowMod) ->
-    cookie_match(Entry, FlowMod#flow_mod.cookie, FlowMod#flow_mod.cookie_mask);
+                #ofp_flow_mod{priority = Priority, match = Match} = FlowMod) ->
+    cookie_match(Entry, FlowMod#ofp_flow_mod.cookie, FlowMod#ofp_flow_mod.cookie_mask);
 fm_strict_match(_FlowEntry, _FlowMod) ->
     false.
 
 %% non-strict match: match more specific fields, ignore the priority
-fm_non_strict_match(FlowEntry, #flow_mod{match = Match,
+fm_non_strict_match(FlowEntry, #ofp_flow_mod{match = Match,
                                          cookie = Cookie,
                                          cookie_mask = CookieMask}) ->
     cookie_match(FlowEntry, Cookie, CookieMask)
     andalso
     non_strict_match(FlowEntry, Match).
 
-non_strict_match(#flow_entry{match = #match{type = oxm,
+non_strict_match(#flow_entry{match = #ofp_match{type = oxm,
                                             oxm_fields = EntryFields}},
-                 #match{type = oxm, oxm_fields = FlowModFields}) ->
-    lists:all(fun(#oxm_field{field = Field} = FlowModField) ->
-        case lists:keyfind(Field, #oxm_field.field, EntryFields) of
-            #oxm_field{} = EntryField ->
+                 #ofp_match{type = oxm, oxm_fields = FlowModFields}) ->
+    lists:all(fun(#ofp_field{field = Field} = FlowModField) ->
+        case lists:keyfind(Field, #ofp_field.field, EntryFields) of
+            #ofp_field{} = EntryField ->
                 is_more_specific(EntryField, FlowModField);
             false ->
                 false
         end
     end, FlowModFields);
 non_strict_match(_FlowEntry, _Match) ->
-    throw(#error_msg{type = bad_match, code = bad_type}).
+    throw(#ofp_error{type = bad_match, code = bad_type}).
 
-is_more_specific(#oxm_field{class = Cls1}, #oxm_field{class = Cls2}) when
+is_more_specific(#ofp_field{class = Cls1}, #ofp_field{class = Cls2}) when
         Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
-    throw(#error_msg{type = bad_match, code = bad_field});
-is_more_specific(#oxm_field{has_mask = true},
-                 #oxm_field{has_mask = false}) ->
+    throw(#ofp_error{type = bad_match, code = bad_field});
+is_more_specific(#ofp_field{has_mask = true},
+                 #ofp_field{has_mask = false}) ->
     false; %% masked is less specific than non-masked
-is_more_specific(#oxm_field{has_mask = false, value = Value},
-                 #oxm_field{has_mask = _____, value = Value}) ->
+is_more_specific(#ofp_field{has_mask = false, value = Value},
+                 #ofp_field{has_mask = _____, value = Value}) ->
     true; %% value match with no mask is more specific
-is_more_specific(#oxm_field{has_mask = true, mask = M1, value = V1},
-                 #oxm_field{has_mask = true, mask = M2, value = V2}) ->
+is_more_specific(#ofp_field{has_mask = true, mask = M1, value = V1},
+                 #ofp_field{has_mask = true, mask = M2, value = V2}) ->
     %% M1 is more specific than M2 (has all of it's bits)
     %% and V1*M2 == V2*M2
     is_mask_more_specific(M1, M2)
@@ -440,7 +438,7 @@ mask_match(<<V1,Rest1/binary>>, <<V2,Rest2/binary>>, <<M,Rest3/binary>>) ->
 mask_match(<<>>, <<>>, <<>>) ->
     true.
 
-create_flow_entry(#flow_mod{priority = Priority,
+create_flow_entry(#ofp_flow_mod{priority = Priority,
                             cookie = Cookie,
                             match = Match,
                             instructions = Instructions},
@@ -470,7 +468,7 @@ do_route(Pkt, FlowId) ->
         {match, goto, NextFlowId, NewPkt} ->
             do_route(NewPkt, NextFlowId);
         {match, output, NewPkt} ->
-            case lists:keymember(action_output, 1, NewPkt#ofs_pkt.actions) of
+            case lists:keymember(ofp_action_output, 1, NewPkt#ofs_pkt.actions) of
                 true ->
                     apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
                     output;
@@ -548,8 +546,8 @@ match_flow_entries(_Pkt, _FlowTableId, []) ->
 
 -spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
 match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#match.oxm_fields,
-                      FlowEntry#flow_entry.match#match.oxm_fields) of
+    case fields_match(Pkt#ofs_pkt.fields#ofp_match.oxm_fields,
+                      FlowEntry#flow_entry.match#ofp_match.oxm_fields) of
         true ->
             case apply_instructions(FlowTableId,
                                     FlowEntry#flow_entry.instructions,
@@ -564,11 +562,11 @@ match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
             nomatch
     end.
 
--spec fields_match(list(#oxm_field{}), list(#oxm_field{})) -> boolean().
+-spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
 fields_match(PktFields, FlowFields) ->
-    lists:all(fun(#oxm_field{field = F1} = PktField) ->
+    lists:all(fun(#ofp_field{field = F1} = PktField) ->
                   %% TODO: check for class other than openflow_basic
-                  lists:all(fun(#oxm_field{field = F2} = FlowField) ->
+                  lists:all(fun(#ofp_field{field = F2} = FlowField) ->
                                 F1 =/= F2 %% field is not relevant here
                                 orelse
                                 two_fields_match(PktField, FlowField)
@@ -576,11 +574,11 @@ fields_match(PktFields, FlowFields) ->
               end, PktFields).
 
 
-two_fields_match(#oxm_field{value=Val},
-                 #oxm_field{value=Val, has_mask = false}) ->
+two_fields_match(#ofp_field{value=Val},
+                 #ofp_field{value=Val, has_mask = false}) ->
     true;
-two_fields_match(#oxm_field{value=Val1},
-                 #oxm_field{value=Val2, has_mask = true, mask = Mask}) ->
+two_fields_match(#ofp_field{value=Val1},
+                 #ofp_field{value=Val2, has_mask = true, mask = Mask}) ->
     mask_match(Val1, Val2, Mask);
 two_fields_match(_, _) ->
     false.
@@ -599,18 +597,18 @@ cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
                          #ofs_pkt{},
                          output | {goto, integer()}) -> tuple().
 apply_instructions(TableId,
-                   [#instruction_apply_actions{actions = Actions} | Rest],
+                   [#ofp_instruction_apply_actions{actions = Actions} | Rest],
                    Pkt,
                    NextStep) ->
     NewPkt = apply_action_list(TableId, Actions, Pkt),
     apply_instructions(TableId, Rest, NewPkt, NextStep);
 apply_instructions(TableId,
-                   [#instruction_clear_actions{} | Rest],
+                   [#ofp_instruction_clear_actions{} | Rest],
                    Pkt,
                    NextStep) ->
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = []}, NextStep);
 apply_instructions(TableId,
-                   [#instruction_write_actions{actions = Actions} | Rest],
+                   [#ofp_instruction_write_actions{actions = Actions} | Rest],
                    #ofs_pkt{actions = OldActions} = Pkt,
                    NextStep) ->
     UActions = lists:ukeysort(2, Actions),
@@ -618,7 +616,7 @@ apply_instructions(TableId,
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = NewActions},
                        NextStep);
 apply_instructions(TableId,
-                   [#instruction_write_metadata{metadata = Metadata,
+                   [#ofp_instruction_write_metadata{metadata = Metadata,
                                                 metadata_mask = Mask} | Rest],
                    Pkt,
                    NextStep) ->
@@ -626,7 +624,7 @@ apply_instructions(TableId,
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{metadata = MaskedMetadata},
                        NextStep);
 apply_instructions(TableId,
-                   [#instruction_goto_table{table_id = Id} | Rest],
+                   [#ofp_instruction_goto_table{table_id = Id} | Rest],
                    Pkt,
                    _NextStep) ->
     apply_instructions(TableId, Rest, Pkt, {goto, Id});
@@ -642,49 +640,49 @@ apply_mask(Metadata, _Mask) ->
 -spec apply_action_list(integer(),
                         list(ofp_structures:action()),
                         #ofs_pkt{}) -> #ofs_pkt{}.
-apply_action_list(TableId, [#action_output{port = PortNum} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_output{port = PortNum} | Rest], Pkt) ->
     route_to_output(TableId, Pkt, PortNum),
     apply_action_list(TableId, Rest, Pkt);
-apply_action_list(TableId, [#action_group{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_group{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_set_queue{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_set_queue{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_set_mpls_ttl{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_dec_mpls_ttl{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_set_nw_ttl{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_set_nw_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_dec_nw_ttl{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_copy_ttl_out{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_copy_ttl_in{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_push_vlan{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_push_vlan{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_pop_vlan{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_push_mpls{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_push_mpls{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_pop_mpls{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_set_field{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_set_field{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
-apply_action_list(TableId, [#action_experimenter{} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
 apply_action_list(_TableId, [], Pkt) ->
@@ -704,14 +702,12 @@ route_to_controller(TableId,
                     #ofs_pkt{fields = Fields,
                              packet = Packet},
                     Reason) ->
-    ofs_logic:send(#packet_in{
-        header = #ofp_header{xid = xid()},
-        buffer_id = ?OFPCML_NO_BUFFER, %% TODO: use no_buffer
-        reason = Reason,
-        table_id = TableId,
-        match = Fields,
-        data = pkt:encapsulate(Packet)
-    }).
+    PacketIn = #ofp_packet_in{buffer_id = ?OFPCML_NO_BUFFER, %% TODO: use no_buffer
+                          reason = Reason,
+                          table_id = TableId,
+                          match = Fields,
+                          data = pkt:encapsulate(Packet)},
+    ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn}).
 
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, all) ->
@@ -733,50 +729,50 @@ route_to_output(_TableId, _Pkt, OtherPort) ->
 
 %%% Packet conversion functions ------------------------------------------------
 
--spec packet_fields([record()]) -> [oxm_field()].
+-spec packet_fields([record()]) -> [ofp_field()].
 packet_fields(Packet) ->
     packet_fields(Packet, []).
 
--spec packet_fields([record()], [oxm_field()]) -> [oxm_field()].
+-spec packet_fields([record()], [ofp_field()]) -> [ofp_field()].
 packet_fields([], Fields) ->
     Fields;
 packet_fields([#ether{type = Type,
                       dhost = DHost,
                       shost = SHost} | Rest], Fields) ->
-    NewFields = [oxm_field(eth_type, <<Type:16>>),
-                 oxm_field(eth_dst, DHost),
-                 oxm_field(eth_src, SHost)],
+    NewFields = [ofp_field(eth_type, <<Type:16>>),
+                 ofp_field(eth_dst, DHost),
+                 ofp_field(eth_src, SHost)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#ipv4{p = Proto,
                      saddr = SAddr,
                      daddr = DAddr} | Rest], Fields) ->
-    NewFields = [oxm_field(ip_proto, <<Proto:8>>),
-                 oxm_field(ipv4_src, SAddr),
-                 oxm_field(ipv4_dst, DAddr)],
+    NewFields = [ofp_field(ip_proto, <<Proto:8>>),
+                 ofp_field(ipv4_src, SAddr),
+                 ofp_field(ipv4_dst, DAddr)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#ipv6{next = Proto,
                      saddr = SAddr,
                      daddr = DAddr} | Rest], Fields) ->
-    NewFields = [oxm_field(ip_proto, <<Proto:8>>),
-                 oxm_field(ipv6_src, SAddr),
-                 oxm_field(ipv6_dst, DAddr)],
+    NewFields = [ofp_field(ip_proto, <<Proto:8>>),
+                 ofp_field(ipv6_src, SAddr),
+                 ofp_field(ipv6_dst, DAddr)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#tcp{sport = SPort,
                     dport = DPort} | Rest], Fields) ->
-    NewFields = [oxm_field(tcp_src, <<SPort:16>>),
-                 oxm_field(tcp_dst, <<DPort:16>>)],
+    NewFields = [ofp_field(tcp_src, <<SPort:16>>),
+                 ofp_field(tcp_dst, <<DPort:16>>)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([#udp{sport = SPort,
                     dport = DPort} | Rest], Fields) ->
-    NewFields = [oxm_field(udp_src, <<SPort:16>>),
-                 oxm_field(udp_dst, <<DPort:16>>)],
+    NewFields = [ofp_field(udp_src, <<SPort:16>>),
+                 ofp_field(udp_dst, <<DPort:16>>)],
     packet_fields(Rest, Fields ++ NewFields);
 packet_fields([_Other | Rest], Fields) ->
     packet_fields(Rest, Fields).
 
--spec oxm_field(atom(), binary() | integer()) -> oxm_field().
-oxm_field(Field, Value) ->
-    #oxm_field{class = openflow_basic,
+-spec ofp_field(atom(), binary() | integer()) -> ofp_field().
+ofp_field(Field, Value) ->
+    #ofp_field{class = openflow_basic,
                field = Field,
                has_mask = false,
                value = Value}.

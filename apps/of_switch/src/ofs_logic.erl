@@ -23,6 +23,7 @@
 
 -include("of_switch.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 
 -record(state, {
           connections = [] :: [#connection{}],
@@ -97,11 +98,11 @@ handle_cast({message, From, Message},
     {noreply, NewState};
 handle_cast({send, Message}, #state{connections = Connections} = State) ->
     Target = if
-                 (is_record(Message, port_status))
-                 orelse (is_record(Message, error_msg)) ->
+                 (is_record(Message, ofp_port_status))
+                 orelse (is_record(Message, ofp_error)) ->
                      Connections;
-                 (is_record(Message, packet_in))
-                 orelse (is_record(Message, flow_removed)) ->
+                 (is_record(Message, ofp_packet_in))
+                 orelse (is_record(Message, ofp_flow_removed)) ->
                      lists:filter(fun(#connection{role = slave}) ->
                                           false;
                                      (#connection{role = _}) ->
@@ -130,7 +131,8 @@ code_change(_OldVersion, State, _Extra) ->
 %% @doc Handle different kind of messages.
 -spec handle_message(ofp_message(), connection(),
                      #state{}) -> #state{}.
-handle_message(#hello{header = #ofp_header{version = ReceivedVersion} = Header},
+handle_message(#ofp_message{version = ReceivedVersion,
+                            body = #ofp_hello{}} = Message,
                #connection{pid = Pid, socket = Socket,
                            version = undefined} = Connection,
                #state{connections = Connections} = State) ->
@@ -142,62 +144,62 @@ handle_message(#hello{header = #ofp_header{version = ReceivedVersion} = Header},
                                               NewConnection),
             State#state{connections = NewConnections};
         error ->
-            send_error_reply(Socket, Header, #error_msg{type = hello_failed,
-                                                        code = incompatible}),
+            send_reply(Socket, Message, #ofp_error{type = hello_failed,
+                                                   code = incompatible}),
             State
     end;
 handle_message(_Message, #connection{version = undefined}, State) ->
     %% If version is undefined drop all the other messages.
     State;
-handle_message(#hello{}, _, State) ->
+handle_message(#ofp_message{body = #ofp_hello{}}, _, State) ->
     %% Drop hello messages once version is known.
     State;
-handle_message(#error_msg{type = hello_failed},
+handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
                #connection{pid = Pid}, State) ->
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
     State;
-handle_message(#features_request{header = Header},
+handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
                State) ->
-    FeaturesReply = #features_reply{header = Header,
-                                    datapath_mac = <<0:48>>,
+    FeaturesReply = #ofp_features_reply{datapath_mac = <<0:48>>,
                                     datapath_id = 0,
                                     n_buffers = 0,
                                     n_tables = 255},
-    do_send(Socket, FeaturesReply),
+    send_reply(Socket, Request, FeaturesReply),
     State;
-handle_message(#set_config{}, _, State) ->
+handle_message(#ofp_message{body = #ofp_set_config{}}, _, State) ->
     %% TODO: persist incoming configuration
     State;
-handle_message(#get_config_request{header = Header},
+handle_message(#ofp_message{body = #ofp_get_config_request{}} = Request,
                #connection{socket = Socket},
                State) ->
-    ConfigReply = #get_config_reply{header = Header,
-                                    flags = [],
-                                    miss_send_len = ?OFPCML_NO_BUFFER},
-    do_send(Socket, ConfigReply),
+    ConfigReply = #ofp_get_config_reply{flags = [],
+                                        miss_send_len = ?OFPCML_NO_BUFFER},
+    send_reply(Socket, Request, ConfigReply),
     State;
-handle_message(#role_request{} = RoleRequest,
+handle_message(#ofp_message{body = #ofp_role_request{}} = Request,
                #connection{socket = Socket} = Connection,
                #state{} = State) ->
+    RoleRequest = Request#ofp_message.body,
     {Reply, NewState} = handle_role(RoleRequest, Connection, State),
-    do_send(Socket, Reply),
+    send_reply(Socket, Request, Reply),
     NewState;
-handle_message(ModRequest,
+handle_message(#ofp_message{body = RequestBody} = Request,
                #connection{socket = Socket, role = slave},
-               State) when is_record(ModRequest, flow_mod);
-                           is_record(ModRequest, group_mod);
-                           is_record(ModRequest, port_mod);
-                           is_record(ModRequest, table_mod) ->
+               State) when is_record(RequestBody, ofp_flow_mod);
+                           is_record(RequestBody, ofp_group_mod);
+                           is_record(RequestBody, ofp_port_mod);
+                           is_record(RequestBody, ofp_table_mod) ->
     %% Don't allow slave controllers to modify flows, groups, ports and tables.
-    Header = get_header(ModRequest),
-    send_error_reply(Socket, Header, #error_msg{type = bad_request,
-                                                code = is_slave}),
+    send_reply(Socket, Request, #ofp_error{type = bad_request,
+                                           code = is_slave}),
     State;
-handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
-               Connection, State) ->
-    NewState = handle_in_backend(FlowMod, Connection, State),
+handle_message(#ofp_message{body = #ofp_flow_mod{} = FlowMod} = Request,
+               Connection,
+               State) ->
+    NewState = handle_in_backend(Request, Connection, State),
+    #ofp_flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
     case should_do_flow_mod_packet_out(Command, BufferId) of
         true ->
             ok; %% TODO: emulate packet_out
@@ -205,19 +207,15 @@ handle_message(#flow_mod{command = Command, buffer_id = BufferId} = FlowMod,
             do_nothing
     end,
     NewState;
-handle_message(#port_mod{} = PortMod, Connection, State) ->
-    handle_in_backend(PortMod, Connection, State);
-handle_message(#table_mod{} = TableMod, Connection, State) ->
-    handle_in_backend(TableMod, Connection, State);
-handle_message(#echo_request{} = Request, Connection, State) ->
+handle_message(#ofp_message{body = RequestBody} = Request, Connection, State)
+        when is_record(RequestBody, ofp_port_mod);
+             is_record(RequestBody, ofp_table_mod);
+             is_record(RequestBody, ofp_echo_request);
+             is_record(RequestBody, ofp_packet_out);
+             is_record(RequestBody, ofp_desc_stats_request);
+             is_record(RequestBody, ofp_flow_stats_request) ->
+    %% handle those requests in backend
     handle_in_backend(Request, Connection, State);
-handle_message(#packet_out{} = PacketOut, Connection, State) ->
-    handle_in_backend(PacketOut, Connection, State);
-handle_message(StatsRequest, Connection, State)
-        when is_record(StatsRequest, desc_stats_request);
-             is_record(StatsRequest, flow_stats_request) ->
-    %% handle stats requests in backend
-    handle_in_backend(StatsRequest, Connection, State);
 handle_message(_, _, State) ->
     %% Drop everything else.
     State.
@@ -242,9 +240,9 @@ decide_on_version(ReceivedVersion) ->
             {ok, ProposedVersion}
     end.
 
--spec handle_role(role_request(), connection(), #state{}) ->
+-spec handle_role(ofp_role_request(), connection(), #state{}) ->
                          {ofp_message(), #state{}}.
-handle_role(#role_request{header = Header, role = Role,
+handle_role(#ofp_role_request{role = Role,
                           generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections,
@@ -253,16 +251,14 @@ handle_role(#role_request{header = Header, role = Role,
         equal ->
             NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
                                         Connection#connection{role = equal}),
-            RoleReply = #role_reply{header = Header,
-                                    role = Role,
+            RoleReply = #ofp_role_reply{role = Role,
                                     generation_id = GenerationId},
             {RoleReply, State#state{connections = NewConns}};
         _ ->
             if
                 (CurrentGenId /= undefined)
                 andalso (GenerationId - CurrentGenId < 0) ->
-                    ErrorReply = #error_msg{header = Header,
-                                            type = role_request_failed,
+                    ErrorReply = #ofp_error{type = role_request_failed,
                                             code = stale},
                     {ErrorReply, State};
                 true ->
@@ -285,8 +281,7 @@ handle_role(#role_request{header = Header, role = Role,
                     end,
                     NewState = State#state{connections = NewConns2,
                                            generation_id = GenerationId},
-                    RoleReply = #role_reply{header = Header,
-                                            role = Role,
+                    RoleReply = #ofp_role_reply{role = Role,
                                             generation_id = GenerationId},
                     {RoleReply, NewState}
             end
@@ -301,30 +296,26 @@ should_do_flow_mod_packet_out(_, no_buffer) ->
 should_do_flow_mod_packet_out(_, _) ->
     true.
 
--spec handle_in_backend(record(), #connection{}, #state{}) -> #state{}.
-handle_in_backend(Request, #connection{socket = Socket},
+-spec handle_in_backend(#ofp_message{}, #connection{}, #state{}) -> #state{}.
+handle_in_backend(#ofp_message{body = RequestBody} = Request,
+                  #connection{socket = Socket},
                   #state{backend_mod = BackendMod,
                          backend_state = BackendState} = State) ->
-    RequestName = element(1, Request),
-    case BackendMod:RequestName(BackendState, Request) of
+    RequestName = element(1, RequestBody),
+    case BackendMod:RequestName(BackendState, RequestBody) of
         {ok, NewBackendState} ->
             ok;
-        {ok, Reply, NewBackendState} ->
-            do_send(Socket, Reply);
-        {error, Message, NewBackendState} ->
-            Header = get_header(Request),
-            send_error_reply(Socket, Header, Message)
+        {ok, ReplyBody, NewBackendState} ->
+            send_reply(Socket, Request, ReplyBody);
+        {error, ErrorMessage, NewBackendState} ->
+            send_reply(Socket, Request, ErrorMessage)
     end,
     State#state{backend_state = NewBackendState}.
-
--spec get_header(record()) -> #ofp_header{}.
-get_header(Packet) ->
-    element(2, Packet).
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->
     {ok, EncodedMessage} = of_protocol:encode(Message),
     gen_tcp:send(Socket, EncodedMessage).
 
-send_error_reply(Socket, Header, Message) ->
-    do_send(Socket, Message#error_msg{header = Header}).
+send_reply(Socket, Request, ReplyBody) ->
+    do_send(Socket, Request#ofp_message{body = ReplyBody}).

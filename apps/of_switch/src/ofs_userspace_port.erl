@@ -53,7 +53,7 @@ send(OutPort, OFSPkt) ->
             end
     end.
 
--spec change_config(integer(), #port_mod{}) ->
+-spec change_config(integer(), #ofp_port_mod{}) ->
         {error, bad_port | bad_hw_addr} | ok.
 change_config(PortId, PortMod) ->
     case ets:lookup(ofs_ports, PortId) of
@@ -175,7 +175,7 @@ handle_call(_Request, _From, State) ->
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
-handle_cast({change_config, #port_mod{}}, State) ->
+handle_cast({change_config, #ofp_port_mod{}}, State) ->
     %% FIXME: implement
     {noreply, State};
 handle_cast(stop, State) ->

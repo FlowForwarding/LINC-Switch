@@ -18,7 +18,7 @@
 
 -record(state, {
           socket :: port(),
-          parser :: #parser{}
+          parser :: #ofp_parser{}
          }).
 
 %%%-----------------------------------------------------------------------------
@@ -46,7 +46,7 @@ init({Controller, Port}) ->
             ofs_logic:register_receiver(self(), Socket),
             {ok, Parser} = ofp_parser:new(),
 
-            Hello = #hello{header = #ofp_header{xid = 1}},
+            Hello = #ofp_message{xid = 1, body = #ofp_hello{}},
             {ok, HelloBin} = of_protocol:encode(Hello),
             ok = gen_tcp:send(Socket, HelloBin),
 

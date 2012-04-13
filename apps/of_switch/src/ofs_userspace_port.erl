@@ -27,6 +27,7 @@
 
 -record(state, {port :: port(),
                 socket :: integer(),
+                ifindex :: integer(),
                 ofs_port_num :: integer(),
                 interface :: string()}).
 
@@ -77,34 +78,52 @@ stop(Pid) ->
                              ignore |
                              {stop, Reason :: term()}.
 init(Args) ->
+    process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, Args),
     {ofs_port_num, OfsPortNum} = lists:keyfind(ofs_port_num, 1, Args),
-    lager:info("Creating port: ~p", [Args]),
     State = case re:run(Interface, "tap*", [{capture, none}]) of
                 match ->
                     {ip, IP} = lists:keyfind(ip, 1, Args),
-                    {ok, Ref} = tuncer:create(Interface),
-                    ok = tuncer:up(Ref, IP),
-                    Fd = tuncer:getfd(Ref),
-                    Port = open_port({fd, Fd, Fd}, [binary]),
-                    #state{port = Port, ofs_port_num = OfsPortNum};
+                    case tuncer:create(Interface) of
+                        {ok, Ref} ->
+                            ok = tuncer:up(Ref, IP),
+                            Fd = tuncer:getfd(Ref),
+                            Port = open_port({fd, Fd, Fd}, [binary]),
+                            #state{port = Port, ofs_port_num = OfsPortNum};
+                        {error, Error} ->
+                            lager:error("Tuncer error ~p for interface ~p",
+                                        [Error, Interface]),
+                            {stop, shutdown}
+                    end;
                 nomatch ->
-                    epcap:start([{promiscous, true}, {interface, Interface}]),
-                    {ok, Socket, _Length} = bpf:open(Interface),
-                    bpf:ctl(Socket, setif, Interface),
-                    #state{socket = Socket, ofs_port_num = OfsPortNum}
+                    {ok, _Pid} = epcap:start([{promiscuous, true},
+                                             {interface, Interface},
+                                             {filter, ""}]),
+                    {S, I} = case os:type() of
+                                 {unix, darwin} ->
+                                     darwin_raw_socket(Interface);
+                                 {unix, linux} ->
+                                     linux_raw_socket(Interface)
+                             end,
+                    #state{socket = S,
+                           ifindex = I,
+                           ofs_port_num = OfsPortNum}
             end,
-    OfsPort = #ofs_port{number = OfsPortNum,
-                        type = physical,
-                        handle = self()
-                       },
-    ets:insert(ofs_ports, OfsPort),
-    ets:insert(ofs_port_counters,
-               #ofs_port_counter{number = OfsPortNum}),
-    {ok, State#state{interface = Interface,
-                     ofs_port_num = OfsPortNum}}.
+    case State of
+        {stop, shutdown} ->
+            {stop, shutdown};
+        _ ->
+            OfsPort = #ofs_port{number = OfsPortNum,
+                                type = physical,
+                                handle = self()},
+            ets:insert(ofs_ports, OfsPort),
+            ets:insert(ofs_port_counters,
+                       #ofs_port_counter{number = OfsPortNum}),
+            {ok, State#state{interface = Interface,
+                             ofs_port_num = OfsPortNum}}
+    end.
 
 -spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
                   #state{}) ->
@@ -116,17 +135,25 @@ init(Args) ->
                          {stop, Reason :: term(), #state{}}.
 handle_call({send, OFSPkt}, _From, #state{socket = Socket,
                                           port = undefined,
+                                          ifindex = Ifindex,
                                           ofs_port_num = OutPort} = State) ->
     Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-    lager:info("OutSocket InPort: ~p, OutPort: ~p", [OFSPkt#ofs_pkt.in_port, OutPort]),
-    procket:write(Socket, Frame),
+    lager:info("Output type: socket, InPort: ~p, OutPort: ~p",
+               [OFSPkt#ofs_pkt.in_port, OutPort]),
+    case os:type() of
+        {unix, darwin} ->
+            procket:write(Socket, Frame);
+        {unix, linux} ->
+            packet:send(Socket, Ifindex, Frame)
+    end,
     update_port_transmitted_counters(OutPort, byte_size(Frame)),
     {reply, ok, State};
 handle_call({send, OFSPkt}, _From, #state{socket = undefined,
                                           port = ErlangPort,
                                           ofs_port_num = OutPort} = State) ->
     Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-    lager:info("OutPort InPort: ~p, OutPort: ~p", [OFSPkt#ofs_pkt.in_port, OutPort]),
+    lager:info("Output type: erlang port, InPort: ~p, OutPort: ~p",
+               [OFSPkt#ofs_pkt.in_port, OutPort]),
     port_command(ErlangPort, Frame),
     update_port_transmitted_counters(OutPort, byte_size(Frame)),
     {reply, ok, State};
@@ -157,6 +184,11 @@ handle_info({Port, {data, Frame}}, #state{ofs_port_num = OfsPortNum,
                                           port = Port} = State) ->
     handle_frame(Frame, OfsPortNum),
     {noreply, State};
+handle_info({'EXIT', _Pid, {port_terminated, 1}},
+            #state{interface = Interface} = State) ->
+    lager:error("Port for interface ~p exited abnormally",
+                [Interface]),
+    {stop, shutdown, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -192,3 +224,23 @@ update_port_transmitted_counters(PortNum, Bytes) ->
     ets:update_counter(ofs_port_counters, PortNum,
                        [{#ofs_port_counter.transmitted_packets, 1},
                         {#ofs_port_counter.transmitted_bytes, Bytes}]).
+
+-spec darwin_raw_socket(string()) -> tuple(integer(), 0).
+darwin_raw_socket(Interface) ->
+    case bpf:open(Interface) of
+        {ok, Socket, _Length} ->
+            bpf:ctl(Socket, setif, Interface),
+            {Socket, 0};
+        {error, Error} ->
+            lager:error("Cannot open darwin raw socket for"
+                        " interface ~p because: ~p", [Interface, Error]),
+            {0, 0}
+    end.
+
+-spec linux_raw_socket(string()) -> tuple(integer(), integer()).
+linux_raw_socket(Interface) ->
+    {ok, Socket} = packet:socket(),
+    Ifindex = packet:ifindex(Socket, Interface),
+    packet:promiscuous(Socket, Ifindex),
+    ok = packet:bind(Socket, Ifindex),
+    {Socket, Ifindex}.

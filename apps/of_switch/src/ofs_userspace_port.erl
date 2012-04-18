@@ -83,7 +83,7 @@ init(Args) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, Args),
     {ofs_port_num, OfsPortNum} = lists:keyfind(ofs_port_num, 1, Args),
-    State = case re:run(Interface, "tap*", [{capture, none}]) of
+    State = case re:run(Interface, "^tap[0-9]+$", [{capture, none}]) of
                 %% When switch connects to a tap interface, erlang receives file
                 %% descriptor to read/write ethernet frames directly from the
                 %% desired /dev/tapX character device. No socket communication

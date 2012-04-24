@@ -93,7 +93,7 @@ handle_cast({unregister, Pid}, #state{connections = Connections} = State) ->
 handle_cast({message, From, Message},
             #state{connections = Connections} = State) ->
     Connection = lists:keyfind(From, #connection.pid, Connections),
-    ?INFO("Received message from controller (~p): ~p~n", [Connection, Message]),
+    ?INFO("Received: ~p (from ~p)~n", [Message, Connection#connection.socket]),
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
 handle_cast({send, Message}, #state{connections = Connections} = State) ->
@@ -140,8 +140,8 @@ handle_message(#ofp_message{version = ReceivedVersion,
     case decide_on_version(ReceivedVersion) of
         {ok, Version} ->
             NewConnection = Connection#connection{version = Version},
-            NewConnections = lists:keyreplace(Pid, #connection.pid, Connections,
-                                              NewConnection),
+            NewConnections = lists:keyreplace(Pid, #connection.pid,
+                                              Connections, NewConnection),
             State#state{connections = NewConnections};
         error ->
             send_reply(Socket, Message, #ofp_error{type = hello_failed,
@@ -163,9 +163,9 @@ handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
                State) ->
     FeaturesReply = #ofp_features_reply{datapath_mac = <<0:48>>,
-                                    datapath_id = 0,
-                                    n_buffers = 0,
-                                    n_tables = 255},
+                                        datapath_id = 0,
+                                        n_buffers = 0,
+                                        n_tables = 255},
     send_reply(Socket, Request, FeaturesReply),
     State;
 handle_message(#ofp_message{body = #ofp_set_config{}}, _, State) ->
@@ -208,13 +208,13 @@ handle_message(#ofp_message{body = #ofp_flow_mod{} = FlowMod} = Request,
     end,
     NewState;
 handle_message(#ofp_message{body = RequestBody} = Request, Connection, State)
-        when is_record(RequestBody, ofp_port_mod);
-             is_record(RequestBody, ofp_table_mod);
-             is_record(RequestBody, ofp_echo_request);
-             is_record(RequestBody, ofp_barrier_request);
-             is_record(RequestBody, ofp_packet_out);
-             is_record(RequestBody, ofp_desc_stats_request);
-             is_record(RequestBody, ofp_flow_stats_request) ->
+  when is_record(RequestBody, ofp_port_mod);
+       is_record(RequestBody, ofp_table_mod);
+       is_record(RequestBody, ofp_echo_request);
+       is_record(RequestBody, ofp_barrier_request);
+       is_record(RequestBody, ofp_packet_out);
+       is_record(RequestBody, ofp_desc_stats_request);
+       is_record(RequestBody, ofp_flow_stats_request) ->
     %% handle those requests in backend
     handle_in_backend(Request, Connection, State);
 handle_message(_, _, State) ->
@@ -227,7 +227,8 @@ handle_message(_, _, State) ->
 
 -spec decide_on_version(integer()) -> {ok, integer()} | error.
 decide_on_version(ReceivedVersion) ->
-    {ok, SupportedVersions} = application:get_env(of_switch, supported_versions),
+    {ok, SupportedVersions} = application:get_env(of_switch,
+                                                  supported_versions),
     ProposedVersion = lists:max(SupportedVersions),
     if
         ProposedVersion > ReceivedVersion ->
@@ -244,7 +245,7 @@ decide_on_version(ReceivedVersion) ->
 -spec handle_role(ofp_role_request(), connection(), #state{}) ->
                          {ofp_message(), #state{}}.
 handle_role(#ofp_role_request{role = Role,
-                          generation_id = GenerationId},
+                              generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections,
                    generation_id = CurrentGenId} = State) ->
@@ -253,7 +254,7 @@ handle_role(#ofp_role_request{role = Role,
             NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
                                         Connection#connection{role = equal}),
             RoleReply = #ofp_role_reply{role = Role,
-                                    generation_id = GenerationId},
+                                        generation_id = GenerationId},
             {RoleReply, State#state{connections = NewConns}};
         _ ->
             if
@@ -283,7 +284,7 @@ handle_role(#ofp_role_request{role = Role,
                     NewState = State#state{connections = NewConns2,
                                            generation_id = GenerationId},
                     RoleReply = #ofp_role_reply{role = Role,
-                                            generation_id = GenerationId},
+                                                generation_id = GenerationId},
                     {RoleReply, NewState}
             end
     end.
@@ -316,6 +317,7 @@ handle_in_backend(#ofp_message{body = RequestBody} = Request,
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->
     {ok, EncodedMessage} = of_protocol:encode(Message),
+    ?INFO("Sending: ~p (to ~p)~n", [Message, Socket]),
     gen_tcp:send(Socket, EncodedMessage).
 
 send_reply(Socket, Request, ReplyBody) ->

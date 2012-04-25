@@ -22,7 +22,7 @@ start_link() ->
 
 open(Controller, Port) ->
     Id = list_to_atom(Controller ++ "_" ++ integer_to_list(Port)),
-    ChildSpec = {Id, {ofs_receiver, start_link, [Controller, Port]},
+    ChildSpec = {Id, {ofs_receiver, start_link, [Id, Controller, Port]},
                  permanent, 5000, worker, [ofs_receiver]},
     supervisor:start_child(ofs_receiver_sup, ChildSpec).
 

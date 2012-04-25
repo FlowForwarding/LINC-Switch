@@ -119,6 +119,8 @@ handle_info(_Info, State) ->
 
 terminate(_Reason, #state{backend_mod = BackendMod,
                           backend_state = BackendState}) ->
+    {ok, Controllers} = application:get_env(of_switch, controllers),
+    [ofs_receiver_sup:close(Host, Port) || {Host, Port} <- Controllers],
     BackendMod:stop(BackendState).
 
 code_change(_OldVersion, State, _Extra) ->

@@ -4,12 +4,14 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+
 -record(flow_entry, {
           priority :: integer(),
-          match :: of_protocol:match(),
+          match :: ofp_match(),
           cookie :: binary(),
           install_time :: tuple(calendar:date(), calendar:time()),
-          instructions = [] :: ordsets:ordered_set(of_protocol:instruction())
+          instructions = [] :: ordsets:ordset(ofp_instruction())
          }).
 
 -record(flow_entry_counter, {
@@ -21,7 +23,7 @@
 -record(flow_table, {
           id :: integer(),
           entries = [] :: [#flow_entry{}],
-          config = drop :: of_protocol:table_config()
+          config = drop :: ofp_table_config()
          }).
 
 -record(flow_table_counter, {
@@ -33,8 +35,8 @@
          }).
 
 -record(ofs_pkt, {
-          fields :: of_protocol:match(),
-          actions = [] :: ordsets:ordset(ofp_structures:action()),
+          fields :: ofp_match(),
+          actions = [] :: ordsets:ordset(ofp_action()),
           metadata = << 0:64/integer >> :: binary(),
           size = 0 :: integer(),
           in_port :: integer(),
@@ -67,18 +69,18 @@
          }).
 
 -record(ofs_bucket, {
-          value = of_protocol:ofp_bucket(),
-          counter = of_protocol:ofp_bucket_counter()
+          value :: ofp_bucket(),
+          counter :: ofp_bucket_counter()
          }).
 
 -record(group_entry, {
-          id :: of_protocol:ofp_group_id(),
-          type = all :: of_protocol:ofp_group_type(),
-          buckets = [#ofs_bucket{}]
+          id :: ofp_group_id(),
+          type = all :: ofp_group_type(),
+          buckets = [] :: [#ofs_bucket{}]
          }).
 
 -record(group_entry_counters, {
-          id :: of_protocol:ofp_group_id(),
+          id :: ofp_group_id(),
           ref_count :: integer(),
           packet_count :: integer(),
           byte_count :: integer()

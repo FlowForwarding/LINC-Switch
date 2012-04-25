@@ -21,7 +21,6 @@
          terminate/2,
          code_change/3]).
 
--include_lib("of_protocol/include/of_protocol.hrl").
 -include("of_switch.hrl").
 -include("of_switch_userspace.hrl").
 

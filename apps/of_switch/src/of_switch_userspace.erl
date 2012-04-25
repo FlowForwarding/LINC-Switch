@@ -40,7 +40,6 @@
          stop/1]).
 
 -include_lib("pkt/include/pkt.hrl").
--include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("of_switch.hrl").
 -include("of_switch_userspace.hrl").
@@ -645,7 +644,7 @@ cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
                  tuple(match, goto, integer(), #ofs_pkt{}).
 
 -spec apply_instructions(integer(),
-                         list(of_protocol:instruction()),
+                         list(ofp_instruction()),
                          #ofs_pkt{},
                          output_or_group | {goto, integer()}) -> match().
 apply_instructions(TableId,
@@ -700,7 +699,7 @@ apply_mask(Metadata, _Mask) ->
     Metadata.
 
 -spec apply_action_list(integer(),
-                        list(ofp_structures:action()),
+                        list(ofp_action()),
                         #ofs_pkt{}) -> #ofs_pkt{}.
 apply_action_list(TableId, [#ofp_action_output{port = PortNum} | _Rest], Pkt) ->
     route_to_output(TableId, Pkt, PortNum),
@@ -773,6 +772,7 @@ apply_group_type(ff, Buckets, Pkt) ->
             apply_bucket(Bucket, Pkt)
     end.
 
+-spec apply_bucket(#ofs_bucket{}, #ofs_pkt{}) -> #ofs_pkt{}.
 apply_bucket(#ofs_bucket{value = #ofp_bucket{actions = Actions}}, Pkt) ->
     apply_action_list(0, Actions, Pkt).
 
@@ -782,7 +782,7 @@ pick_live_bucket(Buckets) ->
     hd(Buckets).
 
 -spec apply_action_set(integer(),
-                       ordsets:ordset(ofp_structures:action()),
+                       ordsets:ordset(ofp_action()),
                        #ofs_pkt{}) -> #ofs_pkt{}.
 apply_action_set(TableId, [Action | Rest], Pkt) ->
     NewPkt = apply_action_list(TableId, [Action], Pkt),

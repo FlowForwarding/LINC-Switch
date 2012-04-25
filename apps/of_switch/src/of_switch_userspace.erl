@@ -54,7 +54,7 @@
 %%% Switch API
 %%%-----------------------------------------------------------------------------
 
--spec route(#ofs_pkt{}) -> route_result().
+-spec route(#ofs_pkt{}) -> pid().
 route(Pkt) ->
     proc_lib:spawn_link(?MODULE, do_route, [Pkt, 0]).
 
@@ -84,7 +84,7 @@ remove_port(PortId) ->
             ets:delete(PortId)
     end.
 
--spec pkt_to_ofs([record()], integer()) -> #ofs_pkt{}.
+-spec pkt_to_ofs([pkt:packet()], ofp_port_no()) -> #ofs_pkt{}.
 pkt_to_ofs(Packet, PortNum) ->
     #ofs_pkt{packet = Packet,
              fields = #ofp_match{type = oxm,
@@ -125,6 +125,15 @@ start(_Opts) ->
                                 [named_table, public,
                                  {keypos, #ofs_port_counter.number},
                                  {read_concurrency, true}]),
+    group_table = ets:new(group_table, [named_table, public,
+                                        {keypos, #group_entry.id},
+                                        {read_concurrency, true},
+                                        {write_concurrency, true}]),
+    group_entry_counters = ets:new(group_entry_counters, [named_table, public,
+                                                          {keypos,
+                                                           #group_entry_counters.id},
+                                                          {read_concurrency, true},
+                                                          {write_concurrency, true}]),
     {ok, Ports} = application:get_env(of_switch, ports),
     [add_port(physical, PortOpts) || PortOpts <- Ports],
     {ok, #state{}}.
@@ -199,7 +208,46 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
       {ok, #state{}} | {error, ofp_error(), #state{}}.
-ofp_group_mod(State, #ofp_group_mod{} = _GroupMod) ->
+ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
+                                    buckets = Buckets}) ->
+    %% Add new entry to the group table, if entry with given group id is already
+    %% present, then return error.
+    Entry = #group_entry{id = Id, type = Type, buckets = Buckets},
+    case ets:insert_new(group_table, Entry) of
+        true ->
+            {ok, State};
+        false ->
+            {error, #ofp_error{type = group_mod_failed,
+                               code = group_exists}, State}
+    end;
+ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
+                                    buckets = Buckets}) ->
+    %% Modify existing entry in the group table, if entry with given group id
+    %% is not in the table, then return error.
+    Entry = #group_entry{id = Id, type = Type, buckets = Buckets},
+    case ets:member(group_table, Id) of
+        true ->
+            ets:insert(group_table, Entry),
+            {ok, State};
+        false ->
+            {error, #ofp_error{type = group_mod_failed,
+                               code = unknown_group}, State}
+    end;
+ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
+    %% Deletes existing entry in the group table, if entry with given group id
+    %% is not in the table, no error is recorded. Flows containing given
+    %% group id are removed along with it.
+    %% If one wishes to effectively delete a group yet leave in flow entries
+    %% using it, that group can be cleared by sending a modify with no buckets
+    %% specified.
+    case Id of
+        all ->
+            ets:delete_all_objects(group_table);
+        any ->
+            ok;
+        Id ->
+            ets:delete(group_table, Id)
+    end,
     {ok, State}.
 
 %% @doc Send packet to controller
@@ -221,7 +269,7 @@ ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
 
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
-      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error(), #state{}}.
+                                 {ok, #ofp_barrier_reply{}, #state{}} | {error, ofp_error(), #state{}}.
 ofp_barrier_request(State, #ofp_barrier_request{}) ->
     BarrierReply = #ofp_barrier_reply{},
     {ok, BarrierReply, State}.
@@ -341,39 +389,39 @@ modify_flow_entry(#flow_entry{} = Entry,
 
 delete_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
-        fun(#flow_table{entries = Entries} = Table) ->
-            NewEntries = lists:filter(fun(Entry) ->
-                                          not MatchFun(Entry, FlowMod)
-                                      end, Entries),
-            ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
-        end, get_flow_tables(TableId)).
+      fun(#flow_table{entries = Entries} = Table) ->
+              NewEntries = lists:filter(fun(Entry) ->
+                                                not MatchFun(Entry, FlowMod)
+                                        end, Entries),
+              ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
+      end, get_flow_tables(TableId)).
 
 get_flow_stats(TID, Entries, #ofp_flow_stats_request{out_port = OutPort,
-                                                 out_group = OutGroup,
-                                                 cookie = Cookie,
-                                                 cookie_mask = CookieMask,
-                                                 match = Match}) ->
+                                                     out_group = OutGroup,
+                                                     cookie = Cookie,
+                                                     cookie_mask = CookieMask,
+                                                     match = Match}) ->
     MatchingEntries = [Entry || Entry <- Entries,
                                 non_strict_match(Entry, Match),
                                 port_match(Entry, OutPort),
                                 group_match(Entry, OutGroup),
                                 cookie_match(Entry, Cookie, CookieMask)],
     [#ofp_flow_stats{table_id = TID,
-                 duration_sec = DurationUSec div 1000000,
-                 duration_nsec = (DurationUSec rem 1000000) * 1000,
-                 priority = Entry#flow_entry.priority,
-                 idle_timeout = -1, %% FIXME
-                 hard_timeout = -1, %% FIXME
-                 cookie = Entry#flow_entry.cookie,
-                 packet_count = EntryStats#flow_entry_counter.received_packets,
-                 byte_count = EntryStats#flow_entry_counter.received_bytes,
-                 match = Entry#flow_entry.match,
-                 instructions = Entry#flow_entry.instructions}
-            || Entry <- MatchingEntries,
-               EntryStats <- ets:lookup(flow_entry_counters, {TID, Entry}),
-               DurationUSec <- [
-                timer:now_diff(now(), Entry#flow_entry.install_time)
-               ]].
+                     duration_sec = DurationUSec div 1000000,
+                     duration_nsec = (DurationUSec rem 1000000) * 1000,
+                     priority = Entry#flow_entry.priority,
+                     idle_timeout = -1, %% FIXME
+                     hard_timeout = -1, %% FIXME
+                     cookie = Entry#flow_entry.cookie,
+                     packet_count = EntryStats#flow_entry_counter.received_packets,
+                     byte_count = EntryStats#flow_entry_counter.received_bytes,
+                     match = Entry#flow_entry.match,
+                     instructions = Entry#flow_entry.instructions}
+     || Entry <- MatchingEntries,
+        EntryStats <- ets:lookup(flow_entry_counters, {TID, Entry}),
+        DurationUSec <- [
+                         timer:now_diff(now(), Entry#flow_entry.install_time)
+                        ]].
 
 %% strict match: use all match fields (including the masks) and the priority
 fm_strict_match(#flow_entry{priority = Priority, match = Match} = Entry,
@@ -438,6 +486,7 @@ mask_match(<<V1,Rest1/binary>>, <<V2,Rest2/binary>>, <<M,Rest3/binary>>) ->
 mask_match(<<>>, <<>>, <<>>) ->
     true.
 
+-spec create_flow_entry(ofp_flow_mod(), integer()) -> #flow_entry{}.
 create_flow_entry(#ofp_flow_mod{priority = Priority,
                             cookie = Cookie,
                             match = Match,
@@ -468,13 +517,13 @@ do_route(Pkt, FlowId) ->
         {match, goto, NextFlowId, NewPkt} ->
             do_route(NewPkt, NextFlowId);
         {match, output, NewPkt} ->
-            case lists:keymember(ofp_action_output, 1, NewPkt#ofs_pkt.actions) of
-                true ->
-                    apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
-                    output;
-                false ->
-                    drop
-            end;
+            apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
+            output;
+        {match, group, NewPkt} ->
+            apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
+            output;
+        {match, drop, _NewPkt} ->
+            drop;
         {table_miss, controller} ->
             route_to_controller(FlowId, Pkt, no_match),
             controller;
@@ -484,7 +533,10 @@ do_route(Pkt, FlowId) ->
             do_route(Pkt, NextFlowId)
     end.
 
--spec apply_flow(#ofs_pkt{}, #flow_entry{}) -> tuple().
+-type miss() :: tuple(table_miss, drop | controller) |
+                tuple(table_miss, continue, integer()).
+
+-spec apply_flow(#ofs_pkt{}, #flow_entry{}) -> match() | miss().
 apply_flow(Pkt, FlowId) ->
     [FlowTable] = ets:lookup(flow_tables, FlowId),
     FlowTableId = FlowTable#flow_table.id,
@@ -492,9 +544,9 @@ apply_flow(Pkt, FlowId) ->
         {match, goto, NextFlowId, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
             {match, goto, NextFlowId, NewPkt};
-        {match, output, NewPkt} ->
+        {match, Action, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
-            {match, output, NewPkt};
+            {match, Action, NewPkt};
         table_miss when FlowTable#flow_table.config == drop ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, drop};
@@ -506,18 +558,19 @@ apply_flow(Pkt, FlowId) ->
             {table_miss, continue, FlowId + 1}
     end.
 
--spec update_flow_table_match_counters(integer()) -> ok.
+-spec update_flow_table_match_counters(integer()) -> [integer()].
 update_flow_table_match_counters(FlowTableId) ->
     ets:update_counter(flow_table_counters, FlowTableId,
                        [{#flow_table_counter.packet_lookups, 1},
                         {#flow_table_counter.packet_matches, 1}]).
 
--spec update_flow_table_miss_counters(integer()) -> ok.
+-spec update_flow_table_miss_counters(integer()) -> [integer()].
 update_flow_table_miss_counters(FlowTableId) ->
     ets:update_counter(flow_table_counters, FlowTableId,
                        [{#flow_table_counter.packet_lookups, 1}]).
 
--spec update_flow_entry_counters(integer(), #flow_entry{}, integer()) -> ok.
+-spec update_flow_entry_counters(integer(), #flow_entry{}, integer())
+                                -> [integer()].
 update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
     ets:update_counter(flow_entry_counters,
                        {FlowTableId, FlowEntry},
@@ -525,7 +578,7 @@ update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
                         {#flow_entry_counter.received_bytes, PktSize}]).
 
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
-                        -> tuple() | nomatch.
+                        -> match() | table_miss.
 match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
     case match_flow_entry(Pkt, FlowTableId, FlowEntry) of
         {match, goto, NextFlowId, NewPkt} ->
@@ -533,31 +586,27 @@ match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
                                        FlowEntry,
                                        Pkt#ofs_pkt.size),
             {match, goto, NextFlowId, NewPkt};
-        {match, output, NewPkt} ->
+        {match, Action, NewPkt} ->
             update_flow_entry_counters(FlowTableId,
                                        FlowEntry,
                                        Pkt#ofs_pkt.size),
-            {match, output, NewPkt};
+            {match, Action, NewPkt};
         nomatch ->
             match_flow_entries(Pkt, FlowTableId, Rest)
     end;
 match_flow_entries(_Pkt, _FlowTableId, []) ->
     table_miss.
 
--spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+-spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{})
+                      -> match() | nomatch.
 match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
     case fields_match(Pkt#ofs_pkt.fields#ofp_match.oxm_fields,
                       FlowEntry#flow_entry.match#ofp_match.oxm_fields) of
         true ->
-            case apply_instructions(FlowTableId,
-                                    FlowEntry#flow_entry.instructions,
-                                    Pkt,
-                                    output) of
-                {NewPkt, goto, NextFlowId} ->
-                    {match, goto, NextFlowId, NewPkt};
-                {NewPkt, output} ->
-                    {match, output, NewPkt}
-            end;
+            apply_instructions(FlowTableId,
+                               FlowEntry#flow_entry.instructions,
+                               Pkt,
+                               output_or_group);
         false ->
             nomatch
     end.
@@ -592,10 +641,13 @@ group_match(_, _) ->
 cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
     mask_match(Cookie1, Cookie2, CookieMask).
 
+-type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
+                 tuple(match, goto, integer(), #ofs_pkt{}).
+
 -spec apply_instructions(integer(),
                          list(of_protocol:instruction()),
                          #ofs_pkt{},
-                         output | {goto, integer()}) -> tuple().
+                         output_or_group | {goto, integer()}) -> match().
 apply_instructions(TableId,
                    [#ofp_instruction_apply_actions{actions = Actions} | Rest],
                    Pkt,
@@ -628,10 +680,20 @@ apply_instructions(TableId,
                    Pkt,
                    _NextStep) ->
     apply_instructions(TableId, Rest, Pkt, {goto, Id});
-apply_instructions(_TableId, [], Pkt, output) ->
-    {Pkt, output};
+apply_instructions(_TableId, [], Pkt, output_or_group) ->
+    case lists:keymember(ofp_action_group, 1, Pkt#ofs_pkt.actions) of
+        true ->
+            {match, group, Pkt};
+        false ->
+            case lists:keymember(ofp_action_output, 1, Pkt#ofs_pkt.actions) of
+                true ->
+                    {match, output, Pkt};
+                false ->
+                    {match, drop, Pkt}
+            end
+    end;
 apply_instructions(_TableId, [], Pkt, {goto, Id}) ->
-    {Pkt, goto, Id}.
+    {match, goto, Id, Pkt}.
 
 -spec apply_mask(binary(), binary()) -> binary().
 apply_mask(Metadata, _Mask) ->
@@ -640,12 +702,12 @@ apply_mask(Metadata, _Mask) ->
 -spec apply_action_list(integer(),
                         list(ofp_structures:action()),
                         #ofs_pkt{}) -> #ofs_pkt{}.
-apply_action_list(TableId, [#ofp_action_output{port = PortNum} | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_output{port = PortNum} | _Rest], Pkt) ->
     route_to_output(TableId, Pkt, PortNum),
-    apply_action_list(TableId, Rest, Pkt);
-apply_action_list(TableId, [#ofp_action_group{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    Pkt;
+apply_action_list(_TableId, [#ofp_action_group{group_id = GroupId} | _Rest],
+                  Pkt) ->
+    apply_group(GroupId, Pkt);
 apply_action_list(TableId, [#ofp_action_set_queue{} | Rest], Pkt) ->
     NewPkt = Pkt,
     apply_action_list(TableId, Rest, NewPkt);
@@ -688,6 +750,37 @@ apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
 apply_action_list(_TableId, [], Pkt) ->
     Pkt.
 
+-spec apply_group(ofp_group_id(), #ofs_pkt{}) -> #ofs_pkt{}.
+apply_group(GroupId, Pkt) ->
+    [Group] = ets:lookup(group_table, GroupId),
+    apply_group_type(Group#group_entry.type, Group#group_entry.buckets, Pkt).
+
+-spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) ->
+                              #ofs_pkt{}.
+apply_group_type(all, Buckets, Pkt) ->
+    lists:map(fun(Bucket) ->
+                      apply_bucket(Bucket, Pkt)
+              end, Buckets);
+apply_group_type(select, [Bucket | _Rest], Pkt) ->
+    apply_bucket(Bucket, Pkt);
+apply_group_type(indirect, [Bucket], Pkt) ->
+    apply_bucket(Bucket, Pkt);
+apply_group_type(ff, Buckets, Pkt) ->
+    case pick_live_bucket(Buckets) of
+        false ->
+            drop;
+        Bucket ->
+            apply_bucket(Bucket, Pkt)
+    end.
+
+apply_bucket(#ofs_bucket{value = #ofp_bucket{actions = Actions}}, Pkt) ->
+    apply_action_list(0, Actions, Pkt).
+
+-spec pick_live_bucket([#ofs_bucket{}]) -> #ofs_bucket{} | false.
+pick_live_bucket(Buckets) ->
+    %% TODO Implement bucket liveness logic
+    hd(Buckets).
+
 -spec apply_action_set(integer(),
                        ordsets:ordset(ofp_structures:action()),
                        #ofs_pkt{}) -> #ofs_pkt{}.
@@ -729,11 +822,11 @@ route_to_output(_TableId, _Pkt, OtherPort) ->
 
 %%% Packet conversion functions ------------------------------------------------
 
--spec packet_fields([record()]) -> [ofp_field()].
+-spec packet_fields([pkt:packet()]) -> [ofp_field()].
 packet_fields(Packet) ->
     packet_fields(Packet, []).
 
--spec packet_fields([record()], [ofp_field()]) -> [ofp_field()].
+-spec packet_fields([pkt:packet()], [ofp_field()]) -> [ofp_field()].
 packet_fields([], Fields) ->
     Fields;
 packet_fields([#ether{type = Type,

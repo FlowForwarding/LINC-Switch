@@ -65,3 +65,21 @@
           receive_crc_errors = 0 :: integer(),
           collisions = 0 :: integer()
          }).
+
+-record(ofs_bucket, {
+          value = of_protocol:ofp_bucket(),
+          counter = of_protocol:ofp_bucket_counter()
+         }).
+
+-record(group_entry, {
+          id :: of_protocol:ofp_group_id(),
+          type = all :: of_protocol:ofp_group_type(),
+          buckets = [#ofs_bucket{}]
+         }).
+
+-record(group_entry_counters, {
+          id :: of_protocol:ofp_group_id(),
+          ref_count :: integer(),
+          packet_count :: integer(),
+          byte_count :: integer()
+         }).

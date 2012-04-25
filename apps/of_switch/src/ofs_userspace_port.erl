@@ -203,7 +203,7 @@ handle_info({'EXIT', _Pid, {port_terminated, 1}},
 handle_info(_Info, State) ->
     {noreply, State}.
 
--spec terminate(Reason :: term(), #state{}) -> none().
+-spec terminate(Reason :: term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
     ok.
 

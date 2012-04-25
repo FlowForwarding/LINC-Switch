@@ -214,6 +214,7 @@ handle_message(#ofp_message{body = RequestBody} = Request, Connection, State)
        is_record(RequestBody, ofp_barrier_request);
        is_record(RequestBody, ofp_packet_out);
        is_record(RequestBody, ofp_desc_stats_request);
+       is_record(RequestBody, ofp_table_stats_request);
        is_record(RequestBody, ofp_flow_stats_request) ->
     %% handle those requests in backend
     handle_in_backend(Request, Connection, State);

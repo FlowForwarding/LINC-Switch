@@ -49,6 +49,21 @@
 -type state() :: #state{}.
 -type route_result() :: drop | controller | output.
 
+-define(MAX_FLOW_TABLE_ENTRIES, (1 bsl 24)). %% some arbitrary big number
+-define(SUPPORTED_FIELD_TYPES, [in_port,
+                                eth_dst,
+                                eth_src,
+                                eth_type,
+                                ip_proto,
+                                ipv4_src,
+                                ipv4_dst,
+                                tcp_src,
+                                tcp_dst,
+                                udp_src,
+                                udp_dst,
+                                ipv6_src,
+                                ipv6_dst]).
+
 %%%-----------------------------------------------------------------------------
 %%% Switch API
 %%%-----------------------------------------------------------------------------
@@ -309,7 +324,9 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{}) ->
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
       {ok, ofp_table_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
-    {ok, #ofp_table_stats_reply{}, State}.
+    Stats = [table_stats(Table) || Table <- lists:sort(ets:tab2list(flow_tables))],
+    {ok, #ofp_table_stats_reply{flags = [],
+                                stats = Stats}, State}.
 
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
@@ -869,3 +886,27 @@ ofp_field(Field, Value) ->
                field = Field,
                has_mask = false,
                value = Value}.
+
+table_stats(#flow_table{id = Id, entries = Entries, config = Config}) ->
+    TableName = list_to_binary(io_lib:format("Flow Table 0x~2.16.0b", [Id])),
+    Instructions = [goto_table, write_actions, apply_actions, clear_actions],
+    ActiveCount = length(Entries),
+    [#flow_table_counter{packet_lookups = LookupCount,
+                         packet_matches = MatchedCount}] =
+            ets:lookup(flow_table_counters, Id),
+    #ofp_table_stats{table_id = Id,
+                     name = TableName,
+                     match = ?SUPPORTED_FIELD_TYPES,
+                     wildcards = ?SUPPORTED_FIELD_TYPES,
+                     write_actions = [output, drop, group],
+                     apply_actions = [output, drop, group],
+                     write_setfields = [],
+                     apply_setfields = [],
+                     metadata_match = <<-1:64>>,
+                     metadata_write = <<-1:64>>,
+                     instructions = Instructions,
+                     config = Config,
+                     max_entries = ?MAX_FLOW_TABLE_ENTRIES,
+                     active_count = ActiveCount,
+                     lookup_count = LookupCount,
+                     matched_count = MatchedCount}.

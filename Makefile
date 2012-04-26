@@ -7,6 +7,7 @@ compile: rebar
 
 rel: compile
 	./rebar generate -f
+	./scripts/post_generate_hook
 
 test: compile
 	./rebar skip_deps=true apps=of_protocol,of_switch eunit

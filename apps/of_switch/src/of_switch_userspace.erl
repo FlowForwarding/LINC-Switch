@@ -13,7 +13,7 @@
          route/1,
          add_port/2,
          remove_port/1,
-         pkt_to_ofs/2
+         parse_ofs_pkt/2
         ]).
 
 %% Spawns
@@ -92,13 +92,15 @@ add_port(reserved, _Opts) ->
 remove_port(PortNo) ->
     ofs_userspace_port:remove(PortNo).
 
--spec pkt_to_ofs([pkt:packet()], ofp_port_no()) -> #ofs_pkt{}.
-pkt_to_ofs(Packet, PortNum) ->
+-spec parse_ofs_pkt(binary(), ofp_port_no()) -> #ofs_pkt{}.
+parse_ofs_pkt(Binary, PortNum) ->
+    Packet = pkt:decapsulate(Binary),
     #ofs_pkt{packet = Packet,
              fields = #ofp_match{type = oxm,
                              oxm_fields = [ofp_field(in_port, <<PortNum:32>>) |
                                            packet_fields(Packet)]},
-             in_port = PortNum}.
+             in_port = PortNum,
+             size = byte_size(Binary)}.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -270,8 +272,7 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                               in_port = InPort,
                               data = Data}) ->
-    Pkt = pkt:decapsulate(Data),
-    apply_action_list(0, Actions, pkt_to_ofs(Pkt, InPort)),
+    apply_action_list(0, Actions, parse_ofs_pkt(Data, InPort)),
     {ok, State}.
 
 %% @doc Reply to echo request.

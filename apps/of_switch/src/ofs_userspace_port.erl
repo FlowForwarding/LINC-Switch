@@ -330,8 +330,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 handle_frame(Frame, OfsPortNo) ->
-    Packet = pkt:decapsulate(Frame),
-    OFSPacket = of_switch_userspace:pkt_to_ofs(Packet, OfsPortNo),
+    OFSPacket = of_switch_userspace:parse_ofs_pkt(Frame, OfsPortNo),
     update_port_received_counters(OfsPortNo, byte_size(Frame)),
     of_switch_userspace:route(OFSPacket).
 

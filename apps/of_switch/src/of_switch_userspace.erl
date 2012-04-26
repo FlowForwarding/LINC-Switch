@@ -88,15 +88,9 @@ add_port(logical, _Opts) ->
 add_port(reserved, _Opts) ->
     ok.
 
--spec remove_port(integer()) -> ok.
-remove_port(PortId) ->
-    case ets:lookup(ofs_ports, PortId) of
-        [] ->
-            ok;
-        [#ofs_port{handle = Pid}] ->
-            ofs_userspace_port:stop(Pid),
-            ets:delete(PortId)
-    end.
+-spec remove_port(ofp_port_no()) -> ok.
+remove_port(PortNo) ->
+    ofs_userspace_port:remove(PortNo).
 
 -spec pkt_to_ofs([pkt:packet()], ofp_port_no()) -> #ofs_pkt{}.
 pkt_to_ofs(Packet, PortNum) ->
@@ -113,6 +107,7 @@ pkt_to_ofs(Packet, PortNum) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
+    %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
@@ -120,11 +115,6 @@ start(_Opts) ->
                                          entries = [],
                                          config = drop}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    ofs_ports = ets:new(ofs_ports, [named_table, public,
-                                    {keypos, #ofs_port.number},
-                                    {read_concurrency, true}]),
-
-    %% Counters
     flow_table_counters = ets:new(flow_table_counters,
                                   [named_table, public,
                                    {keypos, #flow_table_counter.id},
@@ -135,19 +125,27 @@ start(_Opts) ->
                                   [named_table, public,
                                    {keypos, #flow_entry_counter.key},
                                    {read_concurrency, true}]),
-    ofs_port_counters = ets:new(ofs_port_counters,
-                                [named_table, public,
-                                 {keypos, #ofs_port_counter.number},
-                                 {read_concurrency, true}]),
+    %% Ports
+    ofs_ports = ets:new(ofs_ports, [named_table, public,
+                                    {keypos, #ofs_port.number},
+                                    {read_concurrency, true}]),
+    port_stats = ets:new(port_stats,
+                         [named_table, public,
+                          {keypos, #ofp_port_stats.port_no},
+                          {read_concurrency, true}]),
+    queue_stats = ets:new(queue_stats,
+                          [named_table, public, bag,
+                           {keypos, #ofp_queue_stats.port_no},
+                           {read_concurrency, true}]),
+    %% Groups
     group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #group_entry.id},
+                                        {keypos, #group.id},
                                         {read_concurrency, true},
                                         {write_concurrency, true}]),
-    group_entry_counters = ets:new(group_entry_counters, [named_table, public,
-                                                          {keypos,
-                                                           #group_entry_counters.id},
-                                                          {read_concurrency, true},
-                                                          {write_concurrency, true}]),
+    group_stats = ets:new(group_stats, [named_table, public,
+                                        {keypos, #ofp_group_stats.group_id},
+                                        {read_concurrency, true},
+                                        {write_concurrency, true}]),
     {ok, Ports} = application:get_env(of_switch, ports),
     [add_port(physical, PortOpts) || PortOpts <- Ports],
     {ok, #state{}}.
@@ -226,7 +224,7 @@ ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
-    Entry = #group_entry{id = Id, type = Type, buckets = Buckets},
+    Entry = #group{id = Id, type = Type, buckets = Buckets},
     case ets:insert_new(group_table, Entry) of
         true ->
             {ok, State};
@@ -238,7 +236,7 @@ ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type
                                     buckets = Buckets}) ->
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
-    Entry = #group_entry{id = Id, type = Type, buckets = Buckets},
+    Entry = #group{id = Id, type = Type, buckets = Buckets},
     case ets:member(group_table, Id) of
         true ->
             ets:insert(group_table, Entry),
@@ -330,7 +328,7 @@ ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
 
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
-      {ok, ofp_port_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+                                    {ok, ofp_port_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_port_stats_request(State, #ofp_port_stats_request{}) ->
     {ok, #ofp_port_stats_reply{}, State}.
 
@@ -769,7 +767,7 @@ apply_action_list(_TableId, [], Pkt) ->
 -spec apply_group(ofp_group_id(), #ofs_pkt{}) -> #ofs_pkt{}.
 apply_group(GroupId, Pkt) ->
     [Group] = ets:lookup(group_table, GroupId),
-    apply_group_type(Group#group_entry.type, Group#group_entry.buckets, Pkt).
+    apply_group_type(Group#group.type, Group#group.buckets, Pkt).
 
 -spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) ->
                               #ofs_pkt{}.

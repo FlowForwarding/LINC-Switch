@@ -46,26 +46,10 @@
 -type ofs_port_type() :: physical | logical | reserved.
 
 -record(ofs_port, {
-          number :: integer(),
+          number :: ofp_port_no(),
           type :: ofs_port_type(),
-          handle :: term(),
-          config  = [] :: [atom()]
-         }).
-
--record(ofs_port_counter, {
-          number :: integer(),
-          received_packets = 0 :: integer(),
-          transmitted_packets = 0 :: integer(),
-          received_bytes = 0 :: integer(),
-          transmitted_bytes = 0 :: integer(),
-          receive_drops = 0 :: integer(),
-          transmit_drops = 0 :: integer(),
-          receive_errors = 0 :: integer(),
-          transmit_errors = 0 :: integer(),
-          receive_frame_alignment_errors = 0 :: integer(),
-          receive_overrun_errors = 0 :: integer(),
-          receive_crc_errors = 0 :: integer(),
-          collisions = 0 :: integer()
+          pid :: pid(),
+          port :: ofp_port()
          }).
 
 -record(ofs_bucket, {
@@ -73,15 +57,8 @@
           counter :: ofp_bucket_counter()
          }).
 
--record(group_entry, {
+-record(group, {
           id :: ofp_group_id(),
           type = all :: ofp_group_type(),
           buckets = [] :: [#ofs_bucket{}]
-         }).
-
--record(group_entry_counters, {
-          id :: ofp_group_id(),
-          ref_count :: integer(),
-          packet_count :: integer(),
-          byte_count :: integer()
          }).

@@ -26,3 +26,10 @@ deep-clean: clean
 rebar:
 	wget -q http://cloud.github.com/downloads/basho/rebar/rebar
 	chmod u+x rebar
+
+setup_dialyzer:
+	dialyzer --build_plt --apps erts kernel stdlib mnesia compiler syntax_tools runtime_tools crypto tools inets ssl webtool public_key observer
+	dialyzer --add_to_plt deps/*/ebin
+
+dialyzer:
+	dialyzer apps/*/ebin

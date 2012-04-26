@@ -113,23 +113,27 @@ get_port_stats(PortNo) ->
 
 -spec get_queue_stats() -> [ofp_queue_stats()].
 get_queue_stats() ->
-    ets:tab2list(queue_stats).
+    lists:map(fun(E) ->
+                      queue_stats_convert(E)
+              end, ets:tab2list(queue_stats)).
 
 -spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
 get_queue_stats(PortNo) ->
-    ets:lookup(queue_stats, PortNo).
+    L = ets:match_object(queue_stats, #queue_stats{key = {PortNo, '_'}, _ = '_'}),
+    lists:map(fun(E) ->
+                      queue_stats_convert(E)
+              end, L).
 
 -spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
                              ofp_queue_stats() | undefined.
 get_queue_stats(PortNo, QueueId) ->
-    case ets:match_object(queue_stats, #ofp_queue_stats{port_no = PortNo,
-                                                        queue_id = QueueId,
-                                                        _ = '_'
-                                                       }) of
+    case ets:match_object(queue_stats, #queue_stats{key = {PortNo, QueueId},
+                                                    _ = '_'
+                                                   }) of
         [] ->
             undefined;
         [Any] ->
-            Any
+            queue_stats_convert(Any)
     end.
 
 -spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) -> ok.
@@ -211,7 +215,8 @@ init(Args) ->
         _ ->
             OfsPort = #ofs_port{number = OfsPortNo,
                                 type = physical,
-                                pid = self()},
+                                pid = self(),
+                                port = #ofp_port{port_no = OfsPortNo}},
             ets:insert(ofs_ports, OfsPort),
             ets:insert(port_stats, #ofp_port_stats{port_no = OfsPortNo}),
             {ok, State#state{interface = Interface,
@@ -242,7 +247,7 @@ handle_call({send, Queue, OFSPkt}, _From,
         {unix, linux} ->
             packet:send(Socket, Ifindex, Frame)
     end,
-    update_port_transmitted_counters(OutPort, byte_size(Frame)),
+    update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
     {reply, ok, State};
 handle_call({send, Queue, OFSPkt}, _From,
             #state{socket = undefined,
@@ -252,7 +257,7 @@ handle_call({send, Queue, OFSPkt}, _From,
     lager:info("Output type: erlang port, InPort: ~p, OutPort: ~p",
                [OFSPkt#ofs_pkt.in_port, OutPort]),
     port_command(ErlangPort, Frame),
-    update_port_transmitted_counters(OutPort, byte_size(Frame)),
+    update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -264,13 +269,11 @@ handle_call(_Request, _From, State) ->
 handle_cast({attach_queue, #ofp_packet_queue{port_no = PortNo,
                                              queue_id = QueueId} = Queue},
             #state{queues = Queues} = State) ->
-    ets:insert(queue_stats, #ofp_queue_stats{port_no = PortNo,
-                                             queue_id = QueueId}),
+    ets:insert(queue_stats, #queue_stats{key = {PortNo, QueueId}}),
     {noreply, State#state{queues = [Queue | Queues]}};
 handle_cast({detach_queue, PortNo, QueueId}, #state{queues = Queues} = State) ->
-    ets:match_delete(queue_stats, #ofp_queue_stats{port_no = PortNo,
-                                                   queue_id = QueueId,
-                                                   _ = '_'}),
+    ets:match_delete(queue_stats, #queue_stats{key = {PortNo, QueueId},
+                                               _ = '_'}),
     NewQueues = lists:filter(fun(#ofp_packet_queue{port_no = P,
                                                    queue_id = Q})
                                    when P == PortNo andalso Q == QueueId ->
@@ -311,7 +314,8 @@ handle_info(_Info, State) ->
 terminate(_Reason, #state{ofs_port_no = PortNo}) ->
     true = ets:delete(ofs_ports, PortNo),
     true = ets:delete(port_stats, PortNo),
-    true = ets:delete(queue_stats, PortNo).
+    true = ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
+                                                      _ = '_'}).
 
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->
@@ -336,8 +340,22 @@ update_port_received_counters(PortNum, Bytes) ->
                        [{#ofp_port_stats.rx_packets, 1},
                         {#ofp_port_stats.rx_bytes, Bytes}]).
 
--spec update_port_transmitted_counters(integer(), integer()) -> any().
-update_port_transmitted_counters(PortNum, Bytes) ->
+-spec update_port_transmitted_counters(ofp_port_no(), ofp_queue_id() | none,
+                                       integer()) -> any().
+update_port_transmitted_counters(PortNum, Queue, Bytes) ->
+    case Queue of
+        none ->
+            ok;
+        _ ->
+            try ets:update_counter(queue_stats, {PortNum, Queue},
+                                   [{#queue_stats.tx_packets, 1},
+                                    {#queue_stats.tx_bytes, Bytes}])
+            catch
+                _:_ ->
+                    lager:error("Queue ~p for port ~p doesn't exist "
+                                "cannot update queue stats", [Queue, PortNum])
+            end
+    end,
     ets:update_counter(port_stats, PortNum,
                        [{#ofp_port_stats.tx_packets, 1},
                         {#ofp_port_stats.tx_bytes, Bytes}]).
@@ -379,3 +397,11 @@ get_port(PortNo) ->
         [Port] ->
             Port
     end.
+
+-spec queue_stats_convert(#queue_stats{}) -> ofp_queue_stats().
+queue_stats_convert(#queue_stats{key = {PortNo, QueueId},
+                                 tx_bytes = TxBytes,
+                                 tx_packets = TxPackets,
+                                 tx_errors = TxErrors}) ->
+    #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
+                     tx_packets = TxPackets, tx_errors = TxErrors}.

@@ -134,8 +134,8 @@ start(_Opts) ->
                           {keypos, #ofp_port_stats.port_no},
                           {read_concurrency, true}]),
     queue_stats = ets:new(queue_stats,
-                          [named_table, public, bag,
-                           {keypos, #ofp_queue_stats.port_no},
+                          [named_table, public,
+                           {keypos, #queue_stats.key},
                            {read_concurrency, true}]),
     %% Groups
     group_table = ets:new(group_table, [named_table, public,

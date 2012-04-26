@@ -312,10 +312,10 @@ handle_info(_Info, State) ->
 
 -spec terminate(Reason :: term(), #state{}) -> ok.
 terminate(_Reason, #state{ofs_port_no = PortNo}) ->
-    true = ets:delete(ofs_ports, PortNo),
-    true = ets:delete(port_stats, PortNo),
-    true = ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
-                                                      _ = '_'}).
+    catch ets:delete(ofs_ports, PortNo),
+    catch ets:delete(port_stats, PortNo),
+    catch ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
+                                                     _ = '_'}).
 
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->

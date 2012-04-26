@@ -311,9 +311,21 @@ ofp_flow_stats_request(State, #ofp_flow_stats_request{table_id = TableId} = Requ
 
 %% @doc Get aggregated flow statistics.
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
-      {ok, ofp_aggregate_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
-ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{}) ->
-    {ok, #ofp_aggregate_stats_reply{}, State}.
+      {ok, ofp_aggregate_stats_reply(), #state{}}
+      | {error, ofp_error(), #state{}}.
+ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
+    Tables = get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
+    %% for each table, for each flow, collect matching stats
+    Reply = lists:foldl(fun(#flow_table{id = TableId, entries = Entries},
+                            OuterAcc) ->
+                            lists:foldl(fun(Entry, Acc) ->
+                                            update_aggregate_stats(Acc,
+                                                                   TableId,
+                                                                   Entry,
+                                                                   Request)
+                                        end, OuterAcc, Entries)
+                        end, #ofp_aggregate_stats_reply{}, Tables),
+    {ok, Reply, State}.
 
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
@@ -901,3 +913,53 @@ table_stats(#flow_table{id = Id, entries = Entries, config = Config}) ->
                      active_count = ActiveCount,
                      lookup_count = LookupCount,
                      matched_count = MatchedCount}.
+
+update_aggregate_stats(#ofp_aggregate_stats_reply{
+                           packet_count = OldPacketCount,
+                           byte_count = OldByteCount,
+                           flow_count = OldFlowCount} = Reply,
+                       TableId,
+                       FlowEntry,
+                       #ofp_aggregate_stats_request{
+                           out_port = RequestOutPort,
+                           out_group = RequestOutGroup,
+                           cookie = RequestCookie,
+                           cookie_mask = RequestCookieMask,
+                           match = Match}) ->
+    FlowMatchesRequestSpec =
+            cookie_match(FlowEntry, RequestCookie, RequestCookieMask)
+            andalso
+            non_strict_match(FlowEntry, Match)
+            andalso
+            entry_writes_to_port(FlowEntry, RequestOutPort)
+            andalso
+            entry_writes_to_group(FlowEntry, RequestOutGroup),
+    case FlowMatchesRequestSpec of
+        true ->
+            [#flow_entry_counter{received_packets = EntryPacketCount,
+                                 received_bytes = EntryByteCount}] =
+                    ets:lookup(flow_entry_counters, {TableId, FlowEntry}),
+            Reply#ofp_aggregate_stats_reply{
+                     packet_count = OldPacketCount + EntryPacketCount,
+                     byte_count = OldByteCount + EntryByteCount,
+                     flow_count = OldFlowCount + 1};
+        false ->
+            Reply
+    end.
+
+entry_writes_to_port(_, any) ->
+    true;
+entry_writes_to_port(FlowEntry, RequiredPortNo) ->
+    [] =/= [x || #ofp_action_output{port = PortNo} <- get_actions(FlowEntry),
+                 PortNo =:= RequiredPortNo].
+
+entry_writes_to_group(_, any) ->
+    true;
+entry_writes_to_group(FlowEntry, RequiredGroupId) ->
+    [] =/= [x || #ofp_action_group{group_id = GrpId} <- get_actions(FlowEntry),
+                 GrpId =:= RequiredGroupId].
+
+get_actions(#flow_entry{instructions = Instrs}) ->
+    Written = [As || #ofp_instruction_write_actions{actions = As} <- Instrs],
+    Applied = [As || #ofp_instruction_apply_actions{actions = As} <- Instrs],
+    lists:flatten([Written, Applied]).

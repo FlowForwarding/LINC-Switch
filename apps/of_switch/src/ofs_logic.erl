@@ -308,15 +308,20 @@ handle_in_backend(#ofp_message{body = RequestBody} = Request,
                   #state{backend_mod = BackendMod,
                          backend_state = BackendState} = State) ->
     RequestName = element(1, RequestBody),
-    case BackendMod:RequestName(BackendState, RequestBody) of
-        {ok, NewBackendState} ->
-            ok;
-        {ok, ReplyBody, NewBackendState} ->
-            send_reply(Socket, Request, ReplyBody);
-        {error, ErrorMessage, NewBackendState} ->
-            send_reply(Socket, Request, ErrorMessage)
-    end,
-    State#state{backend_state = NewBackendState}.
+    try
+        case BackendMod:RequestName(BackendState, RequestBody) of
+            {ok, NewBackendState} ->
+                ok;
+            {ok, ReplyBody, NewBackendState} ->
+                send_reply(Socket, Request, ReplyBody);
+            {error, ErrorMessage, NewBackendState} ->
+                send_reply(Socket, Request, ErrorMessage)
+        end,
+        State#state{backend_state = NewBackendState}
+    catch #ofp_error{} = ErrorMsg ->
+        send_reply(Socket, Request, ErrorMsg),
+        State#state{backend_state = BackendState}
+    end.
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->

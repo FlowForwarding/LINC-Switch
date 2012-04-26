@@ -304,15 +304,10 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
       {ok, ofp_flow_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_flow_stats_request(State, #ofp_flow_stats_request{table_id = TableId} = Request) ->
-    try
-        Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
-                                  get_flow_stats(TID, Entries, Request)
-                              end, get_flow_tables(TableId)),
-        {ok, #ofp_flow_stats_reply{flags = [],
-                               stats = Stats}, State}
-    catch #ofp_error{} = ErrorMsg ->
-        {error, ErrorMsg, State}
-    end.
+    Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
+                              get_flow_stats(TID, Entries, Request)
+                          end, get_flow_tables(TableId)),
+    {ok, #ofp_flow_stats_reply{flags = [], stats = Stats}, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
@@ -375,12 +370,8 @@ get_flow_tables(TableId) when is_integer(TableId) ->
     ets:lookup(flow_tables, TableId).
 
 apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
-    try
-        ModFun(FlowMod, MatchFun),
-        {ok, State}
-    catch #ofp_error{} = Error ->
-        {error, Error, State}
-    end.
+    ModFun(FlowMod, MatchFun),
+    {ok, State}.
 
 modify_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(

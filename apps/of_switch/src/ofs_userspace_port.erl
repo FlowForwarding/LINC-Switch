@@ -155,7 +155,7 @@ remove(PortNo) ->
         undefined ->
             ok;
         Pid ->
-            gen_server:cast(Pid, stop)
+            gen_server:call(Pid, stop)
     end.
 
 %%%-----------------------------------------------------------------------------
@@ -259,6 +259,12 @@ handle_call({send, Queue, OFSPkt}, _From,
     port_command(ErlangPort, Frame),
     update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
     {reply, ok, State};
+handle_call(stop, _From, #state{ofs_port_no = PortNo} = State) ->
+    true = ets:delete(ofs_ports, PortNo),
+    true = ets:delete(port_stats, PortNo),
+    true = ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
+                                                      _ = '_'}),
+    {stop, shutdown, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -285,8 +291,6 @@ handle_cast({detach_queue, PortNo, QueueId}, #state{queues = Queues} = State) ->
 handle_cast({change_config, #ofp_port_mod{}}, State) ->
     %% FIXME: implement
     {noreply, State};
-handle_cast(stop, State) ->
-    {stop, shutdown, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -311,11 +315,8 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(Reason :: term(), #state{}) -> ok.
-terminate(_Reason, #state{ofs_port_no = PortNo}) ->
-    catch ets:delete(ofs_ports, PortNo),
-    catch ets:delete(port_stats, PortNo),
-    catch ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
-                                                     _ = '_'}).
+terminate(_Reason, _State) ->
+    ok.
 
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->

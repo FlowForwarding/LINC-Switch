@@ -153,6 +153,8 @@ start(_Opts) ->
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
 stop(_State) ->
+    [ofs_userspace_port:remove(PortNo) ||
+        #ofs_port{number = PortNo} <- ofs_userspace_port:list_ports()],
     ets:delete(flow_tables),
     ets:delete(ofs_ports),
     ets:delete(flow_table_counters),

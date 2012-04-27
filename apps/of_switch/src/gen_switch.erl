@@ -54,7 +54,7 @@
 %% @doc Reply to barrier request.
 -callback ofp_barrier_request(State :: term(),
                               ofp_barrier_request()) ->
-    {ok, ofp_barrier_request(), NewState :: term()} |
+    {ok, ofp_barrier_reply(), NewState :: term()} |
     {error, ofp_error(), NewState :: term()}.
 
 %% @doc Get switch description statistics.

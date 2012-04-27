@@ -119,7 +119,8 @@ get_queue_stats() ->
 
 -spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
 get_queue_stats(PortNo) ->
-    L = ets:match_object(queue_stats, #queue_stats{key = {PortNo, '_'}, _ = '_'}),
+    L = ets:match_object(queue_stats, #queue_stats{key = {PortNo, '_'},
+                                                   _ = '_'}),
     lists:map(fun(E) ->
                       queue_stats_convert(E)
               end, L).
@@ -369,6 +370,10 @@ darwin_raw_socket(Interface) ->
         {error, Error} ->
             lager:error("Cannot open darwin raw socket for"
                         " interface ~p because: ~p", [Interface, Error]),
+            {0, 0};
+        Any ->
+            lager:error("Cannot open darwin raw socket for"
+                        " interface ~p because: ~p", [Interface, Any]),
             {0, 0}
     end.
 

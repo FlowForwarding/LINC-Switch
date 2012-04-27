@@ -247,7 +247,7 @@ decide_on_version(ReceivedVersion) ->
     end.
 
 -spec handle_role(ofp_role_request(), connection(), #state{}) ->
-                         {ofp_message(), #state{}}.
+                         {ofp_role_reply(), #state{}}.
 handle_role(#ofp_role_request{role = Role,
                               generation_id = GenerationId},
             #connection{pid = Pid} = Connection,

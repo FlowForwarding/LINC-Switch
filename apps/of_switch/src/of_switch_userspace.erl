@@ -13,7 +13,9 @@
          route/1,
          add_port/2,
          remove_port/1,
-         parse_ofs_pkt/2
+         parse_ofs_pkt/2,
+         get_group_stats/0,
+         get_group_stats/1
         ]).
 
 %% Spawns
@@ -101,6 +103,19 @@ parse_ofs_pkt(Binary, PortNum) ->
                                            packet_fields(Packet)]},
              in_port = PortNum,
              size = byte_size(Binary)}.
+
+-spec get_group_stats() -> [ofp_group_stats()].
+get_group_stats() ->
+    ets:tab2list(group_stats).
+
+-spec get_group_stats(ofp_group_id()) -> ofp_group_stats() | undefined.
+get_group_stats(GroupId) ->
+    case ets:lookup(group_stats, GroupId) of
+        [] ->
+            undefined;
+        [Any] ->
+            Any
+    end.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -800,7 +815,12 @@ apply_bucket(#ofs_bucket{value = #ofp_bucket{actions = Actions}}, Pkt) ->
 -spec pick_live_bucket([#ofs_bucket{}]) -> #ofs_bucket{} | false.
 pick_live_bucket(Buckets) ->
     %% TODO Implement bucket liveness logic
-    hd(Buckets).
+    case Buckets of
+        [] ->
+            false;
+        _ ->
+            hd(Buckets)
+    end.
 
 -spec apply_action_set(integer(),
                        ordsets:ordset(ofp_action()),

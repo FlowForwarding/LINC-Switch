@@ -10,7 +10,7 @@
           priority          :: integer(),
           match             :: ofp_match(),
           cookie            :: binary(),
-          install_time      :: calendar:datetime(),
+          install_time      :: erlang:timestamp(),
           instructions = [] :: ordsets:ordset(ofp_instruction())
          }).
 

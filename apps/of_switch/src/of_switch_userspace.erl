@@ -287,8 +287,7 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    Pkt = pkt:decapsulate(Data),
-    apply_action_list(0, Actions, pkt_to_ofs(Pkt, InPort)),
+    apply_action_list(0, Actions, parse_ofs_pkt(Data, InPort)),
     {ok, State}.
 
 %% @doc Reply to echo request.

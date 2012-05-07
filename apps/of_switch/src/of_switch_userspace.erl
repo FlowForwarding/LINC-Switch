@@ -281,13 +281,14 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
     end,
     {ok, State}.
 
-%% @doc Send packet to controller
+%% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
-      {ok, #state{}} | {error, ofp_error(), #state{}}.
+                            {ok, #state{}} | {error, ofp_error(), #state{}}.
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
-                              in_port = InPort,
-                              data = Data}) ->
-    apply_action_list(0, Actions, parse_ofs_pkt(Data, InPort)),
+                                      in_port = InPort,
+                                      data = Data}) ->
+    Pkt = pkt:decapsulate(Data),
+    apply_action_list(0, Actions, pkt_to_ofs(Pkt, InPort)),
     {ok, State}.
 
 %% @doc Reply to echo request.
@@ -836,11 +837,11 @@ route_to_controller(TableId,
                     #ofs_pkt{fields = Fields,
                              packet = Packet},
                     Reason) ->
-    PacketIn = #ofp_packet_in{buffer_id = ?OFPCML_NO_BUFFER, %% TODO: use no_buffer
-                          reason = Reason,
-                          table_id = TableId,
-                          match = Fields,
-                          data = pkt:encapsulate(Packet)},
+    PacketIn = #ofp_packet_in{buffer_id = no_buffer,
+                              reason = Reason,
+                              table_id = TableId,
+                              match = Fields,
+                              data = pkt:encapsulate(Packet)},
     ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn}).
 
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().

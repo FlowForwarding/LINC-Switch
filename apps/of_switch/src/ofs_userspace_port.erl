@@ -27,7 +27,9 @@
          attach_queue/3,
          detach_queue/2,
 
-         remove/1]).
+         remove/1,
+
+         send_to_wire/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -156,7 +158,11 @@ remove(PortNo) ->
         undefined ->
             ok;
         Pid ->
-            gen_server:call(Pid, stop)
+            true = ets:delete(ofs_ports, PortNo),
+            true = ets:delete(port_stats, PortNo),
+            true = ets:match_delete(queue_stats,
+                                    #queue_stats{key = {PortNo, '_'}, _ = '_'}),
+            supervisor:terminate_child(ofs_userspace_port_sup, Pid)
     end.
 
 %%%-----------------------------------------------------------------------------
@@ -217,6 +223,7 @@ init(Args) ->
             OfsPort = #ofs_port{number = OfsPortNo,
                                 type = physical,
                                 pid = self(),
+                                iface = Interface,
                                 port = #ofp_port{port_no = OfsPortNo}},
             ets:insert(ofs_ports, OfsPort),
             ets:insert(port_stats, #ofp_port_stats{port_no = OfsPortNo}),
@@ -242,12 +249,7 @@ handle_call({send, Queue, OFSPkt}, _From,
     Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
     lager:info("Output type: socket, InPort: ~p, OutPort: ~p",
                [OFSPkt#ofs_pkt.in_port, OutPort]),
-    case os:type() of
-        {unix, darwin} ->
-            procket:write(Socket, Frame);
-        {unix, linux} ->
-            packet:send(Socket, Ifindex, Frame)
-    end,
+    send_to_wire(Socket, Ifindex, Frame),
     update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
     {reply, ok, State};
 handle_call({send, Queue, OFSPkt}, _From,
@@ -260,12 +262,6 @@ handle_call({send, Queue, OFSPkt}, _From,
     port_command(ErlangPort, Frame),
     update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
     {reply, ok, State};
-handle_call(stop, _From, #state{ofs_port_no = PortNo} = State) ->
-    true = ets:delete(ofs_ports, PortNo),
-    true = ets:delete(port_stats, PortNo),
-    true = ets:match_delete(queue_stats, #queue_stats{key = {PortNo, '_'},
-                                                      _ = '_'}),
-    {stop, shutdown, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -410,3 +406,11 @@ queue_stats_convert(#queue_stats{key = {PortNo, QueueId},
                                  tx_errors = TxErrors}) ->
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
+
+send_to_wire(Socket, Ifindex, Frame) ->
+    case os:type() of
+        {unix, darwin} ->
+            ofs_userspace_port_procket:send(Socket, Frame);
+        {unix, linux} ->
+            packet:send(Socket, Ifindex, Frame)
+    end.

@@ -49,6 +49,7 @@
           number             :: ofp_port_no(),
           type               :: ofs_port_type(),
           pid                :: pid(),
+          iface              :: string(),
           port = #ofp_port{} :: ofp_port()
          }).
 

@@ -74,21 +74,23 @@
 route(Pkt) ->
     proc_lib:spawn_link(?MODULE, do_route, [Pkt, 0]).
 
--spec add_port(ofs_port_type(), list(tuple(interface |
-                                           ofs_port_no |
-                                           ip, string()))) -> ok.
+-spec add_port(ofs_port_type(), list(tuple(interface
+                                           | ofs_port_no
+                                           | ip, string() | integer()))) ->
+                      pid() | error.
 add_port(physical, Opts) ->
     case supervisor:start_child(ofs_userspace_port_sup, [Opts]) of
-        {ok, _Pid} ->
+        {ok, Pid} ->
             lager:info("Created port: ~p", [Opts]),
-            ok;
+            Pid;
         {error, shutdown} ->
-            lager:error("Cannot create port ~p", [Opts])
+            lager:error("Cannot create port ~p", [Opts]),
+            error
     end;
 add_port(logical, _Opts) ->
-    ok;
+    error;
 add_port(reserved, _Opts) ->
-    ok.
+    error.
 
 -spec remove_port(ofp_port_no()) -> ok.
 remove_port(PortNo) ->
@@ -172,11 +174,17 @@ start(_Opts) ->
 stop(_State) ->
     [ofs_userspace_port:remove(PortNo) ||
         #ofs_port{number = PortNo} <- ofs_userspace_port:list_ports()],
+    %% Flows
     ets:delete(flow_tables),
-    ets:delete(ofs_ports),
     ets:delete(flow_table_counters),
     ets:delete(flow_entry_counters),
-    ets:delete(ofs_port_counters),
+    %% Ports
+    ets:delete(ofs_ports),
+    ets:delete(port_stats),
+    ets:delete(queue_stats),
+    %% Groups
+    ets:delete(group_table),
+    ets:delete(group_stats),
     ok.
 
 %% @doc Modify flow entry in the flow table.

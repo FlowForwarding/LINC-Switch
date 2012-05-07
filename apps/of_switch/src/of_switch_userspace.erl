@@ -246,7 +246,7 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
-      {ok, #state{}} | {error, ofp_error(), #state{}}.
+                           {ok, #state{}} | {error, ofp_error(), #state{}}.
 ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
     %% Add new entry to the group table, if entry with given group id is already
@@ -283,10 +283,12 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
         all ->
             ets:delete_all_objects(group_table);
         any ->
+            %% TODO: Should we support this case at all?
             ok;
         Id ->
             ets:delete(group_table, Id)
     end,
+    %% TODO: Remove flows containing given group along with it
     {ok, State}.
 
 %% @doc Handle a packet received from controller.

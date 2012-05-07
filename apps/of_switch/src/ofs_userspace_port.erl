@@ -353,9 +353,15 @@ update_port_transmitted_counters(PortNum, Queue, Bytes) ->
                                 "cannot update queue stats", [Queue, PortNum])
             end
     end,
-    ets:update_counter(port_stats, PortNum,
-                       [{#ofp_port_stats.tx_packets, 1},
-                        {#ofp_port_stats.tx_bytes, Bytes}]).
+    try
+        ets:update_counter(port_stats, PortNum,
+                           [{#ofp_port_stats.tx_packets, 1},
+                            {#ofp_port_stats.tx_bytes, Bytes}])
+    catch
+        E1:E2 ->
+            lager:error("Cannot update port stats for port ~p because ~p ~p",
+                        [PortNum, E1, E2])
+    end.
 
 -spec darwin_raw_socket(string()) -> tuple(integer(), 0).
 darwin_raw_socket(Interface) ->

@@ -289,12 +289,12 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
     end,
     {ok, State}.
 
-%% @doc Send packet to controller
+%% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
-      {ok, #state{}} | {error, ofp_error(), #state{}}.
+                            {ok, #state{}} | {error, ofp_error(), #state{}}.
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
-                              in_port = InPort,
-                              data = Data}) ->
+                                      in_port = InPort,
+                                      data = Data}) ->
     apply_action_list(0, Actions, parse_ofs_pkt(Data, InPort)),
     {ok, State}.
 
@@ -844,11 +844,11 @@ route_to_controller(TableId,
                     #ofs_pkt{fields = Fields,
                              packet = Packet},
                     Reason) ->
-    PacketIn = #ofp_packet_in{buffer_id = ?OFPCML_NO_BUFFER, %% TODO: use no_buffer
-                          reason = Reason,
-                          table_id = TableId,
-                          match = Fields,
-                          data = pkt:encapsulate(Packet)},
+    PacketIn = #ofp_packet_in{buffer_id = no_buffer,
+                              reason = Reason,
+                              table_id = TableId,
+                              match = Fields,
+                              data = pkt:encapsulate(Packet)},
     ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn}).
 
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
@@ -930,8 +930,8 @@ table_stats(#flow_table{id = Id, entries = Entries, config = Config}) ->
                      name = TableName,
                      match = ?SUPPORTED_FIELD_TYPES,
                      wildcards = ?SUPPORTED_FIELD_TYPES,
-                     write_actions = [output, drop, group],
-                     apply_actions = [output, drop, group],
+                     write_actions = [output, group],
+                     apply_actions = [output, group],
                      write_setfields = [],
                      apply_setfields = [],
                      metadata_match = <<-1:64>>,

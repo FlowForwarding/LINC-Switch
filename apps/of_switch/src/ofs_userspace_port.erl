@@ -27,9 +27,7 @@
          attach_queue/3,
          detach_queue/2,
 
-         remove/1,
-
-         send_to_wire/3]).
+         remove/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -57,19 +55,22 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
--spec send(ofp_port_no(), #ofs_pkt{}) -> ok.
+-spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
 send(OutPort, OFSPkt) ->
     send(OutPort, none, OFSPkt).
 
--spec send(ofp_port_no(), ofp_queue_id() | none, #ofs_pkt{}) -> ok.
+-spec send(ofp_port_no(), ofp_queue_id() | none, #ofs_pkt{}) ->
+                  ok | bad_port | bad_queue | no_fwd.
 send(OutPort, Queue, OFSPkt) ->
     case get_port(OutPort) of
-        undefined ->
-            ?ERROR("Port ~p does not exist", [OutPort]);
+        bad_port ->
+            ?ERROR("Port ~p does not exist", [OutPort]),
+            bad_port;
         #ofs_port{pid = Pid, port = #ofp_port{config = Config}} ->
             case lists:member(no_fwd, Config) of
                 true ->
-                    ?WARNING("Forwarding to port ~p disabled", [OutPort]);
+                    ?WARNING("Forwarding to port ~p disabled", [OutPort]),
+                    no_fwd;
                 false ->
                     gen_server:call(Pid, {send, Queue, OFSPkt})
             end
@@ -79,7 +80,7 @@ send(OutPort, Queue, OFSPkt) ->
                            {error, bad_port | bad_hw_addr} | ok.
 change_config(PortNo, PortMod) ->
     case get_port_pid(PortNo) of
-        undefined ->
+        bad_port ->
             {error, bad_port};
         %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
         %%           {error, bad_hw_addr};
@@ -91,11 +92,11 @@ change_config(PortNo, PortMod) ->
 list_ports() ->
     ets:tab2list(ofs_ports).
 
--spec list_queues(ofp_port_no()) -> [ofp_packet_queue()].
+-spec list_queues(ofp_port_no()) -> [ofp_packet_queue()] | bad_port.
 list_queues(PortNo) ->
     case get_port_pid(PortNo) of
-        undefined ->
-            [];
+        bad_port ->
+            bad_port;
         Pid ->
             gen_server:call(Pid, list_queues)
     end.
@@ -104,11 +105,11 @@ list_queues(PortNo) ->
 get_port_stats() ->
     ets:tab2list(port_stats).
 
--spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | undefined.
+-spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
 get_port_stats(PortNo) ->
     case ets:lookup(port_stats, PortNo) of
         [] ->
-            undefined;
+            bad_port;
         [Any] ->
             Any
     end.
@@ -139,24 +140,33 @@ get_queue_stats(PortNo, QueueId) ->
             queue_stats_convert(Any)
     end.
 
--spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) -> ok.
+-spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) ->
+                          ok | bad_port.
 attach_queue(PortNo, QueueId, Properties) ->
     Queue = #ofp_packet_queue{port_no = PortNo,
                               queue_id = QueueId,
                               properties = Properties},
-    Pid = get_port_pid(PortNo),
-    gen_server:cast(Pid, {attach_queue, Queue}).
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            gen_server:cast(Pid, {attach_queue, Queue})
+    end.
 
--spec detach_queue(ofp_port_no(), ofp_queue_id()) -> ok.
+-spec detach_queue(ofp_port_no(), ofp_queue_id()) -> ok | bad_port.
 detach_queue(PortNo, QueueId) ->
-    Pid = get_port_pid(PortNo),
-    gen_server:cast(Pid, {detach_queue, PortNo, QueueId}).
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            gen_server:cast(Pid, {detach_queue, PortNo, QueueId})
+    end.
 
--spec remove(ofp_port_no()) -> ok.
+-spec remove(ofp_port_no()) -> ok | bad_port.
 remove(PortNo) ->
     case get_port_pid(PortNo) of
-        undefined ->
-            ok;
+        bad_port ->
+            bad_port;
         Pid ->
             true = ets:delete(ofs_ports, PortNo),
             true = ets:delete(port_stats, PortNo),
@@ -243,25 +253,43 @@ handle_call(list_queues, _From, #state{queues = Queues} = State) ->
     {reply, Queues, State};
 handle_call({send, Queue, OFSPkt}, _From,
             #state{socket = Socket,
+                   queues = Queues,
                    port = undefined,
                    ifindex = Ifindex,
                    ofs_port_no = OutPort} = State) ->
-    Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-    lager:info("Output type: socket, InPort: ~p, OutPort: ~p",
-               [OFSPkt#ofs_pkt.in_port, OutPort]),
-    send_to_wire(Socket, Ifindex, Frame),
-    update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
-    {reply, ok, State};
+    Ret = case valid_queue(OutPort, Queue, Queues) of
+              true ->
+                  Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
+                  lager:info("Output type: socket, InPort: ~p, OutPort: ~p",
+                             [OFSPkt#ofs_pkt.in_port, OutPort]),
+                  send_to_wire(Socket, Ifindex, Frame),
+                  update_port_transmitted_counters(OutPort,
+                                                   Queue,
+                                                   byte_size(Frame)),
+                  ok;
+              false ->
+                  bad_queue
+          end,
+    {reply, Ret, State};
 handle_call({send, Queue, OFSPkt}, _From,
             #state{socket = undefined,
+                   queues = Queues,
                    port = ErlangPort,
                    ofs_port_no = OutPort} = State) ->
-    Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-    lager:info("Output type: erlang port, InPort: ~p, OutPort: ~p",
-               [OFSPkt#ofs_pkt.in_port, OutPort]),
-    port_command(ErlangPort, Frame),
-    update_port_transmitted_counters(OutPort, Queue, byte_size(Frame)),
-    {reply, ok, State};
+    Ret = case valid_queue(OutPort, Queue, Queues) of
+              true ->
+                  Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
+                  lager:info("Output type: erlang port, InPort: ~p, OutPort: ~p",
+                             [OFSPkt#ofs_pkt.in_port, OutPort]),
+                  port_command(ErlangPort, Frame),
+                  update_port_transmitted_counters(OutPort,
+                                                   Queue,
+                                                   byte_size(Frame)),
+                  ok;
+              false ->
+                  bad_queue
+          end,
+    {reply, Ret, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -387,20 +415,20 @@ linux_raw_socket(Interface) ->
     ok = packet:bind(Socket, Ifindex),
     {Socket, Ifindex}.
 
--spec get_port_pid(ofp_port_no()) -> pid() | undefined.
+-spec get_port_pid(ofp_port_no()) -> pid() | bad_port.
 get_port_pid(PortNo) ->
     case ets:lookup(ofs_ports, PortNo) of
         [] ->
-            undefined;
+            bad_port;
         [#ofs_port{pid = Pid}] ->
             Pid
     end.
 
--spec get_port(ofp_port_no()) -> #ofs_port{} | undefined.
+-spec get_port(ofp_port_no()) -> #ofs_port{} | bad_port.
 get_port(PortNo) ->
     case ets:lookup(ofs_ports, PortNo) of
         [] ->
-            undefined;
+            bad_port;
         [Port] ->
             Port
     end.
@@ -413,6 +441,7 @@ queue_stats_convert(#queue_stats{key = {PortNo, QueueId},
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
 
+-spec send_to_wire(integer(), integer(), binary()) -> ok.
 send_to_wire(Socket, Ifindex, Frame) ->
     case os:type() of
         {unix, darwin} ->
@@ -420,3 +449,11 @@ send_to_wire(Socket, Ifindex, Frame) ->
         {unix, linux} ->
             packet:send(Socket, Ifindex, Frame)
     end.
+
+-spec valid_queue(integer(), integer() | none, [#queue_stats{}]) -> boolean().
+valid_queue(_Port, none, _Queues) ->
+    true;
+valid_queue(Port, Queue, Queues) ->
+    lists:any(fun(#ofp_packet_queue{queue_id = QId, port_no = PNo}) ->
+                      Port == PNo andalso Queue == QId
+              end, Queues).

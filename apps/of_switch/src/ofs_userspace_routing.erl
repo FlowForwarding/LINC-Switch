@@ -33,50 +33,54 @@ do_route(Pkt, FlowId) ->
                         list(ofp_action()),
                         #ofs_pkt{}) -> #ofs_pkt{}.
 apply_action_list(TableId, [#ofp_action_output{port = PortNum} | _Rest], Pkt) ->
+    %% Required action
     route_to_output(TableId, Pkt, PortNum),
     Pkt;
 apply_action_list(_TableId, [#ofp_action_group{group_id = GroupId} | _Rest],
                   Pkt) ->
+    %% Required action
     apply_group(GroupId, Pkt);
-apply_action_list(TableId, [#ofp_action_set_queue{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+apply_action_list(TableId,
+                  [#ofp_action_set_queue{queue_id = QueueId} | Rest],
+                  Pkt) ->
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt#ofs_pkt{queue_id = QueueId});
 apply_action_list(TableId, [#ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_set_nw_ttl{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_push_vlan{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_push_mpls{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_set_field{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
-    NewPkt = Pkt,
-    apply_action_list(TableId, Rest, NewPkt);
+    %% Optional action
+    apply_action_list(TableId, Rest, Pkt);
 apply_action_list(_TableId, [], Pkt) ->
     Pkt.
 
@@ -243,8 +247,12 @@ apply_mask(Metadata, _Mask) ->
 
 -spec apply_group(ofp_group_id(), #ofs_pkt{}) -> #ofs_pkt{}.
 apply_group(GroupId, Pkt) ->
-    [Group] = ets:lookup(group_table, GroupId),
-    apply_group_type(Group#group.type, Group#group.buckets, Pkt).
+    case ets:lookup(group_table, GroupId) of
+        [] ->
+            Pkt;
+        [Group] ->
+            apply_group_type(Group#group.type, Group#group.buckets, Pkt)
+    end.
 
 -spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) ->
                               #ofs_pkt{}.
@@ -313,7 +321,7 @@ route_to_output(_TableId, _Pkt, table) ->
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
     ofs_userspace_port:send(InPort, Pkt);
 route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
-    ofs_userspace_port:send(PortNum, Pkt);
+    ofs_userspace_port:send(PortNum, Pkt#ofs_pkt.queue_id, Pkt);
 route_to_output(_TableId, _Pkt, OtherPort) ->
     lager:warning("unsupported port type: ~p", [OtherPort]).
 

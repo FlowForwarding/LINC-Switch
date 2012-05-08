@@ -38,7 +38,7 @@
          code_change/3]).
 
 -include("of_switch.hrl").
--include("of_switch_userspace.hrl").
+-include("ofs_userspace.hrl").
 
 -record(state, {port :: port(),
                 port_ref :: pid(),
@@ -351,7 +351,7 @@ terminate(_Reason, #state{socket = undefined, port_ref = PortRef}) ->
 terminate(_Reason, #state{socket = Socket, port_ref = undefined,
                           epcap_pid = EpcapPid}) ->
     epcap:stop(EpcapPid),
-    procket:close(Socket).
+    ofs_userspace_port_procket:close(Socket).
 
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->
@@ -365,9 +365,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 handle_frame(Frame, OfsPortNo) ->
-    OFSPacket = of_switch_userspace:parse_ofs_pkt(Frame, OfsPortNo),
+    OFSPacket = ofs_userspace:parse_ofs_pkt(Frame, OfsPortNo),
     update_port_received_counters(OfsPortNo, byte_size(Frame)),
-    of_switch_userspace:route(OFSPacket).
+    ofs_userspace:route(OFSPacket).
 
 -spec update_port_received_counters(integer(), integer()) -> any().
 update_port_received_counters(PortNum, Bytes) ->

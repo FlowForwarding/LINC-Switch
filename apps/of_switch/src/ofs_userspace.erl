@@ -4,7 +4,7 @@
 %%% @doc Userspace implementation of the OpenFlow Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(of_switch_userspace).
+-module(ofs_userspace).
 
 -behaviour(gen_switch).
 
@@ -44,7 +44,7 @@
 -include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("of_switch.hrl").
--include("of_switch_userspace.hrl").
+-include("ofs_userspace.hrl").
 
 -record(state, {}).
 

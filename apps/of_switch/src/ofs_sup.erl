@@ -32,7 +32,7 @@ init([]) ->
                         {ofs_userspace_port_sup, start_link, []},
                         permanent, 5000, supervisor, [ofs_userspace_port_sup]},
     SwitchLogic = {ofs_logic,
-                   {ofs_logic, start_link, [of_switch_userspace, []]},
+                   {ofs_logic, start_link, [ofs_userspace, []]},
                    permanent, 5000, worker, [ofs_logic]},
     ReceiverSup = {ofs_receiver_sup,
                    {ofs_receiver_sup, start_link, []},

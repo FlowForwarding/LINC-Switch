@@ -41,8 +41,10 @@
 -include("of_switch_userspace.hrl").
 
 -record(state, {port :: port(),
+                port_ref :: pid(),
                 socket :: integer(),
                 ifindex :: integer(),
+                epcap_pid :: pid(),
                 interface :: string(),
                 ofs_port_no :: ofp_port_no(),
                 queues = [] :: [ofp_packet_queue()]}).
@@ -201,7 +203,9 @@ init(Args) ->
                             ok = tuncer:up(Ref, IP),
                             Fd = tuncer:getfd(Ref),
                             Port = open_port({fd, Fd, Fd}, [binary]),
-                            #state{port = Port, ofs_port_no = OfsPortNo};
+                            #state{port = Port,
+                                   port_ref = Ref,
+                                   ofs_port_no = OfsPortNo};
                         {error, Error} ->
                             lager:error("Tuncer error ~p for interface ~p",
                                         [Error, Interface]),
@@ -215,7 +219,7 @@ init(Args) ->
                 %%   a RAW socket binded with given network interface.
                 %%   Handling of RAW sockets differs between OSes.
                 nomatch ->
-                    {ok, _Pid} = epcap:start([{promiscuous, true},
+                    {ok, Pid} = epcap:start([{promiscuous, true},
                                              {interface, Interface},
                                              {filter, ""}]),
                     {S, I} = case os:type() of
@@ -224,7 +228,8 @@ init(Args) ->
                                  {unix, linux} ->
                                      linux_raw_socket(Interface)
                              end,
-                    #state{socket = S, ifindex = I, ofs_port_no = OfsPortNo}
+                    #state{socket = S, ifindex = I, epcap_pid = Pid,
+                           ofs_port_no = OfsPortNo}
             end,
     case State of
         {stop, shutdown} ->
@@ -340,8 +345,13 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(Reason :: term(), #state{}) -> ok.
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #state{socket = undefined, port_ref = PortRef}) ->
+    tuncer:down(PortRef),
+    tuncer:destroy(PortRef);
+terminate(_Reason, #state{socket = Socket, port_ref = undefined,
+                          epcap_pid = EpcapPid}) ->
+    epcap:stop(EpcapPid),
+    procket:close(Socket).
 
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->

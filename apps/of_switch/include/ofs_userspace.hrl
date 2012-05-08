@@ -70,3 +70,5 @@
           type    = all :: ofp_group_type(),
           buckets = []  :: [#ofs_bucket{}]
          }).
+
+-type route_result() :: drop | controller | output.

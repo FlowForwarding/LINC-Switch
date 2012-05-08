@@ -72,6 +72,9 @@ get_connection(Pid) ->
 %%%-----------------------------------------------------------------------------
 
 init([BackendMod, BackendOpts]) ->
+    %% We trap exit signals here to handle shutdown initiated by the supervisor
+    %% and run terminate function which invokes terminate in callback modules
+    process_flag(trap_exit, true),
     {ok, Controllers} = application:get_env(of_switch, controllers),
     [ofs_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
     {ok, BackendState} = BackendMod:start(BackendOpts),

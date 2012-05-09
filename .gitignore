@@ -5,4 +5,6 @@ erl_crash.dump
 rebar
 /deps
 /rel/openflow
-/apps/*/.eunit/
+/apps/*/.eunit
+/log
+/apps/of_switch/log

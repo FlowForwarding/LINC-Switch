@@ -352,7 +352,7 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
       {ok, ofp_table_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
-    Stats = [ofp_userspace_stats:table_stats(Table) ||
+    Stats = [ofs_userspace_stats:table_stats(Table) ||
                 Table <- lists:sort(ets:tab2list(flow_tables))],
     {ok, #ofp_table_stats_reply{flags = [],
                                 stats = Stats}, State}.

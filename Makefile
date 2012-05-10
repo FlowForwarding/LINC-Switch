@@ -34,3 +34,6 @@ setup_dialyzer:
 
 dialyzer:
 	dialyzer apps/*/ebin
+
+doc:
+	./rebar skip_deps=true doc

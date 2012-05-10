@@ -99,13 +99,14 @@ handle_cast({message, From, Message},
     ?INFO("Received: ~p (from ~p)~n", [Message, Connection#connection.socket]),
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
-handle_cast({send, Message}, #state{connections = Connections} = State) ->
+handle_cast({send, #ofp_message{body = Body} = Message},
+            #state{connections = Connections} = State) ->
     Target = if
-                 (is_record(Message, ofp_port_status))
-                 orelse (is_record(Message, ofp_error)) ->
+                 (is_record(Body, ofp_port_status))
+                 orelse (is_record(Body, ofp_error)) ->
                      Connections;
-                 (is_record(Message, ofp_packet_in))
-                 orelse (is_record(Message, ofp_flow_removed)) ->
+                 (is_record(Body, ofp_packet_in))
+                 orelse (is_record(Body, ofp_flow_removed)) ->
                      lists:filter(fun(#connection{role = slave}) ->
                                           false;
                                      (#connection{role = _}) ->

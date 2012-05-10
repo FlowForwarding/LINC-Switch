@@ -168,16 +168,16 @@ match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
 
 -spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
 fields_match(PktFields, FlowFields) ->
-    lists:all(fun(#ofp_field{field = F1} = PktField) ->
-                      %% TODO: check for class other than openflow_basic
-                      lists:all(fun(#ofp_field{field = F2} = FlowField) ->
-                                        F1 =/= F2 %% field is not relevant here
-                                            orelse
-                                            two_fields_match(PktField, FlowField)
-                                end, FlowFields)
-              end, PktFields).
+    lists:all(fun(FlowField) ->
+                      lists:any(fun(PktField) ->
+                                        two_fields_match(PktField, FlowField)
+                                end, PktFields)
+              end, FlowFields).
 
-
+%% TODO: check for different types and classes
+two_fields_match(#ofp_field{field = F1},
+                 #ofp_field{field = F2}) when F1 =/= F2 ->
+    false;
 two_fields_match(#ofp_field{value=Val},
                  #ofp_field{value=Val, has_mask = false}) ->
     true;

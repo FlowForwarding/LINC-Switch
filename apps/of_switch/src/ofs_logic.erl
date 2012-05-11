@@ -223,6 +223,10 @@ handle_message(#ofp_message{body = RequestBody} = Request, Connection, State)
        is_record(RequestBody, ofp_port_stats_request);
        is_record(RequestBody, ofp_queue_stats_request);
        is_record(RequestBody, ofp_table_stats_request);
+       is_record(RequestBody, ofp_group_stats_request);
+       is_record(RequestBody, ofp_group_desc_stats_request);
+       is_record(RequestBody, ofp_group_features_stats_request);
+       is_record(RequestBody, ofp_aggregate_stats_request);
        is_record(RequestBody, ofp_flow_stats_request) ->
     %% handle those requests in backend
     handle_in_backend(Request, Connection, State);

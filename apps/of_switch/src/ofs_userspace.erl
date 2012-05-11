@@ -350,7 +350,8 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
 
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
-      {ok, ofp_table_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+                                     {ok, ofp_table_stats_reply(), #state{}} |
+                                     {error, ofp_error(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
     Stats = [ofs_userspace_stats:table_stats(Table) ||
                 Table <- lists:sort(ets:tab2list(flow_tables))],
@@ -361,31 +362,57 @@ ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
                                     {ok, ofp_port_stats_reply(), #state{}} |
                                     {error, ofp_error(), #state{}}.
-ofp_port_stats_request(State, #ofp_port_stats_request{}) ->
-    {ok, #ofp_port_stats_reply{}, State}.
+ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
+    %% TODO: Should we return error when bad_port is encountered?
+    Stats = case ofs_userspace_port:get_port_stats(PortNo) of
+                bad_port ->
+                    [];
+                PortStats ->
+                    [PortStats]
+            end,
+    {ok, #ofp_port_stats_reply{stats = Stats}, State}.
 
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
-      {ok, ofp_queue_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
-ofp_queue_stats_request(State, #ofp_queue_stats_request{}) ->
-    {ok, #ofp_queue_stats_reply{}, State}.
+                                     {ok, ofp_queue_stats_reply(), #state{}} |
+                                     {error, ofp_error(), #state{}}.
+ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
+                                                        queue_id = QueueId}) ->
+    %% TODO: Should we return error when undefined is encountered?
+    Stats = case ofs_userspace_port:get_queue_stats(PortNo, QueueId) of
+                undefined ->
+                    [];
+                QueueStats ->
+                    [QueueStats]
+            end,
+    {ok, #ofp_queue_stats_reply{stats = Stats}, State}.
 
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
-      {ok, ofp_group_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
-ofp_group_stats_request(State, #ofp_group_stats_request{}) ->
-    {ok, #ofp_group_stats_reply{}, State}.
+                                     {ok, ofp_group_stats_reply(), #state{}} |
+                                     {error, ofp_error(), #state{}}.
+ofp_group_stats_request(State, #ofp_group_stats_request{group_id = GroupId}) ->
+    Stats = case get_group_stats(GroupId) of
+                undefined ->
+                    [];
+                GroupStats ->
+                    [GroupStats]
+            end,
+    {ok, #ofp_group_stats_reply{stats = Stats}, State}.
 
 %% @doc Get group description statistics.
 -spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
       {ok, ofp_group_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
+    %% TODO: Add group description statistics
     {ok, #ofp_group_desc_stats_reply{}, State}.
 
 %% @doc Get group features statistics.
 -spec ofp_group_features_stats_request(state(), ofp_group_features_stats_request()) ->
-      {ok, ofp_group_features_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+                                              {ok, ofp_group_features_stats_reply(), #state{}} |
+                                              {error, ofp_error(), #state{}}.
 ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
+    %% TODO: Add group festures statistics
     {ok, #ofp_group_features_stats_reply{}, State}.
 
 %%%-----------------------------------------------------------------------------

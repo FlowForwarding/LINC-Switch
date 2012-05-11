@@ -109,6 +109,7 @@ get_port_stats() ->
 
 -spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
 get_port_stats(PortNo) ->
+    %% TODO: Add support for PORT_ANY port number
     case ets:lookup(port_stats, PortNo) of
         [] ->
             bad_port;

@@ -199,10 +199,21 @@ init(Args) ->
                 %% desired /dev/tapX character device. No socket communication
                 %% is involved.
                 match ->
-                    {ip, IP} = lists:keyfind(ip, 1, Args),
                     case tuncer:create(Interface) of
                         {ok, Ref} ->
-                            ok = tuncer:up(Ref, IP),
+                            case os:type() of
+                                %% Under MacOS we configure TAP interfaces
+                                %% programatically as they can't be created in
+                                %% persistent mode before node startup.
+                                {unix, darwin} ->
+                                    {ip, IP} = lists:keyfind(ip, 1, Args),
+                                    ok = tuncer:up(Ref, IP);
+                                %% We assume that under linux TAP interfaces are
+                                %% already set up in persistent state and
+                                %% configured with proper IP addresses.
+                                {unix, linux} ->
+                                    ok
+                            end,
                             Fd = tuncer:getfd(Ref),
                             Port = open_port({fd, Fd, Fd}, [binary]),
                             #state{port = Port,
@@ -221,7 +232,8 @@ init(Args) ->
                 %%   a RAW socket binded with given network interface.
                 %%   Handling of RAW sockets differs between OSes.
                 nomatch ->
-                    {ok, Pid} = epcap:start([{promiscuous, true},
+                    {ok, Pid} = epcap:start([{no_register, true},
+                                             {promiscuous, true},
                                              {interface, Interface},
                                              {filter, ""}]),
                     {S, I} = case os:type() of

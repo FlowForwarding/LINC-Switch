@@ -91,7 +91,7 @@ apply_action_list(_TableId, [], Pkt) ->
 -type miss() :: tuple(table_miss, drop | controller) |
                 tuple(table_miss, continue, integer()).
 
--spec apply_flow(#ofs_pkt{}, #flow_entry{}) -> match() | miss().
+-spec apply_flow(#ofs_pkt{}, integer()) -> match() | miss().
 apply_flow(Pkt, FlowId) ->
     [FlowTable] = ets:lookup(flow_tables, FlowId),
     FlowTableId = FlowTable#flow_table.id,

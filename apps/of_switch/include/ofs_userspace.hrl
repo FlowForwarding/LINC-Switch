@@ -39,7 +39,7 @@
           actions  = []                 :: ordsets:ordset(ofp_action()),
           metadata = << 0:64/integer >> :: binary(),
           size     = 0                  :: integer(),
-          in_port                       :: integer(),
+          in_port                       :: ofp_port_no(),
           queue_id = none               :: integer() | none,
           packet                        :: pkt:packet()
          }).
@@ -54,11 +54,15 @@
           port = #ofp_port{} :: ofp_port()
          }).
 
+%% We use '_' as a part of the type to avoid dialyzer warnings when using
+%% match specs in ets:match_object in ofs_userspace_port:get_queue_stats/1
+%% For detailed explanation behind this please read:
+%% http://erlang.org/pipermail/erlang-questions/2009-September/046532.html
 -record(queue_stats, {
-          key            :: {ofp_port_no(), ofp_queue_id()},
-          tx_bytes   = 0 :: integer(),
-          tx_packets = 0 :: integer(),
-          tx_errors  = 0 :: integer()
+          key            :: {ofp_port_no(), ofp_queue_id()} | {'_', '_'},
+          tx_bytes   = 0 :: integer() | '_',
+          tx_packets = 0 :: integer() | '_',
+          tx_errors  = 0 :: integer() | '_'
          }).
 
 -record(ofs_bucket, {

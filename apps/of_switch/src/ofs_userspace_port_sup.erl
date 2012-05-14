@@ -25,8 +25,6 @@ start_link() ->
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
--spec init(list()) -> {ok, {SupFlags :: tuple(), [ChildSpec :: tuple()]}} |
-                      ignore | {error, term()}.
 init([]) ->
     ChildSpec = {ofs_userspace_port, {ofs_userspace_port, start_link, []},
                  transient, 5000, worker, [ofs_userspace_port]},

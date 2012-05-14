@@ -175,7 +175,8 @@ remove(PortNo) ->
             true = ets:delete(port_stats, PortNo),
             true = ets:match_delete(queue_stats,
                                     #queue_stats{key = {PortNo, '_'}, _ = '_'}),
-            supervisor:terminate_child(ofs_userspace_port_sup, Pid)
+            supervisor:terminate_child(ofs_userspace_port_sup, Pid),
+            ok
     end.
 
 %%%-----------------------------------------------------------------------------

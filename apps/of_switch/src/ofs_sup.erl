@@ -25,8 +25,6 @@ start_link() ->
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
--spec init(list()) -> {ok, {SupFlags :: tuple(), [ChildSpec :: tuple()]}} |
-                      ignore | {error, term()}.
 init([]) ->
     UserspacePortSup = {ofs_userspace_port_sup,
                         {ofs_userspace_port_sup, start_link, []},

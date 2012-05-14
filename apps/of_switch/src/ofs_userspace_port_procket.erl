@@ -3,6 +3,11 @@
 -export([send/2,
          close/1]).
 
+%% TODO: Add typespecs to procket to avoid:
+%% ofs_userspace_port_procket.erl:7: Function send/2 has no local return
+%% ofs_userspace_port_procket.erl:11: Function close/1 has no local return
+%% warnings in dialyzer.
+
 -spec send(integer(), binary()) -> ok.
 send(Socket, Frame) ->
     procket:write(Socket, Frame).

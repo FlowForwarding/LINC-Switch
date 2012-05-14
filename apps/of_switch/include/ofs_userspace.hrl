@@ -54,6 +54,11 @@
           port = #ofp_port{} :: ofp_port()
          }).
 
+%% OF port configuration stored in sys.config
+-type ofs_port_config() :: tuple(interface, string()) |
+                           tuple(ofs_port_no, integer()) |
+                           tuple(ip, string()).
+
 %% We use '_' as a part of the type to avoid dialyzer warnings when using
 %% match specs in ets:match_object in ofs_userspace_port:get_queue_stats/1
 %% For detailed explanation behind this please read:

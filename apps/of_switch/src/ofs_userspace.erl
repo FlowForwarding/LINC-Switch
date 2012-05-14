@@ -54,10 +54,7 @@
 route(Pkt) ->
     proc_lib:spawn_link(ofs_userspace_routing, do_route, [Pkt, 0]).
 
--spec add_port(ofs_port_type(), list(tuple(interface
-                                           | ofs_port_no
-                                           | ip, string() | integer()))) ->
-                      pid() | error.
+-spec add_port(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
 add_port(physical, Opts) ->
     case supervisor:start_child(ofs_userspace_port_sup, [Opts]) of
         {ok, Pid} ->

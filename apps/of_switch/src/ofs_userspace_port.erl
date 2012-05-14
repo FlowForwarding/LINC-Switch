@@ -1,6 +1,13 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 2012, Erlang Solutions Ltd.
-%%% @doc Module to manage sending and receiving data from port.
+%%% @doc Module to repsent Open FLow port.
+%%% It abstracts out underlying logic of either hardware network stack or
+%%% virtual TAP stack. It provides Open Flow ports represented as gen_server
+%%% processes with port configuration and statistics according to
+%%% OF specification. It allows to create and attach queues to given ports and
+%%% supports queue statistics as well.
+%%% OF ports can be programatically started and stopped by utilizing API
+%%% provided by this module.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace_port).
@@ -53,14 +60,19 @@
 %%% API functions
 %%%-----------------------------------------------------------------------------
 
--spec start_link(list(tuple())) -> {ok, pid()} | ignore | {error, term()}.
+%% @doc Start Open Flow port with provided configuration.
+-spec start_link(list(ofs_port_config())) -> {ok, pid()} |
+                                             ignore |
+                                             {error, term()}.
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
+%% @doc Send OF packet to the OF port with no queue specified.
 -spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
 send(OutPort, OFSPkt) ->
     send(OutPort, none, OFSPkt).
 
+%% @doc Send OF packet to the OF port and put it in the given queue.
 -spec send(ofp_port_no(), ofp_queue_id() | none, #ofs_pkt{}) ->
                   ok | bad_port | bad_queue | no_fwd.
 send(OutPort, Queue, OFSPkt) ->
@@ -78,6 +90,7 @@ send(OutPort, Queue, OFSPkt) ->
             end
     end.
 
+%% @doc Change config of the given OF port according to the provided port mod.
 -spec change_config(ofp_port_no(), ofp_port_mod()) ->
                            {error, bad_port | bad_hw_addr} | ok.
 change_config(PortNo, PortMod) ->
@@ -90,10 +103,12 @@ change_config(PortNo, PortMod) ->
             gen_server:cast(Pid, {change_config, PortMod})
     end.
 
+%% @doc Return list of all OF ports present in the switch.
 -spec list_ports() -> [#ofs_port{}].
 list_ports() ->
     ets:tab2list(ofs_ports).
 
+%% @doc Return list of queues connected to the given OF port.
 -spec list_queues(ofp_port_no()) -> [ofp_packet_queue()] | bad_port.
 list_queues(PortNo) ->
     case get_port_pid(PortNo) of
@@ -103,10 +118,12 @@ list_queues(PortNo) ->
             gen_server:call(Pid, list_queues)
     end.
 
+%% @doc Return list of port stats records for all OF ports in the switch.
 -spec get_port_stats() -> [ofp_port_stats()].
 get_port_stats() ->
     ets:tab2list(port_stats).
 
+%% @doc Retuen port stats record for the given OF port.
 -spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
 get_port_stats(PortNo) ->
     %% TODO: Add support for PORT_ANY port number
@@ -117,12 +134,14 @@ get_port_stats(PortNo) ->
             Any
     end.
 
+%% @doc Return queue stats for all queues installed in the switch.
 -spec get_queue_stats() -> [ofp_queue_stats()].
 get_queue_stats() ->
     lists:map(fun(E) ->
                       queue_stats_convert(E)
               end, ets:tab2list(queue_stats)).
 
+%% @doc Return queue stats for all queues connected to the given OF port.
 -spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
 get_queue_stats(PortNo) ->
     L = ets:match_object(queue_stats, #queue_stats{key = {PortNo, '_'},
@@ -131,6 +150,7 @@ get_queue_stats(PortNo) ->
                       queue_stats_convert(E)
               end, L).
 
+%% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
                              ofp_queue_stats() | undefined.
 get_queue_stats(PortNo, QueueId) ->
@@ -143,6 +163,8 @@ get_queue_stats(PortNo, QueueId) ->
             queue_stats_convert(Any)
     end.
 
+%% @doc Create and attach queue with the given queue id and configuration to
+%% the given OF port. Initializes also queue stats for this queue.
 -spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) ->
                           ok | bad_port.
 attach_queue(PortNo, QueueId, Properties) ->
@@ -156,6 +178,8 @@ attach_queue(PortNo, QueueId, Properties) ->
             gen_server:cast(Pid, {attach_queue, Queue})
     end.
 
+%% @doc Remove queue with the given queue id from the given OF port.
+%% Removes also queue stats entry for this queue.
 -spec detach_queue(ofp_port_no(), ofp_queue_id()) -> ok | bad_port.
 detach_queue(PortNo, QueueId) ->
     case get_port_pid(PortNo) of
@@ -165,16 +189,19 @@ detach_queue(PortNo, QueueId) ->
             gen_server:cast(Pid, {detach_queue, PortNo, QueueId})
     end.
 
+%% @doc Removes given OF port from the switch, as well as its port stats entry,
+%% all queues connected to it and their queue stats entries.
 -spec remove(ofp_port_no()) -> ok | bad_port.
 remove(PortNo) ->
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
         Pid ->
+            lists:map(fun(#ofp_packet_queue{queue_id = QId}) ->
+                              detach_queue(PortNo, QId)
+                      end, list_queues(PortNo)),
             true = ets:delete(ofs_ports, PortNo),
             true = ets:delete(port_stats, PortNo),
-            true = ets:match_delete(queue_stats,
-                                    #queue_stats{key = {PortNo, '_'}, _ = '_'}),
             supervisor:terminate_child(ofs_userspace_port_sup, Pid),
             ok
     end.
@@ -183,6 +210,7 @@ remove(PortNo) ->
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
 
+%% @private
 -spec init(list(tuple())) -> {ok, #state{}} |
                              {ok, #state{}, timeout()} |
                              ignore |
@@ -260,6 +288,7 @@ init(Args) ->
                              ofs_port_no = OfsPortNo}}
     end.
 
+%% @private
 -spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
                   #state{}) ->
                          {reply, Reply :: term(), #state{}} |
@@ -312,6 +341,7 @@ handle_call({send, Queue, OFSPkt}, _From,
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
+%% @private
 -spec handle_cast(Msg :: term(),
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
@@ -338,6 +368,7 @@ handle_cast({change_config, #ofp_port_mod{}}, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+%% @private
 -spec handle_info(Info :: term(),
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
@@ -354,19 +385,26 @@ handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
     lager:error("Port for interface ~p exited abnormally",
                 [Interface]),
-    {stop, shutdown, State};
+    {stop, normal, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
+%% @private
 -spec terminate(Reason :: term(), #state{}) -> ok.
 terminate(_Reason, #state{socket = undefined, port_ref = PortRef}) ->
     tuncer:down(PortRef),
     tuncer:destroy(PortRef);
 terminate(_Reason, #state{socket = Socket, port_ref = undefined,
                           epcap_pid = EpcapPid}) ->
-    epcap:stop(EpcapPid),
+    case is_process_alive(EpcapPid) of
+        true ->
+            epcap:stop(EpcapPid);
+        false ->
+            ok
+    end,
     ofs_userspace_port_procket:close(Socket).
 
+%% @private
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
                   #state{}, Extra :: term()) ->
                          {ok, #state{}} |
@@ -415,6 +453,9 @@ update_port_transmitted_counters(PortNum, Queue, Bytes) ->
                         [PortNum, E1, E2])
     end.
 
+%% TODO: Add typespecs to bpf and procket in general to avoid:
+%% ofs_userspace_port.erl:446: Function darwin_raw_socket/1 has no local return
+%% warnings in dialyzer.
 -spec darwin_raw_socket(string()) -> tuple(integer(), 0).
 darwin_raw_socket(Interface) ->
     case bpf:open(Interface) of
@@ -431,6 +472,9 @@ darwin_raw_socket(Interface) ->
             {0, 0}
     end.
 
+%% TODO: Add typespecs to packet and procket in general to avoid:
+%% ofs_userspace_port.erl:462: Function linux_raw_socket/1 has no local return
+%% warnings in dialyzer.
 -spec linux_raw_socket(string()) -> tuple(integer(), integer()).
 linux_raw_socket(Interface) ->
     {ok, Socket} = packet:socket(),
@@ -465,6 +509,9 @@ queue_stats_convert(#queue_stats{key = {PortNo, QueueId},
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
 
+%% TODO: Add typespecs to packet and procket in general to avoid:
+%% ofs_userspace_port.erl:496: Function send_to_wire/3 has no local return
+%% warnings in dialyzer.
 -spec send_to_wire(integer(), integer(), binary()) -> ok.
 send_to_wire(Socket, Ifindex, Frame) ->
     case os:type() of

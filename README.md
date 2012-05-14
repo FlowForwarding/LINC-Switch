@@ -1,116 +1,119 @@
-LINC - Open Flow software switch
-=========================
+LINC - OpenFlow software switch
+===============================
 
-Rationale
-=========
+What is LINC?
+=============
 
-This project delivers an OF switch implemented in operating system's userspace as an   Erlang node.
-Such approach is not the most efficient one, compared to [Open vSwitch](http://openvswitch.org/) implemented in Linux kernel,
-or pure hardware implementation of traditional switches, but it gives a lot of flexibility and allows
-quick deployments and tests of new OF standards.
-
-***
+LINC is a pure OpenFlow switch written in Erlang. It's implemented in operating system's userspace as an Erlang node. Such approach is not the most efficient one, compared to [Open vSwitch][ovs] implemented in Linux kernel, or pure hardware implementations of traditional switches, but it gives a lot of flexibility and allows quick deployments and tests of new OpenFlow features.
 
 Features
 ========
 
-* supports OpenFlow 1.0, 1.1 and 1.2 protocols
-* will support [OF-Config 1.0](https://www.opennetworking.org/standards/of-config-10) soon
-* modular architecture, easily extensible
-* very high test coverage thanks to property based testing
+ * Full support for [OpenFlow Protocol 1.2][ofp3],
+ * Backward compatibility with [OpenFlow Protocol 1.0][ofp1],
+ * Modular architecture, easily extensible,
+ * Very high test coverage thanks to property based testing.
 
-***
+Planned features
+----------------
 
-Installation
-============
+ * Support for [OF-Config 1.0][ofc1] and/or [OF-Config 1.1][ofc2] management protocols,
+ * Support for [OpenFlow Protocol 1.3][ofp4],
+ * Backward compatibility with [OpenFlow Protocol 1.1][ofp2],
+ * Alternative switching backends (kernel space or hardware).
+
+How to use it?
+==============
 
 Erlang
 ------
-You need to have an Erlang runtime installed on your machine. Required version is **R15B01**. Download the sources from [http://www.erlang.org/download.html](http://www.erlang.org/download.html). Then unpack and compile it with:
 
-    ./configure && make && make install
+To use LINC you need to have an Erlang runtime installed on your machine. Required version is **R15B**.
 
-In order to do so, you need to prepare your OS environment first:
+### Install from sources
 
-To compile erlang from sources on Linux, following packages must be present:
+To build Erlang from sources first you have to install some required system packages.
 
-* autoconf
-* openssl
-* libssl0.9.8
-* libssl-dev
-* libncurses5
-* libncurses5-dev
+On Ubuntu:
 
-other OSes might need their counterparts of above packages.
+    # apt-get install autoconf openssl libssl0.9.8 libssl-dev libncurses5 libncurses5-dev
 
-TAP devices
------------
+On other Linux systems you need to install the counterparts of above package.
 
-By default switch can utilize hardware network interfaces present in the OS as well as virtual network devices provided by [TAP](http://en.wikipedia.org/wiki/TUN/TAP) kernel device. Thanks to this, you can emulate switch witch up to 16 network interfaces on your personal computer with just one NIC.
+When your system environment is ready download the sources from [erlang.org][erlang-src]. Unpack, compile and install:
 
-To use TAP devices you must install following packages first:
+    % ./configure
+    % make
+    # make install
 
-* on Linux:
-  * libpcap0.8
-  * libpcap-dev
-  * uml-utilities (tunctl tool)
+### Install from binaries
 
-* on MacOSX:
- * [TunTap driver](http://tuntaposx.sourceforge.net/)
- * [MacPorts](http://www.macports.org)
- * libpcap (after installing MacPorts execute `sudo port install libpcap`)
-
-Network sniffers
-----------------
-
-If you want to sniff or alter network traffic then following packages must also be present:
-
- * tcpdump
- * tcpreplay
- * wireshark
+If you're lazy you can also use [Erlang binary packages][erlang-bin] created by [Erlang Solutions][esl].
 
 LINC
 ----
 
-When your environment is set up you can do the following:
+To build the switch you need to install the following additional libraries and tools.
 
-* clone this git repo
-* alter switch configuration by eding file rel/files/sys.config which looks like:
+On Ubuntu:
 
-        [{of_switch,
-          [{controllers, [{"localhost", 6633}]},
-            {ports, [
-                     [{ofs_port_no, 1}, {interface, "en0"}],
-                     [{ofs_port_no, 2}, {interface, "tap0"}, {ip, "10.0.0.1"}],
-                     [{ofs_port_no, 3}, {interface, "tap1"}, {ip, "10.0.0.2"}]
-                    ]}
-          ]}
-        ].
+    # apt-get install libpcap0.8 libpcap-dev uml-utilities libcap2-bin
 
-  * if you don't want to connect to a controller, insert empty list in the `controllers` tuple
-  * adjust ports configuration according to your system:
-     * hardware ports have already assigned IP address, if you want to change it you must do it outside of LINC switch
-     * TAP interfaces are created on demand under Linux and disappear when switch disconnects from them. To make them persistent you can use [tunctl](http://linux.die.net/man/8/tunctl) command from uml-utilities package
+On other Linux systems you need to install the counterparts of above package.
 
-* build project by running `make rel` in the top directory
-* start LINC switch with `rel/openflow/bin/openflow console`
-* execute `tv:start().` in LINC shell to explore in-memory flow tables and other switch data
-* run sample ping example as described here: [ping example](docs/example-ping.md)
+When your environment is set up you are ready to build and run LINC.
 
-***
+Clone this git repository:
 
-Architecture
+    % git clone <REPO>
+    
+Compile everything:
+
+    % make
+
+Generate an Erlang release:
+
+    % make rel
+
+Adjust switch configuration by editing the `rel/openflow/release/0.1/sys.config` file which looks like this:
+
+    {of_switch, [
+                 {controllers, [
+                                {"localhost", 6633},
+                                ...
+                               ]},
+                 {ports, [
+                          [{ofs_port_no, 0}, {interface, "eth0"}],
+                          [{ofs_port_no, 1}, {interface, "eth1"}],
+                          ...
+                         ]}
+                ]}
+
+At the moment you can change the list of controllers and ports used by the switch.
+
+Start LINC switch in `console` mode:
+
+    % rel/openflow/bin/openflow console
+
+For further instructions on how to use LINC check the "[Ping example](docs/example-ping.md)".
+
+Read more...
 ============
 
-* of_protocol
-* gen_switch behaviour
-* of_switch
+ * About the [gen_switch behaviour](docs/gen_switch.md) and how to implement a backend.
 
-***
+Support
+=======
 
-Test suites
-===========
+If you have any technical questions, problems or suggestions regarding LINC please contact <openflow@erlang-solutions.com>.
 
-* How to run
-* Quickcheck
-* Eunit
+ [ovs]: http://openvswitch.org
+ [ofp1]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.0.0.pdf
+ [ofp2]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.1.0.pdf
+ [ofp3]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.2.pdf
+ [ofp4]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.3.0.pdf
+ [ofc1]: https://www.opennetworking.org/images/stories/downloads/openflow/OF-Config1dot0-final.pdf
+ [ofc2]: https://www.opennetworking.org/images/stories/downloads/openflow/OF-Config-1.1.pdf
+ [erlang-src]: http://www.erlang.org/download.html
+ [erlang-bin]: http://www.erlang-solutions.com/section/132/download-erlang-otp
+ [esl]: http://www.erlang-solutions.com

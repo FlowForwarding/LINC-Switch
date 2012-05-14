@@ -1,15 +1,18 @@
 The gen\_switch behaviour
 ======================
 
-The `gen_switch` is a behaviour that defines set of callbacks that one has to provide
-in order to implement the switch. Currently there is only one implementation
-of `gen_switch` behaviour – `ofs_userspace` which is a purely userspace, Erlang
-implementation of switch. One can think of various other backends to implement,
-like:
+The `gen_switch` is a behaviour that defines set of callbacks that one has to
+provide in order to implement the switch. Currently there is only one
+implementation of `gen_switch` behaviour – `ofs_userspace` which is a purely
+userspace, Erlang implementation of switch. One can think of various other
+backends to implement, like:
 
-   * hardware based switch
-   * userspace implementation in other programming language (like C)
-   * interfacing with openvswitch.ko Linux kernel module
+ * hardware based switch,
+ * userspace implementation in other programming language (like C),
+ * interfacing with openvswitch.ko Linux kernel module.
+
+Callbacks
+---------
 
 `gen_switch` consists of the following callbacks:
 

@@ -396,10 +396,12 @@ terminate(_Reason, #state{socket = undefined, port_ref = PortRef}) ->
     tuncer:destroy(PortRef);
 terminate(_Reason, #state{socket = Socket, port_ref = undefined,
                           epcap_pid = EpcapPid}) ->
-    case is_process_alive(EpcapPid) of
+    %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
+    %% and it's an atom, not a pid.
+    case catch is_process_alive(EpcapPid) of
         true ->
             epcap:stop(EpcapPid);
-        false ->
+        _ ->
             ok
     end,
     ofs_userspace_port_procket:close(Socket).

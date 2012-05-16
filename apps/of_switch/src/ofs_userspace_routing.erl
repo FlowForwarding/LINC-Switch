@@ -214,11 +214,11 @@ apply_instructions(TableId,
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = NewActions},
                        NextStep);
 apply_instructions(TableId,
-                   [#ofp_instruction_write_metadata{metadata = Metadata,
+                   [#ofp_instruction_write_metadata{metadata = NewMetadata,
                                                     metadata_mask = Mask} | Rest],
-                   Pkt,
+                   #ofs_pkt{metadata = OldMetadata} = Pkt,
                    NextStep) ->
-    MaskedMetadata = apply_mask(Metadata, Mask),
+    MaskedMetadata = apply_mask(OldMetadata, NewMetadata, Mask, []),
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{metadata = MaskedMetadata},
                        NextStep);
 apply_instructions(TableId,
@@ -241,9 +241,15 @@ apply_instructions(_TableId, [], Pkt, output_or_group) ->
 apply_instructions(_TableId, [], Pkt, {goto, Id}) ->
     {match, goto, Id, Pkt}.
 
--spec apply_mask(binary(), binary()) -> binary().
-apply_mask(Metadata, _Mask) ->
-    Metadata.
+-spec apply_mask(binary(), binary(), binary(), list(integer())) -> binary().
+apply_mask(<<>>, <<>>, <<>>, Result) ->
+    list_to_binary(lists:reverse(Result));
+apply_mask(<<OldMetadata:8, OldRest/binary>>,
+           <<NewMetadata:8, NewRest/binary>>,
+           <<Mask:8, MaskRest/binary>>,
+           Result) ->
+    Part = (OldMetadata band (bnot Mask)) bor (NewMetadata band Mask),
+    apply_mask(OldRest, NewRest, MaskRest, [Part | Result]).
 
 -spec apply_group(ofp_group_id(), #ofs_pkt{}) -> #ofs_pkt{}.
 apply_group(GroupId, Pkt) ->

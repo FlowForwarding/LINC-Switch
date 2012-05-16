@@ -75,21 +75,14 @@ remove_port(PortNo) ->
 
 -spec parse_ofs_pkt(binary(), ofp_port_no()) -> #ofs_pkt{}.
 parse_ofs_pkt(Binary, PortNum) ->
-    PortNumBin = case PortNum of
-                     PortNum when is_integer(PortNum) ->
-                         <<PortNum:32>>;
-                     _ ->
-                         %% TODO: Handle non-numeric ports
-                         <<0:32>>
-                 end,
     Packet = pkt:decapsulate(Binary),
+    Fields = [ofs_userspace_convert:ofp_field(in_port, <<PortNum:32>>)
+              || is_integer(PortNum)]
+        ++ ofs_userspace_convert:packet_fields(Packet),
     #ofs_pkt{packet = Packet,
              fields =
                  #ofp_match{type = oxm,
-                            oxm_fields =
-                                [ofs_userspace_convert:ofp_field(in_port,
-                                                                 PortNumBin)
-                                 | ofs_userspace_convert:packet_fields(Packet)]},
+                            oxm_fields = Fields},
              in_port = PortNum,
              size = byte_size(Binary)}.
 

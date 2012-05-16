@@ -35,13 +35,13 @@
          }).
 
 -record(ofs_pkt, {
-          fields                        :: ofp_match(),
-          actions  = []                 :: ordsets:ordset(ofp_action()),
-          metadata = << 0:64/integer >> :: binary(),
-          size     = 0                  :: integer(),
-          in_port                       :: ofp_port_no(),
-          queue_id = none               :: integer() | none,
-          packet   = []                 :: pkt:packet()
+          fields                :: ofp_match(),
+          actions  = []         :: ordsets:ordset(ofp_action()),
+          metadata = << 0:64 >> :: binary(),
+          size     = 0          :: integer(),
+          in_port               :: ofp_port_no(),
+          queue_id = none       :: integer() | none,
+          packet   = []         :: pkt:packet()
          }).
 
 -type ofs_port_type() :: physical | logical | reserved.

@@ -14,17 +14,17 @@ do_route(Pkt, FlowId) ->
             do_route(NewPkt, NextFlowId);
         {match, output, NewPkt} ->
             apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
-            output;
+            {match, FlowId, output};
         {match, group, NewPkt} ->
             apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
             output;
         {match, drop, _NewPkt} ->
-            drop;
+            {match, FlowId, drop};
         {table_miss, controller} ->
             route_to_controller(FlowId, Pkt, no_match),
-            controller;
+            {nomatch, FlowId, controller};
         {table_miss, drop} ->
-            drop;
+            {nomatch, FlowId, drop};
         {table_miss, continue, NextFlowId} ->
             do_route(Pkt, NextFlowId)
     end.

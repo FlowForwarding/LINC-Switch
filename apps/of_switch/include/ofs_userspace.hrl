@@ -41,7 +41,7 @@
           size     = 0                  :: integer(),
           in_port                       :: ofp_port_no(),
           queue_id = none               :: integer() | none,
-          packet                        :: pkt:packet()
+          packet   = []                 :: pkt:packet()
          }).
 
 -type ofs_port_type() :: physical | logical | reserved.
@@ -81,4 +81,6 @@
           buckets = []  :: [#ofs_bucket{}]
          }).
 
--type route_result() :: drop | controller | output.
+-type route_result() :: tuple(match | nomatch,
+                              FlowId :: integer(),
+                              drop | controller | output).

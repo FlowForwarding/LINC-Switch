@@ -17,7 +17,7 @@ do_route(Pkt, FlowId) ->
             {match, FlowId, output};
         {match, group, NewPkt} ->
             apply_action_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
-            output;
+            {match, FlowId, output};
         {match, drop, _NewPkt} ->
             {match, FlowId, drop};
         {table_miss, controller} ->
@@ -198,17 +198,28 @@ apply_instructions(TableId,
                    [#ofp_instruction_apply_actions{actions = Actions} | Rest],
                    Pkt,
                    NextStep) ->
+    %% From Open Flow spec 1.2 page 14:
+    %% Applies the specific action(s) immediately, without any change to the
+    %% Action Set. This instruction may be used to modify the packet between
+    %% two tables or to execute multiple actions of the same type.
+    %% The actions are specified as an action list (see 5.8).
     NewPkt = apply_action_list(TableId, Actions, Pkt),
     apply_instructions(TableId, Rest, NewPkt, NextStep);
 apply_instructions(TableId,
                    [#ofp_instruction_clear_actions{} | Rest],
                    Pkt,
                    NextStep) ->
+    %% From Open Flow spec 1.2 page 14:
+    %% Clears all the actions in the action set immediately.
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = []}, NextStep);
 apply_instructions(TableId,
                    [#ofp_instruction_write_actions{actions = Actions} | Rest],
                    #ofs_pkt{actions = OldActions} = Pkt,
                    NextStep) ->
+    %% From Open Flow spec 1.2 page 14:
+    %% Merges the specified action(s) into the current action set (see 5.7).
+    %% If an action of the given type exists in the current set, overwrite it,
+    %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{actions = NewActions},
@@ -218,6 +229,10 @@ apply_instructions(TableId,
                                                     metadata_mask = Mask} | Rest],
                    #ofs_pkt{metadata = OldMetadata} = Pkt,
                    NextStep) ->
+    %% From Open Flow spec 1.2 page 14:
+    %% Writes the masked metadata value into the metadata field. The mask
+    %% specifies which bits of the metadata register should be modified
+    %% (i.e. new metadata = old metadata &  ̃mask | value & mask).
     MaskedMetadata = apply_mask(OldMetadata, NewMetadata, Mask, []),
     apply_instructions(TableId, Rest, Pkt#ofs_pkt{metadata = MaskedMetadata},
                        NextStep);
@@ -225,11 +240,22 @@ apply_instructions(TableId,
                    [#ofp_instruction_goto_table{table_id = Id} | Rest],
                    Pkt,
                    _NextStep) ->
+    %% From Open Flow spec 1.2 page 14:
+    %% Indicates the next table in the processing pipeline. The table-id must
+    %% be greater than the current table-id. The flows of last table of the
+    %% pipeline can not include this instruction (see 5.1).
     apply_instructions(TableId, Rest, Pkt, {goto, Id});
 apply_instructions(_TableId, [], Pkt, output_or_group) ->
     case lists:keymember(ofp_action_group, 1, Pkt#ofs_pkt.actions) of
         true ->
-            {match, group, Pkt};
+            %% From Open Flow spec 1.2 page 15:
+            %% If both an output action and a group action are specified in
+            %% an action set, the output action is ignored and the group action
+            %% takes precedence.
+            {match, group, Pkt#ofs_pkt{
+                             actions = lists:keydelete(ofp_action_output,
+                                                       1,
+                                                       Pkt#ofs_pkt.actions)}};
         false ->
             case lists:keymember(ofp_action_output, 1, Pkt#ofs_pkt.actions) of
                 true ->

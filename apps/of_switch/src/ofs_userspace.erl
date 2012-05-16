@@ -237,7 +237,11 @@ ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
-    Entry = #group{id = Id, type = Type, buckets = Buckets},
+    OFSBuckets = lists:map(fun(B) ->
+                                   #ofs_bucket{value = B,
+                                               counter = #ofp_bucket_counter{}}
+                           end, Buckets),
+    Entry = #group{id = Id, type = Type, buckets = OFSBuckets},
     case ets:insert_new(group_table, Entry) of
         true ->
             {ok, State};

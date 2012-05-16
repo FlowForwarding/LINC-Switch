@@ -80,7 +80,9 @@ create_flow_entry(#ofp_flow_mod{priority = Priority,
                             cookie = Cookie,
                             match = Match,
                             install_time = erlang:now(),
-                            instructions = Instructions},
+                            %% All record of type ofp_instruction() MUST have
+                            %% seq number as a first element.
+                            instructions = lists:keysort(1, Instructions)},
     ets:insert(flow_entry_counters,
                #flow_entry_counter{key = {FlowTableId, FlowEntry}}),
     FlowEntry.

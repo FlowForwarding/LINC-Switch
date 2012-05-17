@@ -34,6 +34,20 @@ header_fields(#ieee802_1q_tag{vid = VID,
                               pcp = PCP}) ->
     [ofp_field(vlan_vid, VID),
      ofp_field(vlan_pcp, <<PCP:3>>)];
+header_fields(#arp{op = Op,
+                   sip = SPA,
+                   tip = TPA,
+                   sha = SHA,
+                   tha = THA}) ->
+    [ofp_field(arp_op, <<Op:16>>),
+     ofp_field(arp_spa, SPA),
+     ofp_field(arp_tpa, TPA),
+     ofp_field(arp_sha, SHA),
+     ofp_field(arp_tha, THA)];
+header_fields(#sctp{sport = Src,
+                    dport = Dst}) ->
+    [ofp_field(sctp_src, <<Src:16>>),
+     ofp_field(sctp_src, <<Dst:16>>)];
 header_fields(#mpls_tag{stack = [#mpls_stack_entry{label = L,
                                                    qos = QOS,
                                                    pri = PRI,

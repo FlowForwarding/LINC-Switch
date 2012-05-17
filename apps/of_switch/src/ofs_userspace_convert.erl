@@ -55,16 +55,24 @@ header_fields(#mpls_tag{stack = [#mpls_stack_entry{label = L,
     [ofp_field(mpls_label, L),
      ofp_field(mpls_tc, <<QOS:1, PRI:1, ECN:1>>)];
 header_fields(#ipv4{p = Proto,
+                    dscp = DSCP,
+                    ecn = ECN,
                     saddr = SAddr,
                     daddr = DAddr}) ->
     [ofp_field(ip_proto, <<Proto:8>>),
+     ofp_field(ip_dscp, <<DSCP:6>>),
+     ofp_field(ip_ecn, <<ECN:2>>),
      ofp_field(ipv4_src, SAddr),
      ofp_field(ipv4_dst, DAddr)];
 header_fields(#ipv6{next = Proto,
                     saddr = SAddr,
                     daddr = DAddr,
+                    class = Class,
                     flow = Flow}) ->
+    <<DSCP:6/bits, ECN:2/bits>> = <<Class:8>>,
     [ofp_field(ip_proto, <<Proto:8>>),
+     ofp_field(ip_dscp, DSCP),
+     ofp_field(ip_ecn, ECN),
      ofp_field(ipv6_src, SAddr),
      ofp_field(ipv6_dst, DAddr),
      ofp_field(ipv6_flabel, <<Flow:20>>)];

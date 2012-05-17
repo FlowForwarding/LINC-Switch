@@ -23,7 +23,7 @@ packet_fields(Packet) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
--spec header_fields([pkt:packet()]) -> [ofp_field()].
+-spec header_fields(pkt:packet()) -> [ofp_field()].
 header_fields(#ether{type = Type,
                      dhost = DHost,
                      shost = SHost}) ->
@@ -87,4 +87,6 @@ header_fields(#tcp{sport = SPort,
 header_fields(#udp{sport = SPort,
                    dport = DPort}) ->
     [ofp_field(udp_src, <<SPort:16>>),
-     ofp_field(udp_dst, <<DPort:16>>)].
+     ofp_field(udp_dst, <<DPort:16>>)];
+header_fields(_Other) ->
+    [].

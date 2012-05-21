@@ -54,7 +54,10 @@
                 epcap_pid :: pid(),
                 interface :: string(),
                 ofs_port_no :: ofp_port_no(),
-                queues = [] :: [ofp_packet_queue()]}).
+                rate_bps :: integer(),
+                throttling_ets :: ets:tid()}).
+
+-define(DEFAULT_QUEUE, 0).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -70,23 +73,20 @@ start_link(Args) ->
 %% @doc Send OF packet to the OF port with no queue specified.
 -spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
 send(OutPort, OFSPkt) ->
-    send(OutPort, none, OFSPkt).
+    send(OutPort, ?DEFAULT_QUEUE, OFSPkt).
 
 %% @doc Send OF packet to the OF port and put it in the given queue.
--spec send(ofp_port_no(), ofp_queue_id() | none, #ofs_pkt{}) ->
+-spec send(ofp_port_no(), ofp_queue_id(), #ofs_pkt{}) ->
                   ok | bad_port | bad_queue | no_fwd.
-send(OutPort, Queue, OFSPkt) ->
-    case get_port(OutPort) of
-        bad_port ->
-            ?ERROR("Port ~p does not exist", [OutPort]),
-            bad_port;
-        #ofs_port{pid = Pid, port = #ofp_port{config = Config}} ->
-            case lists:member(no_fwd, Config) of
-                true ->
-                    ?WARNING("Forwarding to port ~p disabled", [OutPort]),
-                    no_fwd;
-                false ->
-                    gen_server:call(Pid, {send, Queue, OFSPkt})
+send(PortNo, QueueId, OFSPkt) ->
+    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
+        %% XXX: move no_fwd to ETS and check it
+        [#ofs_port_queue{queue_pid = Pid}] ->
+            ofs_userspace_queue:send(Pid, OFSPkt);
+        [] ->
+            case ets:lookup(ofs_ports, PortNo) of
+                [_] -> bad_queue;
+                [ ] -> bad_port
             end
     end.
 
@@ -139,24 +139,24 @@ get_port_stats(PortNo) ->
 get_queue_stats() ->
     lists:map(fun(E) ->
                       queue_stats_convert(E)
-              end, ets:tab2list(queue_stats)).
+              end, ets:tab2list(ofs_port_queue)).
+
+get_queues(PortNo) ->
+    MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
+    ets:match_object(ofs_port_queue, MatchSpec).
 
 %% @doc Return queue stats for all queues connected to the given OF port.
 -spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
 get_queue_stats(PortNo) ->
-    L = ets:match_object(queue_stats, #queue_stats{key = {PortNo, '_'},
-                                                   _ = '_'}),
     lists:map(fun(E) ->
                       queue_stats_convert(E)
-              end, L).
+              end, get_queues(PortNo)).
 
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
                              ofp_queue_stats() | undefined.
 get_queue_stats(PortNo, QueueId) ->
-    case ets:match_object(queue_stats, #queue_stats{key = {PortNo, QueueId},
-                                                    _ = '_'
-                                                   }) of
+    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
         [] ->
             undefined;
         [Any] ->
@@ -168,14 +168,11 @@ get_queue_stats(PortNo, QueueId) ->
 -spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) ->
                           ok | bad_port.
 attach_queue(PortNo, QueueId, Properties) ->
-    Queue = #ofp_packet_queue{port_no = PortNo,
-                              queue_id = QueueId,
-                              properties = Properties},
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
         Pid ->
-            gen_server:cast(Pid, {attach_queue, Queue})
+            gen_server:call(Pid, {attach_queue, QueueId, Properties})
     end.
 
 %% @doc Remove queue with the given queue id from the given OF port.
@@ -186,7 +183,7 @@ detach_queue(PortNo, QueueId) ->
         bad_port ->
             bad_port;
         Pid ->
-            gen_server:cast(Pid, {detach_queue, PortNo, QueueId})
+            gen_server:call(Pid, {detach_queue, QueueId})
     end.
 
 %% @doc Removes given OF port from the switch, as well as its port stats entry,
@@ -197,13 +194,7 @@ remove(PortNo) ->
         bad_port ->
             bad_port;
         Pid ->
-            lists:map(fun(#ofp_packet_queue{queue_id = QId}) ->
-                              detach_queue(PortNo, QId)
-                      end, list_queues(PortNo)),
-            true = ets:delete(ofs_ports, PortNo),
-            true = ets:delete(port_stats, PortNo),
-            supervisor:terminate_child(ofs_userspace_port_sup, Pid),
-            ok
+            supervisor:terminate_child(ofs_userspace_port_sup, Pid)
     end.
 
 %%%-----------------------------------------------------------------------------
@@ -221,6 +212,9 @@ init(Args) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, Args),
     {ofs_port_no, OfsPortNo} = lists:keyfind(ofs_port_no, 1, Args),
+    {queues, Queues} = lists:keyfind(queues, 1, Args),
+    {rate, RateDesc} = lists:keyfind(rate, 1, Args),
+    Rate = rate_desc_to_bps(RateDesc),
     State = case re:run(Interface, "^tap[0-9]+$", [{capture, none}]) of
                 %% When switch connects to a tap interface, erlang receives file
                 %% descriptor to read/write ethernet frames directly from the
@@ -270,13 +264,19 @@ init(Args) ->
                                  {unix, linux} ->
                                      linux_raw_socket(Interface)
                              end,
-                    #state{socket = S, ifindex = I, epcap_pid = Pid,
+                    #state{socket = S,
+                           ifindex = I,
+                           epcap_pid = Pid,
                            ofs_port_no = OfsPortNo}
             end,
     case State of
         {stop, shutdown} ->
             {stop, shutdown};
         _ ->
+            ThrottlingEts = ets:new(queue_throttling,
+                                    [public,
+                                     {read_concurrency, true},
+                                     {keypos, #ofs_queue_throttling.queue_no}]),
             OfsPort = #ofs_port{number = OfsPortNo,
                                 type = physical,
                                 pid = self(),
@@ -284,8 +284,16 @@ init(Args) ->
                                 port = #ofp_port{port_no = OfsPortNo}},
             ets:insert(ofs_ports, OfsPort),
             ets:insert(port_stats, #ofp_port_stats{port_no = OfsPortNo}),
-            {ok, State#state{interface = Interface,
-                             ofs_port_no = OfsPortNo}}
+            State1 = State#state{interface = Interface,
+                                 ofs_port_no = OfsPortNo,
+                                 rate_bps = Rate,
+                                 throttling_ets = ThrottlingEts},
+            State2 = lists:foldl(fun({QueueId, QueueOpts}, StateAcc) ->
+                                     do_attach_queue(StateAcc,
+                                                     QueueId,
+                                                     QueueOpts)
+                                 end, State1, Queues),
+            {ok, State2}
     end.
 
 %% @private
@@ -297,75 +305,23 @@ init(Args) ->
                          {noreply, #state{}, timeout()} |
                          {stop, Reason :: term() , Reply :: term(), #state{}} |
                          {stop, Reason :: term(), #state{}}.
-handle_call(list_queues, _From, #state{queues = Queues} = State) ->
+handle_call(list_queues, _From, #state{ofs_port_no = PortNo} = State) ->
+    Queues = [port_queue_to_packet_queue(Q) || Q <- get_queues(PortNo)],
     {reply, Queues, State};
-handle_call({send, Queue, OFSPkt}, _From,
-            #state{socket = Socket,
-                   queues = Queues,
-                   port = undefined,
-                   ifindex = Ifindex,
-                   ofs_port_no = OutPort} = State) ->
-    Ret = case valid_queue(OutPort, Queue, Queues) of
-              true ->
-                  Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-                  lager:info("Output type: socket, InPort: ~p, OutPort: ~p",
-                             [OFSPkt#ofs_pkt.in_port, OutPort]),
-                  send_to_wire(Socket, Ifindex, Frame),
-                  update_port_transmitted_counters(OutPort,
-                                                   Queue,
-                                                   byte_size(Frame)),
-                  ok;
-              false ->
-                  bad_queue
-          end,
-    {reply, Ret, State};
-handle_call({send, Queue, OFSPkt}, _From,
-            #state{socket = undefined,
-                   queues = Queues,
-                   port = ErlangPort,
-                   ofs_port_no = OutPort} = State) ->
-    Ret = case valid_queue(OutPort, Queue, Queues) of
-              true ->
-                  Frame = pkt:encapsulate(OFSPkt#ofs_pkt.packet),
-                  lager:info("Output type: erlang port, InPort: ~p, OutPort: ~p",
-                             [OFSPkt#ofs_pkt.in_port, OutPort]),
-                  port_command(ErlangPort, Frame),
-                  update_port_transmitted_counters(OutPort,
-                                                   Queue,
-                                                   byte_size(Frame)),
-                  ok;
-              false ->
-                  bad_queue
-          end,
-    {reply, Ret, State};
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+handle_call({attach_queue, QueueId, Properties}, _From, State) ->
+    NewState = do_attach_queue(State, QueueId, Properties),
+    {reply, ok, NewState};
+handle_call({detach_queue, QueueId}, _From, State) ->
+    NewState = do_detach_queue(State, QueueId),
+    {reply, ok, NewState}.
 
 %% @private
 -spec handle_cast(Msg :: term(),
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
-handle_cast({attach_queue, #ofp_packet_queue{port_no = PortNo,
-                                             queue_id = QueueId} = Queue},
-            #state{queues = Queues} = State) ->
-    ets:insert(queue_stats, #queue_stats{key = {PortNo, QueueId}}),
-    {noreply, State#state{queues = [Queue | Queues]}};
-handle_cast({detach_queue, PortNo, QueueId}, #state{queues = Queues} = State) ->
-    ets:match_delete(queue_stats, #queue_stats{key = {PortNo, QueueId},
-                                               _ = '_'}),
-    NewQueues = lists:filter(fun(#ofp_packet_queue{port_no = P,
-                                                   queue_id = Q})
-                                   when P == PortNo andalso Q == QueueId ->
-                                     false;
-                                (_) ->
-                                     true
-                             end, Queues),
-    {noreply, State#state{queues = NewQueues}};
 handle_cast({change_config, #ofp_port_mod{}}, State) ->
     %% FIXME: implement
-    {noreply, State};
-handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
@@ -391,20 +347,14 @@ handle_info(_Info, State) ->
 
 %% @private
 -spec terminate(Reason :: term(), #state{}) -> ok.
-terminate(_Reason, #state{socket = undefined, port_ref = PortRef}) ->
-    tuncer:down(PortRef),
-    tuncer:destroy(PortRef);
-terminate(_Reason, #state{socket = Socket, port_ref = undefined,
-                          epcap_pid = EpcapPid}) ->
-    %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
-    %% and it's an atom, not a pid.
-    case catch is_process_alive(EpcapPid) of
-        true ->
-            epcap:stop(EpcapPid);
-        _ ->
-            ok
-    end,
-    ofs_userspace_port_procket:close(Socket).
+terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
+    lists:foldl(fun(#ofs_port_queue{key = {_, QueueId}},
+                    StateAcc) ->
+                        do_detach_queue(StateAcc, QueueId)
+                  end, State, get_queues(PortNo)),
+    true = ets:delete(ofs_ports, PortNo),
+    true = ets:delete(port_stats, PortNo),
+    close_ports(State).
 
 %% @private
 -spec code_change(Vsn :: term() | {down, Vsn :: term()},
@@ -428,32 +378,6 @@ update_port_received_counters(PortNum, Bytes) ->
     ets:update_counter(port_stats, PortNum,
                        [{#ofp_port_stats.rx_packets, 1},
                         {#ofp_port_stats.rx_bytes, Bytes}]).
-
--spec update_port_transmitted_counters(ofp_port_no(), ofp_queue_id() | none,
-                                       integer()) -> any().
-update_port_transmitted_counters(PortNum, Queue, Bytes) ->
-    case Queue of
-        none ->
-            ok;
-        _ ->
-            try ets:update_counter(queue_stats, {PortNum, Queue},
-                                   [{#queue_stats.tx_packets, 1},
-                                    {#queue_stats.tx_bytes, Bytes}])
-            catch
-                _:_ ->
-                    lager:error("Queue ~p for port ~p doesn't exist "
-                                "cannot update queue stats", [Queue, PortNum])
-            end
-    end,
-    try
-        ets:update_counter(port_stats, PortNum,
-                           [{#ofp_port_stats.tx_packets, 1},
-                            {#ofp_port_stats.tx_bytes, Bytes}])
-    catch
-        E1:E2 ->
-            lager:error("Cannot update port stats for port ~p because ~p ~p",
-                        [PortNum, E1, E2])
-    end.
 
 %% TODO: Add typespecs to bpf and procket in general to avoid:
 %% ofs_userspace_port.erl:446: Function darwin_raw_socket/1 has no local return
@@ -494,20 +418,18 @@ get_port_pid(PortNo) ->
             Pid
     end.
 
--spec get_port(ofp_port_no()) -> #ofs_port{} | bad_port.
-get_port(PortNo) ->
-    case ets:lookup(ofs_ports, PortNo) of
-        [] ->
-            bad_port;
-        [Port] ->
-            Port
-    end.
+-spec port_queue_to_packet_queue(#ofs_port_queue{}) -> #ofp_packet_queue{}.
+port_queue_to_packet_queue(#ofs_port_queue{key = {PortNo, QueueId},
+                                           properties = Properties}) ->
+    #ofp_packet_queue{queue_id = QueueId,
+                      port_no = PortNo,
+                      properties = Properties}.
 
--spec queue_stats_convert(#queue_stats{}) -> ofp_queue_stats().
-queue_stats_convert(#queue_stats{key = {PortNo, QueueId},
-                                 tx_bytes = TxBytes,
-                                 tx_packets = TxPackets,
-                                 tx_errors = TxErrors}) ->
+-spec queue_stats_convert(#ofs_port_queue{}) -> ofp_queue_stats().
+queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
+                                    tx_bytes = TxBytes,
+                                    tx_packets = TxPackets,
+                                    tx_errors = TxErrors}) ->
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
 
@@ -523,10 +445,89 @@ send_to_wire(Socket, Ifindex, Frame) ->
             packet:send(Socket, Ifindex, Frame)
     end.
 
--spec valid_queue(integer(), integer() | none, [#queue_stats{}]) -> boolean().
-valid_queue(_Port, none, _Queues) ->
-    true;
-valid_queue(Port, Queue, Queues) ->
-    lists:any(fun(#ofp_packet_queue{queue_id = QId, port_no = PNo}) ->
-                      Port == PNo andalso Queue == QId
-              end, Queues).
+close_ports(#state{socket = undefined, port_ref = PortRef}) ->
+    tuncer:down(PortRef),
+    tuncer:destroy(PortRef);
+close_ports(#state{socket = Socket, port_ref = undefined,
+                          epcap_pid = EpcapPid}) ->
+    %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
+    %% and it's an atom, not a pid.
+    case catch is_process_alive(EpcapPid) of
+        true ->
+            epcap:stop(EpcapPid);
+        _ ->
+            ok
+    end,
+    ofs_userspace_port_procket:close(Socket).
+
+rate_desc_to_bps(Bps) when is_integer(Bps) ->
+    Bps;
+rate_desc_to_bps({Value, Unit}) ->
+    Value * unit_to_bps(Unit).
+
+unit_to_bps(bps) -> 1;
+unit_to_bps(kbps) -> 1000;
+unit_to_bps(kibps) -> 1024;
+unit_to_bps(mbps) -> 1000 * 1000;
+unit_to_bps(mibps) -> 1024 * 1024;
+unit_to_bps(gbps) -> 1000 * 1000 * 1000;
+unit_to_bps(gibps) -> 1024 * 1024 * 1024.
+
+get_min_rate_bps(QueueProps, PortRateBps) ->
+    case lists:keyfind(ofp_queue_prop_min_rate, 1, QueueProps) of
+        #ofp_queue_prop_min_rate{rate = Rate} when Rate =< 1000 ->
+            Rate * PortRateBps div 1000;
+        #ofp_queue_prop_min_rate{} ->
+            no_qos;
+        false ->
+            0
+    end.
+
+get_max_rate_bps(QueueProps, PortRateBps) ->
+    case lists:keyfind(ofp_queue_prop_max_rate, 1, QueueProps) of
+        #ofp_queue_prop_min_rate{rate = Rate} when Rate =< 1000 ->
+            Rate * PortRateBps div 1000;
+        _ ->
+            no_max_rate
+    end.
+
+do_attach_queue(#state{socket = Socket,
+                       ofs_port_no = OfsPortNo,
+                       port = Port,
+                       ifindex = Ifindex,
+                       rate_bps = PortRateBps,
+                       throttling_ets = ThrottlingEts} = State,
+                QueueId,
+                QueueProps) ->
+    Key = {OfsPortNo, QueueId},
+    case {Port, Ifindex} of
+        {undefined, _} ->
+            SendFun = fun(Frame) -> send_to_wire(Socket, Ifindex, Frame) end;
+        {_, undefined} ->
+            SendFun = fun(Frame) -> port_command(Port, Frame) end
+    end,
+    MinRateBps = get_min_rate_bps(QueueProps, PortRateBps),
+    MaxRateBps = get_max_rate_bps(QueueProps, PortRateBps),
+    {ok, Pid} = ofs_userspace_queue_sup:add_queue(Key,
+                                                  MinRateBps,
+                                                  MaxRateBps,
+                                                  PortRateBps,
+                                                  ThrottlingEts,
+                                                  SendFun),
+    ets:insert(ofs_port_queue, #ofs_port_queue{key = Key,
+                                               properties = QueueProps,
+                                               queue_pid = Pid}),
+    State.
+
+do_detach_queue(#state{ofs_port_no = OfsPortNo,
+                       throttling_ets = ThrottlingEts} = State,
+                QueueId) ->
+    case ets:lookup(ofs_port_queue, {OfsPortNo, QueueId}) of
+        [#ofs_port_queue{queue_pid = Pid}] ->
+            ofs_userspace_queue:stop(Pid);
+        [] ->
+            ok
+    end,
+    ets:delete(ofs_port_queue, {OfsPortNo, QueueId}),
+    ets:delete(ThrottlingEts, QueueId),
+    State.

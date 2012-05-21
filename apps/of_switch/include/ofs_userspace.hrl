@@ -40,7 +40,7 @@
           metadata = << 0:64 >> :: binary(),
           size     = 0          :: integer(),
           in_port               :: ofp_port_no(),
-          queue_id = none       :: integer() | none,
+          queue_id = 0          :: integer(),
           packet   = []         :: pkt:packet()
          }).
 
@@ -63,11 +63,20 @@
 %% match specs in ets:match_object in ofs_userspace_port:get_queue_stats/1
 %% For detailed explanation behind this please read:
 %% http://erlang.org/pipermail/erlang-questions/2009-September/046532.html
--record(queue_stats, {
-          key            :: {ofp_port_no(), ofp_queue_id()} | {'_', '_'},
-          tx_bytes   = 0 :: integer() | '_',
-          tx_packets = 0 :: integer() | '_',
-          tx_errors  = 0 :: integer() | '_'
+-record(ofs_port_queue, {
+          key            :: {ofp_port_no(), ofp_queue_id()} | {'_', '_'} | '_',
+          queue_pid      :: pid()                  | '_',
+          properties     :: [ofp_queue_property()] | '_',
+          tx_bytes   = 0 :: integer()              | '_',
+          tx_packets = 0 :: integer()              | '_',
+          tx_errors  = 0 :: integer()              | '_'
+         }).
+
+-record(ofs_queue_throttling, {
+          queue_no               :: integer(),
+          min_rate = 0           :: integer() | no_qos, % rates in b/window
+          max_rate = no_max_rate :: integer() | no_max_rate,
+          rate = 0               :: integer()
          }).
 
 -record(ofs_bucket, {

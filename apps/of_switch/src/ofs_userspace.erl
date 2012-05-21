@@ -132,10 +132,10 @@ start(_Opts) ->
                          [named_table, public,
                           {keypos, #ofp_port_stats.port_no},
                           {read_concurrency, true}]),
-    queue_stats = ets:new(queue_stats,
-                          [named_table, public,
-                           {keypos, #queue_stats.key},
-                           {read_concurrency, true}]),
+    ofs_port_queue = ets:new(ofs_port_queue,
+                             [named_table, public,
+                              {keypos, #ofs_port_queue.key},
+                              {read_concurrency, true}]),
     %% Groups
     group_table = ets:new(group_table, [named_table, public,
                                         {keypos, #group.id},
@@ -161,7 +161,7 @@ stop(_State) ->
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
-    ets:delete(queue_stats),
+    ets:delete(ofs_port_queue),
     %% Groups
     ets:delete(group_table),
     ets:delete(group_stats),

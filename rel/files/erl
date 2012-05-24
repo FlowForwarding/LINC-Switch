@@ -31,4 +31,4 @@ export ROOTDIR
 export BINDIR
 export PROGNAME
 
-exec $CMD -boot $ROOTDIR/releases/$APP_VSN/start_clean ${1+"$@"}
+exec $CMD -boot $ROOTDIR/releases/$APP_VSN/openflow ${1+"$@"}

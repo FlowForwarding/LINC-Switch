@@ -87,7 +87,7 @@ header_fields(#ndp_ns{tgt_addr = Addr, sll = SLL}) ->
     [ofp_field(ipv6_nd_sll, SLL) || SLL =/= undefined];
 header_fields(#ndp_na{src_addr = Addr, tll = TLL}) ->
     [ofp_field(ipv6_nd_target, Addr)] ++ %% not a typo, target = src_addr
-    [ofp_field(ipv6_nd_sll, TLL) || TLL =/= undefined];
+    [ofp_field(ipv6_nd_tll, TLL) || TLL =/= undefined];
 header_fields(#tcp{sport = SPort,
                    dport = DPort}) ->
     [ofp_field(tcp_src, <<SPort:16>>),

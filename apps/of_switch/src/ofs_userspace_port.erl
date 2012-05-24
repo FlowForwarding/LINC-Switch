@@ -215,7 +215,7 @@ init(Args) ->
     {queues, Queues} = lists:keyfind(queues, 1, Args),
     {rate, RateDesc} = lists:keyfind(rate, 1, Args),
     Rate = rate_desc_to_bps(RateDesc),
-    State = case re:run(Interface, "^tap[0-9]+$", [{capture, none}]) of
+    State = case re:run(Interface, "^tap.*$", [{capture, none}]) of
                 %% When switch connects to a tap interface, erlang receives file
                 %% descriptor to read/write ethernet frames directly from the
                 %% desired /dev/tapX character device. No socket communication

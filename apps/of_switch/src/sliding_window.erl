@@ -42,6 +42,9 @@
                          head :: [#bucket{}],
                          tail :: [#bucket{}]}).
 
+-type sliding_window() :: #sliding_window{}.
+-export_type([sliding_window/0]).
+
 %% 10^12 and 10^6 for micro-, milli-, mega- manipulation
 -define(E12, 1000000000000).
 -define(E6, 1000000).

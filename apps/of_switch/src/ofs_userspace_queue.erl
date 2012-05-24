@@ -21,8 +21,11 @@
 %% Public API
 %%--------------------------------------------------------------------
 
-start_link(MyKey, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun) ->
-    {_, QueueNo} = MyKey,
+-spec start_link({ofp_port_no(), ofp_queue_id()},
+                 integer(), integer(), integer(),
+                 ets:tid(), fun()) -> {ok, pid()}.
+start_link({_, QueueNo} = MyKey, MinRateBps, MaxRateBps, PortRateBps,
+           ThrottlingEts, SendFun) ->
     History = sliding_window:new(?HIST_BUCKET_COUNT, ?HIST_BUCKET_SIZE),
     MinRate = bps_to_bphistlen(MinRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
@@ -31,15 +34,19 @@ start_link(MyKey, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun) -
                                                     min_rate = MinRate,
                                                     max_rate = MaxRate,
                                                     rate = 0}),
-    Pid = proc_lib:spawn_link(fun() -> loop(MyKey,
-                                            MinRate, MaxRate, PortRate,
-                                            ThrottlingEts, History, SendFun) end),
+    Pid = proc_lib:spawn_link(fun() ->
+                                      loop(MyKey,
+                                           MinRate, MaxRate, PortRate,
+                                           ThrottlingEts, History, SendFun)
+                              end),
     {ok, Pid}.
 
+-spec send(pid(), #ofs_pkt{}) -> ok.
 send(Pid, Packet) ->
     Pid ! {send, Packet},
     ok.
 
+-spec stop(pid()) -> ok.
 stop(Pid) ->
     gen:call(Pid, cmd, stop).
 
@@ -47,15 +54,27 @@ stop(Pid) ->
 %% Main loop
 %%--------------------------------------------------------------------
 
-loop(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, History, SendFun) ->
+-spec loop({ofp_port_no(), ofp_queue_id()}, integer(), integer(), integer(),
+           ets:tid(), sliding_window:sliding_window(), fun()) -> no_return().
+loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
+     ThrottlingEts, History, SendFun) ->
     receive
-        {send, #ofs_pkt{packet = Packet}} ->
-            Frame = pkt:encapsulate(Packet),
-            NewHistory = sleep_and_send(MyKey,
-                                        MinRate, MaxRate, PortRate,
-                                        ThrottlingEts, History, SendFun, Frame),
-            update_port_transmitted_counters(MyKey, byte_size(Frame)),
-            loop(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, NewHistory, SendFun);
+        {send, #ofs_pkt{packet = Packet} = OFSPkt} ->
+            try
+                Frame = pkt:encapsulate(Packet),
+                NewHistory = sleep_and_send(MyKey, MinRate, MaxRate, PortRate,
+                                            ThrottlingEts, History,
+                                            SendFun, Frame),
+                update_port_transmitted_counters(MyKey, byte_size(Frame)),
+                loop(MyKey, MinRate, MaxRate, PortRate,
+                     ThrottlingEts, NewHistory, SendFun)
+            catch
+                _:_ ->
+                    lager:error("Pkt encapsulate error. Port ~p queue ~p : ~p",
+                                [OutPort, OutQueue, OFSPkt]),
+                    loop(MyKey, MinRate, MaxRate, PortRate,
+                         ThrottlingEts, History, SendFun)
+            end;
         {cmd, From, stop} ->
             gen:reply(From, ok)
     end.

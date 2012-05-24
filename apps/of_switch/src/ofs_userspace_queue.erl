@@ -69,9 +69,10 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
                 loop(MyKey, MinRate, MaxRate, PortRate,
                      ThrottlingEts, NewHistory, SendFun)
             catch
-                _:_ ->
+                E1:E2 ->
                     lager:error("Pkt encapsulate error. Port ~p queue ~p : ~p",
                                 [OutPort, OutQueue, OFSPkt]),
+                    lager:error("~p:~p", [E1, E2]),
                     loop(MyKey, MinRate, MaxRate, PortRate,
                          ThrottlingEts, History, SendFun)
             end;

@@ -70,9 +70,9 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
                      ThrottlingEts, NewHistory, SendFun)
             catch
                 E1:E2 ->
-                    lager:error("Pkt encapsulate error. Port ~p queue ~p : ~p",
+                    ?ERROR("Pkt encapsulate error. Port ~p queue ~p : ~p",
                                 [OutPort, OutQueue, OFSPkt]),
-                    lager:error("~p:~p", [E1, E2]),
+                    ?ERROR("~p:~p", [E1, E2]),
                     loop(MyKey, MinRate, MaxRate, PortRate,
                          ThrottlingEts, History, SendFun)
             end;
@@ -131,9 +131,9 @@ update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
                            [{#ofs_port_queue.tx_packets, 1},
                             {#ofs_port_queue.tx_bytes, Bytes}])
     catch
-        _:_ ->
-            lager:error("Queue ~p for port ~p doesn't exist "
-                        "cannot update queue stats", [Queue, PortNum])
+        E1:E2 ->
+            ?ERROR("Queue ~p for port ~p doesn't exist because: ~p:~p "
+                   "cannot update queue stats", [Queue, PortNum, E1, E2])
     end,
     try
         ets:update_counter(port_stats, PortNum,
@@ -141,7 +141,7 @@ update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
                             {#ofp_port_stats.tx_bytes, Bytes}])
     catch
         E1:E2 ->
-            lager:error("Cannot update port stats for port ~p because of ~p ~p",
-                        [PortNum, E1, E2])
+            ?ERROR("Cannot update port stats for port ~p because of ~p ~p",
+                   [PortNum, E1, E2])
     end.
 

@@ -58,10 +58,10 @@ route(Pkt) ->
 add_port(physical, Opts) ->
     case supervisor:start_child(ofs_userspace_port_sup, [Opts]) of
         {ok, Pid} ->
-            lager:info("Created port: ~p", [Opts]),
+            ?INFO("Created port: ~p", [Opts]),
             Pid;
         {error, shutdown} ->
-            lager:error("Cannot create port ~p", [Opts]),
+            ?ERROR("Cannot create port ~p", [Opts]),
             error
     end;
 add_port(logical, _Opts) ->

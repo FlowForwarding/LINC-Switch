@@ -355,7 +355,7 @@ route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
 route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
     ofs_userspace_port:send(PortNum, Pkt#ofs_pkt.queue_id, Pkt);
 route_to_output(_TableId, _Pkt, OtherPort) ->
-    lager:warning("unsupported port type: ~p", [OtherPort]).
+    ?WARNING("unsupported port type: ~p", [OtherPort]).
 
 -spec xid() -> integer().
 xid() ->

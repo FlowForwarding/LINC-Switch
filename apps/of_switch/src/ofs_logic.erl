@@ -96,7 +96,7 @@ handle_cast({unregister, Pid}, #state{connections = Connections} = State) ->
 handle_cast({message, From, Message},
             #state{connections = Connections} = State) ->
     Connection = lists:keyfind(From, #connection.pid, Connections),
-    ?INFO("Received: ~p (from ~p)~n", [Message, Connection#connection.socket]),
+    ?DEBUG("Received: ~p (from ~p)~n", [Message, Connection#connection.socket]),
     NewState = handle_message(Message, Connection, State),
     {noreply, NewState};
 handle_cast({send, #ofp_message{body = Body} = Message},
@@ -334,9 +334,15 @@ handle_in_backend(#ofp_message{body = RequestBody} = Request,
 
 -spec do_send(port(), ofp_message()) -> any().
 do_send(Socket, Message) ->
-    {ok, EncodedMessage} = of_protocol:encode(Message),
-    ?INFO("Sending: ~p (to ~p)~n", [Message, Socket]),
-    gen_tcp:send(Socket, EncodedMessage).
+    try
+        {ok, EncodedMessage} = of_protocol:encode(Message),
+        ?DEBUG("Sending: ~p (to ~p)~n", [Message, Socket]),
+        gen_tcp:send(Socket, EncodedMessage)
+    catch
+        E1:E2 ->
+            ?ERROR("Encode error: ~p:~p of packet-in msg: ~p",
+                   [E1, E2, Message])
+    end.
 
 send_reply(Socket, Request, ReplyBody) ->
     do_send(Socket, Request#ofp_message{body = ReplyBody}).

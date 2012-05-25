@@ -242,8 +242,8 @@ init(Args) ->
                                    port_ref = Ref,
                                    ofs_port_no = OfsPortNo};
                         {error, Error} ->
-                            lager:error("Tuncer error ~p for interface ~p",
-                                        [Error, Interface]),
+                            ?ERROR("Tuncer error ~p for interface ~p",
+                                   [Error, Interface]),
                             {stop, shutdown}
                     end;
                 %% When switch connects to a hardware interface such as eth0
@@ -339,7 +339,7 @@ handle_info({Port, {data, Frame}}, #state{ofs_port_no = OfsPortNo,
     {noreply, State};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
-    lager:error("Port for interface ~p exited abnormally",
+    ?ERROR("Port for interface ~p exited abnormally",
                 [Interface]),
     {stop, normal, State};
 handle_info(_Info, State) ->
@@ -389,11 +389,11 @@ darwin_raw_socket(Interface) ->
             bpf:ctl(Socket, setif, Interface),
             {Socket, 0};
         {error, Error} ->
-            lager:error("Cannot open darwin raw socket for"
+            ?ERROR("Cannot open darwin raw socket for"
                         " interface ~p because: ~p", [Interface, Error]),
             {0, 0};
         Any ->
-            lager:error("Cannot open darwin raw socket for"
+            ?ERROR("Cannot open darwin raw socket for"
                         " interface ~p because: ~p", [Interface, Any]),
             {0, 0}
     end.

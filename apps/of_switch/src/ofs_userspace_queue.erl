@@ -140,8 +140,8 @@ update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
                            [{#ofp_port_stats.tx_packets, 1},
                             {#ofp_port_stats.tx_bytes, Bytes}])
     catch
-        E1:E2 ->
+        E3:E4 ->
             ?ERROR("Cannot update port stats for port ~p because of ~p ~p",
-                   [PortNum, E1, E2])
+                   [PortNum, E3, E4])
     end.
 

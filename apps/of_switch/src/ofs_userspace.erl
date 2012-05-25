@@ -40,7 +40,6 @@
 
 -include_lib("pkt/include/pkt.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
--include("of_switch.hrl").
 -include("ofs_userspace.hrl").
 
 -record(state, {}).

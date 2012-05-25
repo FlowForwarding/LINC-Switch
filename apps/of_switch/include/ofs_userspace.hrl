@@ -5,6 +5,7 @@
 %%%-----------------------------------------------------------------------------
 
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_switch/include/of_switch.hrl").
 
 -record(flow_entry, {
           priority          :: integer(),

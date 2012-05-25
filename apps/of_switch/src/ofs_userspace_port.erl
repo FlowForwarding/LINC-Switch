@@ -44,7 +44,6 @@
          terminate/2,
          code_change/3]).
 
--include("of_switch.hrl").
 -include("ofs_userspace.hrl").
 
 -record(state, {port :: port(),

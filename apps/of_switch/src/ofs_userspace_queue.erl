@@ -18,6 +18,7 @@
 -define(HIST_BUCKET_SIZE, 100).
 -define(HIST_BUCKET_COUNT, 10).
 -define(HIST_LEN_MS, ?HIST_BUCKET_SIZE * ?HIST_BUCKET_COUNT).
+-define(PAUSE_ON_FULL, 10). % 10ms
 
 %%--------------------------------------------------------------------
 %% Public API
@@ -93,7 +94,7 @@ sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, History, SendFu
     HistoryLenMs = sliding_window:length_ms(History1),
     MaxTransfer = max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts),
     OverTransfer = max(0, TotalTransfer + FrameSize - MaxTransfer),
-    PauseMs = OverTransfer * HistoryLenMs div MaxTransfer,
+    PauseMs = pause_len(OverTransfer, HistoryLenMs, MaxTransfer),
     Transfer = (TotalTransfer + FrameSize) div (HistoryLenMs + PauseMs),
     update_transfer(MyKey, ThrottlingEts, Transfer),
     timer:sleep(PauseMs),
@@ -104,6 +105,11 @@ sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, History, SendFu
 %%--------------------------------------------------------------------
 %% Helpers
 %%--------------------------------------------------------------------
+
+pause_len(_OverTransfer, _HistoryLenMs, 0) ->
+    ?PAUSE_ON_FULL;
+pause_len(OverTransfer, HistoryLenMs, MaxTransfer) ->
+    OverTransfer * HistoryLenMs div MaxTransfer.
 
 max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts) ->
     TotalRate = ets:foldl(fun(#ofs_queue_throttling{rate = Rate}, Acc) ->

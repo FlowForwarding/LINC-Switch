@@ -91,6 +91,7 @@ parse_ofs_pkt(Binary, PortNum) ->
         E1:E2 ->
             ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
                    [Binary, E1, E2]),
+            ?ERROR("~p", [erlang:get_stacktrace()]),
             #ofs_pkt{}
     end.
 

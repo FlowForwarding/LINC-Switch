@@ -1,4 +1,6 @@
 -module(ofs_userspace_port_procket).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -export([send/2,
          close/1]).

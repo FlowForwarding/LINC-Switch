@@ -4,6 +4,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(of_controller).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -compile([{parse_transform, lager_transform}]).
 

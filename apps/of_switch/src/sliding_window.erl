@@ -18,6 +18,8 @@
 %% always available in O(1) time.
 
 -module(sliding_window).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -export([new/2,
          refresh/1,

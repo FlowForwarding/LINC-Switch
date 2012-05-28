@@ -4,6 +4,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_app).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -behaviour(application).
 

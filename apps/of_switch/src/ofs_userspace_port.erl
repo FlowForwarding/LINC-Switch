@@ -11,6 +11,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace_port).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -behaviour(gen_server).
 

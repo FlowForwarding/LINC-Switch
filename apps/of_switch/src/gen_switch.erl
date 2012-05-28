@@ -25,6 +25,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(gen_switch).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 

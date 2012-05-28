@@ -1,4 +1,6 @@
 -module(ofs_userspace_stats).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -export([table_stats/1,
          update_aggregate_stats/4]).

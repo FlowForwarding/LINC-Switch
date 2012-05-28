@@ -4,6 +4,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_receiver_sup).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -behaviour(supervisor).
 

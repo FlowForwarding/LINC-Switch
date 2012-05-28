@@ -5,6 +5,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -behaviour(gen_switch).
 

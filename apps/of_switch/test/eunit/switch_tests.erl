@@ -1,4 +1,6 @@
 -module(switch_tests).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -compile(export_all).
 

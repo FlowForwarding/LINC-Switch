@@ -1,4 +1,6 @@
 -module(ofs_userspace_flow).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -export([get_flow_tables/1,
          get_flow_stats/3,

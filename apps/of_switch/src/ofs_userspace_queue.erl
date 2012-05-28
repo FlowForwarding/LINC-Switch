@@ -5,6 +5,8 @@
 %%%===================================================================
 
 -module(ofs_userspace_queue).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -export([start_link/6,
          send/2,

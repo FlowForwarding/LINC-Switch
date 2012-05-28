@@ -4,6 +4,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_receiver).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -behaviour(gen_server).
 

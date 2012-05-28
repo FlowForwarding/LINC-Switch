@@ -4,6 +4,8 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_tests).
+-author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
+
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").

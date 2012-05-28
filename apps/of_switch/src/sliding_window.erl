@@ -27,6 +27,8 @@
          total_transfer/1,
          length_ms/1]).
 
+-compile(export_all).
+
 -record(bucket, {start :: erlang:timestamp(),
                  transfer = 0 :: integer()}).
 
@@ -57,8 +59,9 @@ new(BucketCount, BucketSize) when BucketCount > 3, BucketSize > 0 ->
     Buckets = [#bucket{start = now_add(Now, -N * BucketSizeUs)} ||
                N <- lists:seq(0, BucketCount-1)],
     #sliding_window{size = BucketCount,
-                    bucket_size_us = BucketSize,
+                    bucket_size_us = BucketSizeUs,
                     total_transfer = 0,
+                    start = now_add(Now, -(BucketCount-1) * BucketSizeUs),
                     head = [],
                     tail = Buckets}.
 
@@ -89,19 +92,27 @@ refresh(#sliding_window{tail = [#bucket{start = T} | _],
             Queue
     end.
 
-step(#sliding_window{head = [HeadH | [NewHH|_] = HeadT],
+step(#sliding_window{head = [HeadH | HeadT],
                      tail = OldTail,
+                     bucket_size_us = BucketSizeUs,
                      total_transfer = OldTotalXfer} = Queue) ->
+    NewStart = now_add(get_start(OldTail, HeadT), BucketSizeUs),
     Queue#sliding_window{head = HeadT,
-                         tail = [#bucket{start = now()} | OldTail],
-                         start = NewHH#bucket.start,
+                         tail = [#bucket{start = NewStart} | OldTail],
+                         start = get_start(HeadT, OldTail),
                          total_transfer = OldTotalXfer - HeadH#bucket.transfer};
 step(Queue) -> %% head is too short - wrap
     step(wrap(Queue)).
 
-wrap(#sliding_window{head = Head, tail = Tail} = Queue) ->
+wrap(#sliding_window{head = [], tail = Tail} = Queue) ->
     Queue#sliding_window{head = lists:reverse(Tail),
-                         tail = lists:reverse(Head)}.
+                         tail = []}.
+
+get_start([#bucket{start = Start} | _], _) ->
+    Start;
+get_start([], Tail) ->
+    #bucket{start = Start} = lists:last(Tail),
+    Start.
 
 %%--------------------------------------------------------------------
 %% Misc. helpers

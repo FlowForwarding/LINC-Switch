@@ -74,16 +74,23 @@ remove_port(PortNo) ->
 
 -spec parse_ofs_pkt(binary(), ofp_port_no()) -> #ofs_pkt{}.
 parse_ofs_pkt(Binary, PortNum) ->
-    Packet = pkt:decapsulate(Binary),
-    Fields = [ofs_userspace_convert:ofp_field(in_port, <<PortNum:32>>)
-              || is_integer(PortNum)]
-        ++ ofs_userspace_convert:packet_fields(Packet),
-    #ofs_pkt{packet = Packet,
-             fields =
-                 #ofp_match{type = oxm,
-                            oxm_fields = Fields},
-             in_port = PortNum,
-             size = byte_size(Binary)}.
+    try
+        Packet = pkt:decapsulate(Binary),
+        Fields = [ofs_userspace_convert:ofp_field(in_port, <<PortNum:32>>)
+                  || is_integer(PortNum)]
+            ++ ofs_userspace_convert:packet_fields(Packet),
+        #ofs_pkt{packet = Packet,
+                 fields =
+                     #ofp_match{type = oxm,
+                                oxm_fields = Fields},
+                 in_port = PortNum,
+                 size = byte_size(Binary)}
+    catch
+        E1:E2 ->
+            ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
+                   [Binary, E1, E2]),
+            #ofs_pkt{}
+    end.
 
 -spec get_group_stats() -> [ofp_group_stats()].
 get_group_stats() ->

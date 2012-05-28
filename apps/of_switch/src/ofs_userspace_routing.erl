@@ -330,14 +330,21 @@ apply_action_set(_TableId, [], Pkt) ->
 -spec route_to_controller(integer(), #ofs_pkt{}, atom()) -> ok.
 route_to_controller(TableId,
                     #ofs_pkt{fields = Fields,
-                             packet = Packet},
+                             packet = Packet} = OFSPkt,
                     Reason) ->
-    PacketIn = #ofp_packet_in{buffer_id = no_buffer,
-                              reason = Reason,
-                              table_id = TableId,
-                              match = Fields,
-                              data = pkt:encapsulate(Packet)},
-    ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn}).
+    try
+        PacketIn = #ofp_packet_in{buffer_id = no_buffer,
+                                  reason = Reason,
+                                  table_id = TableId,
+                                  match = Fields,
+                                  data = pkt:encapsulate(Packet)},
+        ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn})
+    catch
+        E1:E2 ->
+            ?ERROR("Encapsulate failed when routing to controller "
+                   "for pkt: ~p because: ~p:~p",
+                   [OFSPkt, E1, E2])
+    end.
 
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, all) ->

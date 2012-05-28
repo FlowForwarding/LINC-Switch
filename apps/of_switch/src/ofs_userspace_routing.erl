@@ -346,7 +346,7 @@ route_to_controller(TableId,
             ?ERROR("Encapsulate failed when routing to controller "
                    "for pkt: ~p because: ~p:~p",
                    [OFSPkt, E1, E2]),
-            ?ERROR("~p", [erlang:get_stacktrace()])
+            io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()])
     end.
 
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().

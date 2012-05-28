@@ -75,7 +75,7 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
                     ?ERROR("Pkt encapsulate error. Port ~p queue ~p : ~p",
                                 [OutPort, OutQueue, OFSPkt]),
                     ?ERROR("~p:~p", [E1, E2]),
-                    ?ERROR("~p", [erlang:get_stacktrace()]),
+                    io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
                     loop(MyKey, MinRate, MaxRate, PortRate,
                          ThrottlingEts, History, SendFun)
             end;

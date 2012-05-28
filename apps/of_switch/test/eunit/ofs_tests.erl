@@ -55,8 +55,8 @@ request_reply(Config, MessageType) ->
             ?_assert(is_record(ReplyBody,
                                element(1, get_reply(MessageType)))),
             ?_assertEqual(Xid, ReplyXid);
-        _ ->
-            ?_assert(false)
+        Other ->
+            throw({bad_reply, Other})
     end.
 
 %%%-----------------------------------------------------------------------------

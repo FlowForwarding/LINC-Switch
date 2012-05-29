@@ -50,10 +50,10 @@ request_reply(Config, MessageType) ->
                            xid = Xid,
                            body = get_request(MessageType)},
 
-    case of_controller:send(ControllerPid, ConnectionId, Request, 2000) of
+    case of_controller:send(ControllerPid, ConnectionId, Request, 5000) of
         {reply, #ofp_message{version = 3, xid = ReplyXid, body = ReplyBody}} ->
-            ?_assert(is_record(ReplyBody,
-                               element(1, get_reply(MessageType)))),
+            RecordTag = element(1, get_reply(MessageType)),
+            ?_assert(is_record(ReplyBody, RecordTag)),
             ?_assertEqual(Xid, ReplyXid);
         Other ->
             throw({bad_reply, Other})

@@ -82,6 +82,8 @@ setup() ->
     %% Wait for connection
     {ok, ConnectionId} = wait_for_connection(ControllerPid, 100),
 
+    timer:sleep(500),
+
     [{controller, ControllerPid}, {connection, ConnectionId}].
 
 teardown(Config) ->

@@ -3,6 +3,3 @@
 ERL_BIN=$(dirname $(readlink -e `which erl`))
 BEAM=$(readlink -e $ERL_BIN/../erts*/bin/beam.smp)
 sudo -n setcap -r cap_net_admin=ep $BEAM
-
-sudo -n tunctl -d tap0
-sudo -n tunctl -d tap1

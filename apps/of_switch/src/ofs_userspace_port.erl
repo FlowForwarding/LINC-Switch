@@ -486,7 +486,7 @@ get_min_rate_bps(QueueProps, PortRateBps) ->
 
 get_max_rate_bps(QueueProps, PortRateBps) ->
     case lists:keyfind(ofp_queue_prop_max_rate, 1, QueueProps) of
-        #ofp_queue_prop_min_rate{rate = Rate} when Rate =< 1000 ->
+        #ofp_queue_prop_max_rate{rate = Rate} when Rate =< 1000 ->
             Rate * PortRateBps div 1000;
         _ ->
             no_max_rate

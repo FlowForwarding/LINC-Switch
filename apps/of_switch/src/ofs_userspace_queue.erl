@@ -17,7 +17,7 @@
 %% have history of 10 buckets and total length of one second
 -define(HIST_BUCKET_SIZE, 100).
 -define(HIST_BUCKET_COUNT, 10).
--define(HIST_LEN_MS, ?HIST_BUCKET_SIZE * ?HIST_BUCKET_COUNT).
+-define(HIST_LEN_MS, (?HIST_BUCKET_SIZE * ?HIST_BUCKET_COUNT)).
 -define(PAUSE_ON_FULL, 10). % 10ms
 
 %%--------------------------------------------------------------------
@@ -73,10 +73,11 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
                      ThrottlingEts, NewHistory, SendFun)
             catch
                 E1:E2 ->
-                    ?ERROR("Pkt encapsulate error. Port ~p queue ~p : ~p",
+                    S = erlang:get_stacktrace(),
+                    io:format("Pkt encapsulate error. Port ~p queue ~p : ~p~n",
                                 [OutPort, OutQueue, OFSPkt]),
-                    ?ERROR("~p:~p", [E1, E2]),
-                    io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
+                    io:format("~p:~p~n", [E1, E2]),
+                    io:format("Stacktrace: ~p~n", [S]),
                     loop(MyKey, MinRate, MaxRate, PortRate,
                          ThrottlingEts, History, SendFun)
             end;
@@ -84,10 +85,12 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
             gen:reply(From, ok)
     end.
 
-sleep_and_send(_MyKey, no_qos, _MaxRate, _PortRate, _ThrottlingEts, History, SendFun, Frame) ->
+sleep_and_send(_MyKey, no_qos, _MaxRate, _PortRate, _ThrottlingEts,
+               History, SendFun, Frame) ->
     SendFun(Frame),
     History;
-sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, History, SendFun, Frame) ->
+sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts,
+               History, SendFun, Frame) ->
     FrameSize = bit_size(Frame),
     History1 = sliding_window:refresh(History),
     TotalTransfer = sliding_window:total_transfer(History1),
@@ -95,12 +98,22 @@ sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts, History, SendFu
     MaxTransfer = max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts),
     OverTransfer = max(0, TotalTransfer + FrameSize - MaxTransfer),
     PauseMs = pause_len(OverTransfer, HistoryLenMs, MaxTransfer),
-    Transfer = (TotalTransfer + FrameSize) div (HistoryLenMs + PauseMs),
-    update_transfer(MyKey, ThrottlingEts, Transfer),
-    timer:sleep(PauseMs),
-    SendFun(Frame),
-    History2 = sliding_window:bump_transfer(History1, FrameSize),
-    History2.
+    try
+        Transfer = (TotalTransfer + FrameSize) div (HistoryLenMs + PauseMs),
+        update_transfer(MyKey, ThrottlingEts, Transfer),
+        timer:sleep(PauseMs),
+        SendFun(Frame),
+        History2 = sliding_window:bump_transfer(History1, FrameSize),
+        History2
+    catch
+        E1:E2 ->
+            lager:error("Error ~p:~p Total transfer: ~p, Frame Size: ~p, "
+                        "HistoryLenMs: ~p, PauseMs: ~p",
+                        [E1, E2, TotalTransfer, FrameSize,
+                         HistoryLenMs, PauseMs]),
+            lager:error("History1: ~p", [History1]),
+            History1
+    end.
 
 %%--------------------------------------------------------------------
 %% Helpers
@@ -122,11 +135,9 @@ max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts) ->
     min(MySlice, MaxRate).
 
 update_transfer({_, QueueId}, ThrottlingEts, Rate) ->
-    %% lookup and insert is safe, because rate is the only field
-    %% that is changing over the time
-    [OldThrottling] = ets:lookup(ThrottlingEts, QueueId),
-    NewThrottling = OldThrottling#ofs_queue_throttling{rate = Rate},
-    ets:insert(ThrottlingEts, NewThrottling).
+    ets:update_element(ThrottlingEts,
+                       QueueId,
+                       {#ofs_queue_throttling.rate, Rate}).
 
 bps_to_bphistlen(Bps) when is_integer(Bps) ->
     Bps * 1000 div ?HIST_LEN_MS;
@@ -153,4 +164,3 @@ update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
             ?ERROR("Cannot update port stats for port ~p because of ~p ~p",
                    [PortNum, E3, E4])
     end.
-

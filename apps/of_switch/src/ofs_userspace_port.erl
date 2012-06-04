@@ -1,5 +1,6 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc Module to repsent Open FLow port.
 %%% It abstracts out underlying logic of either hardware network stack or
 %%% virtual TAP stack. It provides Open Flow ports represented as gen_server
@@ -12,7 +13,6 @@
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace_port).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -behaviour(gen_server).
 

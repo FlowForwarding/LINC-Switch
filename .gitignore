@@ -6,5 +6,6 @@ rebar
 /deps
 /rel/openflow
 /apps/*/.eunit
+/apps/*/doc/
 /log
 /apps/of_switch/log

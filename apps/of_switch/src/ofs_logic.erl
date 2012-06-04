@@ -1,11 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc OpenFlow Logical Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_logic).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -behaviour(gen_server).
 

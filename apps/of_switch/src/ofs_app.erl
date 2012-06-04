@@ -1,11 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc Callback module for OpenFlow Logical Switch application.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_app).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -behaviour(application).
 

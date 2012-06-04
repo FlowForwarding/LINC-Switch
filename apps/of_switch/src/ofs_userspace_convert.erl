@@ -1,7 +1,6 @@
 -module(ofs_userspace_convert).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
-
 -export([ofp_field/2,
          packet_fields/1]).
 

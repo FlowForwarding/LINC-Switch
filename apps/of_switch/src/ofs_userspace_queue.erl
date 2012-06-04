@@ -1,12 +1,12 @@
 %%%===================================================================
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc Module implementing port's queues in userspace switch
 %%% @end
 %%%===================================================================
 
 -module(ofs_userspace_queue).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -export([start_link/6,
          send/2,

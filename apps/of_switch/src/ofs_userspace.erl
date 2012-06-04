@@ -1,12 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %%% @doc Userspace implementation of the OpenFlow Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -behaviour(gen_switch).
 

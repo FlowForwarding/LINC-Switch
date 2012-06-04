@@ -1,5 +1,6 @@
 %%%===================================================================
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc Implementation of sliding window for calculating average
 %%% transfer over a period of time
 %%% @end
@@ -19,7 +20,6 @@
 
 -module(sliding_window).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -export([new/2,
          refresh/1,

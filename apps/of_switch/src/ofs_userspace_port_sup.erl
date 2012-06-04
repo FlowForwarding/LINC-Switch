@@ -1,11 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc Supervisor module for ports.
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ofs_userspace_port_sup).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -behaviour(supervisor).
 

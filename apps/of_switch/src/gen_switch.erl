@@ -1,5 +1,6 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012, Erlang Solutions Ltd.
+%%% Use is subject to License terms.
+%%% @copyright (C) 2012 FlowForwarding.org
 %%% @doc OpenFlow Switch behaviour.
 %%% Specifies set of callback functions that must be implemented by the switch
 %%% backend:
@@ -26,7 +27,6 @@
 %%%-----------------------------------------------------------------------------
 -module(gen_switch).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
-
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 

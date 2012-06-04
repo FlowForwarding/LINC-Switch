@@ -4,7 +4,11 @@ LINC - OpenFlow software switch
 What is LINC?
 =============
 
-LINC is a pure OpenFlow switch written in Erlang. It's implemented in operating system's userspace as an Erlang node. Such approach is not the most efficient one, compared to [Open vSwitch][ovs] implemented in Linux kernel, or pure hardware implementations of traditional switches, but it gives a lot of flexibility and allows quick deployments and tests of new OpenFlow features.
+LINC is a pure OpenFlow switch written in Erlang. It's implemented in operating
+system's userspace as an Erlang node. Such approach is not the most efficient
+one, compared to [Open vSwitch][ovs] implemented in Linux kernel, or pure
+hardware implementations of traditional switches, but it gives a lot of
+flexibility and allows quick deployments and tests of new OpenFlow features.
 
 Features
 ========
@@ -17,7 +21,8 @@ Features
 Planned features
 ----------------
 
- * Support for [OF-Config 1.0][ofc1] and/or [OF-Config 1.1][ofc2] management protocols,
+ * Support for [OF-Config 1.0][ofc1] and/or [OF-Config 1.1][ofc2] management
+   protocols,
  * Support for [OpenFlow Protocol 1.3][ofp4],
  * Backward compatibility with [OpenFlow Protocol 1.1][ofp2],
  * Alternative switching backends (kernel space or hardware).
@@ -28,15 +33,17 @@ How to use it?
 Erlang
 ------
 
-To use LINC you need to have an Erlang runtime installed on your machine. Required version is **R15B**.
+To use LINC you need to have an Erlang runtime installed on your
+machine. Required version is **R15B**.
 
 ### Install from sources
 
-To build Erlang from sources first you have to install some required system packages.
+To build Erlang from sources first you have to install some required system
+packages.
 
 On Ubuntu:
 
-    # apt-get install autoconf openssl libssl0.9.8 libssl-dev libncurses5 libncurses5-dev
+    # apt-get install make autoconf openssl libssl0.9.8 libssl-dev libncurses5 libncurses5-dev
 
 On other Linux systems you need to install the counterparts of above package.
 
@@ -53,7 +60,8 @@ If you're lazy you can also use [Erlang binary packages][erlang-bin] created by 
 LINC
 ----
 
-To build the switch you need to install the following additional libraries and tools.
+To build the switch you need to install the following additional libraries and
+tools.
 
 On Ubuntu:
 
@@ -66,7 +74,7 @@ When your environment is set up you are ready to build and run LINC.
 Clone this git repository:
 
     % git clone <REPO>
-    
+
 Compile everything:
 
     % make
@@ -78,34 +86,47 @@ Generate an Erlang release:
 Adjust switch configuration by editing the `rel/openflow/release/0.1/sys.config` file which looks like this:
 
     {of_switch, [
-                 {controllers, [
-                                {"localhost", 6633},
-                                ...
-                               ]},
-                 {ports, [
-                          [{ofs_port_no, 0}, {interface, "eth0"}],
-                          [{ofs_port_no, 1}, {interface, "eth1"}],
-                          ...
-                         ]}
-                ]}
+        {controllers, [
+            {"localhost", 6633}
+        ]},
+        {ports, [
+            [{ofs_port_no, 1},
+             {interface, "eth0"},
+             {queues, [{0, [{ofp_queue_prop_min_rate, 0},
+                            {ofp_queue_prop_max_rate, 1000}]}]},
+             {rate, {1, gibps}}],
+            [{ofs_port_no, 2},
+             {interface, "eth1"},
+             {queues, [{0, [{ofp_queue_prop_min_rate, 0},
+                            {ofp_queue_prop_max_rate, 1000}]}]},
+             {rate, {1, gibps}}]
+        ]}
+    ]}.
 
-At the moment you can change the list of controllers and ports used by the switch.
+At the moment you can change the list of controllers and ports used by the
+switch.
 
 Start LINC switch in `console` mode:
 
     % rel/openflow/bin/openflow console
 
-For further instructions on how to use LINC check the "[Ping example](docs/example-ping.md)".
+For further instructions on how to use LINC check the
+"[Ping example](docs/example-ping.md)".
+
+For detailed explanation on how to setup simple LINC testbed check the
+"[Testbed setup](docs/testbed-setup.md)".
 
 Read more...
 ============
 
- * About the [gen_switch behaviour](docs/gen_switch.md) and how to implement a backend.
+ * About the [gen_switch behaviour](docs/gen_switch.md) and how to implement a
+   backend.
 
 Support
 =======
 
-If you have any technical questions, problems or suggestions regarding LINC please contact <openflow@erlang-solutions.com>.
+If you have any technical questions, problems or suggestions regarding LINC
+please contact <openflow@erlang-solutions.com>.
 
  [ovs]: http://openvswitch.org
  [ofp1]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.0.0.pdf

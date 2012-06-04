@@ -1,0 +1,16 @@
+# Xend configuration file.
+# This file should be under /etc/xen/xend-config.sxp
+
+# (network-script 'network-bridge netdev=eth1')
+(network-script 'network-bridge bridge=xenbr0')
+(vif-script vif-bridge)
+
+#(network-script network-route)
+#(vif-script     vif-route)
+
+#(network-script network-nat)
+#(vif-script     vif-nat)
+
+(dom0-min-mem 196)
+(enable-dom0-ballooning yes)
+(dom0-cpus 0)

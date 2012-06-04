@@ -65,7 +65,7 @@ tools.
 
 On Ubuntu:
 
-    # apt-get install libpcap0.8 libpcap-dev uml-utilities libcap2-bin
+    # apt-get install bridge-utils libpcap0.8 libpcap-dev uml-utilities libcap2-bin
 
 On other Linux systems you need to install the counterparts of above package.
 

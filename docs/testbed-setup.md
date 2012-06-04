@@ -23,7 +23,7 @@ Enable VT-x or AMD-V virtualization extensions in BIOS.
 
 Install Xen kernel and userspace tools:
 
-    % sudo apt-get install xen-tools xen-utils-common xen-hypervisor-4.1-amd64
+    % sudo apt-get install  xen-hypervisor-4.1-amd64 xen-tools xen-utils-common
 
 Reboot machine and select Xen-4.1-amd64 in GRUB after restart.
 Select Ubuntu with Xen 4.1 on second GRUB screen.
@@ -45,5 +45,21 @@ and connect to each of them with:
 
     % sudo xm console vm{1..2}
 
+LINC setup is the same as in main README. You want to install LINC alongside
+Erlang and all of required dependencies on your dom0.
+
+When LINC is compiled you must create tap interfaces for each VM and network
+interface that you want to add to LINC switch.
+
+For example if you want to add eth0 interface to LINC, you must create tap
+interface with tunctl and bridge with brctl. Next you add both tap and eth to
+created bridge and use tap interface in LINC port config.
+
+If you want to add vif created by Xen to connect domU VM to LINC, create tap
+interface with tunctl and bridge with brctl. Next add both vif and tap to
+created bridge and use tap interface in LINC port config.
+
 LINC on Virtualbox
 ==================
+
+TBD.

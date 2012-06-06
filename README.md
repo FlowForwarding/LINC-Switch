@@ -43,7 +43,11 @@ packages.
 
 On Ubuntu:
 
-    # apt-get install make autoconf openssl libssl0.9.8 libssl-dev libncurses5 libncurses5-dev
+    # apt-get install gcc wget make autoconf openssl libssl0.9.8 libssl-dev libncurses5 libncurses5-dev
+
+On RedHat/CentOS:
+
+    # yum install gcc wget make autoconf openssl openssl-devel ncurses ncurses-devel
 
 On other Linux systems you need to install the counterparts of above package.
 
@@ -65,7 +69,21 @@ tools.
 
 On Ubuntu:
 
-    # apt-get install bridge-utils libpcap0.8 libpcap-dev uml-utilities libcap2-bin
+    # apt-get install git-core bridge-utils libpcap0.8 libpcap-dev libcap2-bin uml-utilities
+
+On RedHat/CentOS:
+
+    # yum install git sudo bridge-utils libpcap libpcap-devel libcap tunctl
+
+Note that on RedHat/CentOS 5.x you need a newer version of libpcap:
+
+    # yum erase libpcap libpcap-devel
+    # yum install flex byacc
+    # wget http://www.tcpdump.org/release/libpcap-1.2.1.tar.gz
+    # tar xzf libpcap-1.2.1.tar.gz
+    # cd libpcap-1.2.1
+    # ./configure
+    # make && make install
 
 On other Linux systems you need to install the counterparts of above package.
 

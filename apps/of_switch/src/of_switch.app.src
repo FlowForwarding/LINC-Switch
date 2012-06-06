@@ -1,15 +1,17 @@
 {application, of_switch,
- [
-  {description, "OpenFlow Logical Switch"},
+ [{description, "OpenFlow Logical Switch"},
   {vsn, "1.2.1"},
   {registered, []},
-  {applications, [
-                  kernel,
+  {applications, [kernel,
                   stdlib,
-                  lager
-                 ]},
+                  lager]},
   {mod, {ofs_app, []}},
   {env, [{supported_versions, [1, 2, 3]},
          {controllers, []},
-         {ports, []}]}
+         {ports, []},
+         {manufacturer_desc, <<"Dummy">>},
+         {hardware_desc, <<"Dummy">>},
+         {software_desc, <<"Dummy">>},
+         {serial_number, <<"Dummy">>},
+         {datapath_desc, <<"Dummy">>}]}
  ]}.

@@ -319,11 +319,11 @@ ofp_barrier_request(State, #ofp_barrier_request{}) ->
       {ok, ofp_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
 ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
     {ok, #ofp_desc_stats_reply{flags = [],
-                               mfr_desc = <<"Dummy mfr_desc">>,
-                               hw_desc = <<"Dummy hw_desc">>,
-                               sw_desc = <<"Dummy sw_desc">>,
-                               serial_num = <<"Dummy serial_num">>,
-                               dp_desc = <<"Dummy dp_desc">>
+                               mfr_desc = get_env(manufacturer_desc),
+                               hw_desc = get_env(hardware_desc),
+                               sw_desc = get_env(software_desc),
+                               serial_num = get_env(serial_number),
+                               dp_desc = get_env(datapath_desc)
                               }, State}.
 
 %% @doc Get flow entry statistics.
@@ -428,3 +428,7 @@ ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------i
+
+get_env(Env) ->
+    {ok, Value} = application:get_env(of_switch, Env),
+    Value.

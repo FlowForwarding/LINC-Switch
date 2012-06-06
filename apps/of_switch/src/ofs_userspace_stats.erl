@@ -6,8 +6,6 @@
 
 -include("ofs_userspace.hrl").
 
--define(MAX_FLOW_TABLE_ENTRIES, (1 bsl 24)). %% some arbitrary big number
-
 %%% Stats functions ------------------------------------------------------------
 
 table_stats(#flow_table{id = Id, entries = Entries, config = Config}) ->

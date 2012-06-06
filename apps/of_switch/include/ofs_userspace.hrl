@@ -40,6 +40,12 @@
                                  write_actions, apply_actions, clear_actions
                                  %% experimenter
                                 ]).
+-define(SUPPORTED_GROUP_TYPES, [all]).
+-define(SUPPORTED_GROUP_CAPABILITIES, []).
+
+-define(MAX, (1 bsl 24)). %% some arbitrary big number
+-define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
+-define(MAX_GROUP_ENTRIES, {?MAX, 0, 0, 0}).
 
 -record(flow_entry, {
           priority          :: integer(),

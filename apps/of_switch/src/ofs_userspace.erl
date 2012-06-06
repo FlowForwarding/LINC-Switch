@@ -422,8 +422,12 @@ ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
                                               {ok, ofp_group_features_stats_reply(), #state{}} |
                                               {error, ofp_error(), #state{}}.
 ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
-    %% TODO: Add group festures statistics
-    {ok, #ofp_group_features_stats_reply{}, State}.
+    Stats = #ofp_group_features_stats_reply{
+      types = ?SUPPORTED_GROUP_TYPES,
+      capabilities = ?SUPPORTED_GROUP_CAPABILITIES,
+      max_groups = ?MAX_GROUP_ENTRIES,
+      actions = {?SUPPORTED_APPLY_ACTIONS, [], [], []}},
+    {ok, Stats, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

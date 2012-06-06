@@ -1,4 +1,4 @@
-.PHONY: all compile rel test test_protocol test_switch clean deep-clean
+.PHONY: all compile rel test clean deep-clean
 
 all: compile
 
@@ -10,13 +10,7 @@ rel: compile
 	./scripts/post_generate_hook
 
 test: compile
-	./rebar skip_deps=true apps=of_protocol,of_switch eunit
-
-test_protocol: compile
-	./rebar skip_deps=true apps=of_protocol eunit
-
-test_switch: compile
-	./rebar skip_deps=true apps=of_switch eunit
+	./rebar skip_deps=true eunit
 
 clean: rebar
 	./rebar clean

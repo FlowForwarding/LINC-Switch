@@ -47,9 +47,10 @@ On Ubuntu:
 
 On RedHat/CentOS:
 
-    # yum install gcc wget make autoconf openssl openssl-devel ncurses ncurses-devel
+# yum install gcc wget make autoconf openssl openssl-devel ncurses ncurses-devel
 
-On other Linux systems you need to install the counterparts of above package.
+On other Linux systems you need to install the counterparts of aforementioned packages.
+
 
 When your system environment is ready download the sources from [erlang.org][erlang-src]. Unpack, compile and install:
 
@@ -85,7 +86,7 @@ Note that on RedHat/CentOS 5.x you need a newer version of libpcap:
     # ./configure
     # make && make install
 
-On other Linux systems you need to install the counterparts of above package.
+On other Linux systems you need to install the counterparts of aforementioned packages.
 
 When your environment is set up you are ready to build and run LINC.
 

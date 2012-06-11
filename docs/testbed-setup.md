@@ -51,13 +51,24 @@ Erlang and all of required dependencies on your dom0.
 When LINC is compiled you must create tap interfaces for each VM and network
 interface that you want to add to LINC switch.
 
-For example if you want to add eth0 interface to LINC, you must create tap
-interface with tunctl and bridge with brctl. Next you add both tap and eth to
-created bridge and use tap interface in LINC port config.
+For example if you want to connect vif1 interface to LINC port 1:
 
-If you want to add vif created by Xen to connect domU VM to LINC, create tap
-interface with tunctl and bridge with brctl. Next add both vif and tap to
-created bridge and use tap interface in LINC port config.
+    % tunctl -t tap-linc-port1
+    % ifconfig tap-linc-port1 0.0.0.0 promisc up
+    % ifconfig vif1 0.0.0.0 promisc up
+    % brctl addbr br-linc1
+    % brctl addif br-linc1 tap-linc-port1
+    % brctl addif br-linc1 vif1.0
+    % ifconfig br-linc1 10.0.0.1 promisc up
+
+What was done above is that we created new tap interface which acts as a port
+for LINC switch and then bridged it with network interface that we want to
+connect to the switch. You can think of a bridge as a virtual ethernet cable
+that connects network interface (vif1) with LINC port (tap).
+
+You should repeat this process for each virtual ethernet interface exposed by
+VMs or real ethernet interface present on the dom0 machine that you want to
+connect to LINC switch.
 
 LINC on Virtualbox
 ==================

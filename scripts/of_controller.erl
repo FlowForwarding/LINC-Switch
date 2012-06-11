@@ -15,7 +15,8 @@
 %% of_controller:send(Pid, Conn, of_controller:table_config(controller)).
 
 %% API
--export([start/1,
+-export([start/0,
+         start/1,
          stop/1,
          get_connections/1,
          send/3,
@@ -44,6 +45,9 @@
 %%%-----------------------------------------------------------------------------
 %%% API functions
 %%%-----------------------------------------------------------------------------
+
+start() ->
+    start(6633).
 
 start(Port) ->
     lager:start(),

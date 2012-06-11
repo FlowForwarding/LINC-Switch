@@ -107,6 +107,11 @@ loop(Connections) ->
             {ok, {Address, Port}} = inet:peername(Socket),
             lager:info("Accepted connection from ~p {~p,~p}",
                        [Socket, Address, Port]),
+            %% Setting switch to route all frames to controller
+            Msg = of_controller:table_config(controller),
+            {ok, EncodedMessage} = of_protocol:encode(Msg),
+            ok = gen_tcp:send(Socket, EncodedMessage),
+
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),

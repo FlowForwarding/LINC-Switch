@@ -63,24 +63,13 @@ loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
      ThrottlingEts, History, SendFun) ->
     receive
         {send, #ofs_pkt{packet = Packet} = OFSPkt} ->
-            try
-                Frame = pkt:encapsulate(Packet),
-                NewHistory = sleep_and_send(MyKey, MinRate, MaxRate, PortRate,
-                                            ThrottlingEts, History,
-                                            SendFun, Frame),
-                update_port_transmitted_counters(MyKey, byte_size(Frame)),
-                loop(MyKey, MinRate, MaxRate, PortRate,
-                     ThrottlingEts, NewHistory, SendFun)
-            catch
-                E1:E2 ->
-                    S = erlang:get_stacktrace(),
-                    io:format("Pkt encapsulate error. Port ~p queue ~p : ~p~n",
-                                [OutPort, OutQueue, OFSPkt]),
-                    io:format("~p:~p~n", [E1, E2]),
-                    io:format("Stacktrace: ~p~n", [S]),
-                    loop(MyKey, MinRate, MaxRate, PortRate,
-                         ThrottlingEts, History, SendFun)
-            end;
+            Frame = pkt:encapsulate(Packet),
+            NewHistory = sleep_and_send(MyKey, MinRate, MaxRate, PortRate,
+                                        ThrottlingEts, History,
+                                        SendFun, Frame),
+            update_port_transmitted_counters(MyKey, byte_size(Frame)),
+            loop(MyKey, MinRate, MaxRate, PortRate,
+                 ThrottlingEts, NewHistory, SendFun);
         {cmd, From, stop} ->
             gen:reply(From, ok)
     end.

@@ -7,13 +7,6 @@
 
 -compile([{parse_transform, lager_transform}]).
 
-%% To start the controller issue following commands:
-%%
-%% {ok, Pid} = of_controller:start(6633).
-%% {ok, [Conn]} = of_controller:get_connections(Pid).
-%% of_controller:send(Pid, Conn, of_controller:echo_request()).
-%% of_controller:send(Pid, Conn, of_controller:table_config(controller)).
-
 %% API
 -export([start/0,
          start/1,
@@ -161,14 +154,6 @@ handle(#cstate{parent = Parent, socket = Socket,
                                       match = Match,
                                       data = Data}} = Message} ->
             lager:debug("Received packet_in from ~p: ~p", [Socket, Message]),
-
-            %% ActionOutput = #ofp_action_output{port = InPort + 1,
-            %%                                   max_len = no_buffer},
-            %% PacketOut = Message#ofp_message{
-            %%               body = #ofp_packet_out{buffer_id = BufferId,
-            %%                                      actions = [ActionOutput],
-            %%                                      data = Data}},
-
             try
                 [EthHeader | _] = pkt:decapsulate(Data),
                 EthSrc = EthHeader#ether.shost,
@@ -183,7 +168,7 @@ handle(#cstate{parent = Parent, socket = Socket,
                   actions = [#ofp_action_output{port = InPort}]},
                 case lists:keyfind(EthSrc, 1, FwdTable) of
                     {EthSrc, InPort} ->
-                        %% lager:info("Already exists: ~p | ~p", [EthSrc, InPort]),
+                        lager:debug("Already exists: ~p | ~p", [EthSrc, InPort]),
                         NewFwdTable = FwdTable,
                         ok;
                     {EthSrc, OtherPort} ->
@@ -220,11 +205,11 @@ handle(#cstate{parent = Parent, socket = Socket,
                                                              in_port = InPort,
                                                              actions = [OutputToAll],
                                                              data = Data}},
-                        %% lager:info("Send packet to all ports"),
+                        lager:debug("Send packet to all ports"),
                         {ok, EncodedPacketOut} = of_protocol:encode(PacketOut),
                         gen_tcp:send(Socket, EncodedPacketOut)
                 end,
-                %% lager:info("Forwarding table: ~p", [NewFwdTable]),
+                %% lager:debug("Forwarding table: ~p", [NewFwdTable]),
                 handle(State#cstate{fwd_table = NewFwdTable})
             catch
                 E1:E2 ->

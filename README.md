@@ -15,8 +15,7 @@ Features
 
  * Full support for [OpenFlow Protocol 1.2][ofp3],
  * Backward compatibility with [OpenFlow Protocol 1.0][ofp1],
- * Modular architecture, easily extensible,
- * Very high test coverage thanks to property based testing.
+ * Modular architecture, easily extensible.
 
 Planned features
 ----------------
@@ -47,7 +46,7 @@ On Ubuntu:
 
 On RedHat/CentOS:
 
-# yum install gcc wget make autoconf openssl openssl-devel ncurses ncurses-devel
+    # yum install gcc wget make autoconf openssl openssl-devel ncurses ncurses-devel
 
 On other Linux systems you need to install the counterparts of aforementioned packages.
 

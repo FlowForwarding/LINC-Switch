@@ -43,8 +43,12 @@ We edit the `rel/files/sys.config` file, which contains the Switch configuration
                      {"localhost", 6633}
                     ]},
       {ports, [
-               [{ofs_port_num, 1}, {interface, "tap0"}, {ip, "10.0.0.1"}],
-               [{ofs_port_num, 2}, {interface, "tap1"}, {ip, "10.0.0.2"}],
+               [{ofs_port_no, 1}, {interface, "tap0"}, {ip, "10.0.0.1"},
+                {queues, [{0, [{ofp_queue_prop_min_rate, 0}, {ofp_queue_prop_max_rate, 1000}]}]},
+                {rate, {1, gibps}}],
+               [{ofs_port_no, 2}, {interface, "tap1"}, {ip, "10.0.0.2"},
+                {queues, [{0, [{ofp_queue_prop_min_rate, 0}, {ofp_queue_prop_max_rate, 1000}]}]},
+                {rate, {1, gibps}}]
               ]}
      ]},
      ...
@@ -62,6 +66,11 @@ The switch automatically connects to the controller which accepts the connection
 Additionally we can see that `tap0` and `tap1` interfaces were created in the system.
 
     % ifconfig
+
+These interfaces must be upped.
+
+    % ifconfig tap0 up
+    % ifconfig tap1 up
 
 Erlang representation of those ports are stored in `ofs_ports` ets table.
 

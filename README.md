@@ -101,7 +101,7 @@ Generate an Erlang release:
 
     % make rel
 
-Adjust switch configuration by editing the `rel/openflow/release/0.1/sys.config` file which looks like this:
+Adjust switch configuration by editing the `rel/openflow/releases/0.1/sys.config` file which looks like this:
 
     {of_switch, [
         {controllers, [
@@ -129,15 +129,15 @@ Start LINC switch in `console` mode:
     % rel/openflow/bin/openflow console
 
 For further instructions on how to use LINC check the
-"[Ping example](docs/example-ping.md)".
+"[Ping example](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/example-ping.md)".
 
 For detailed explanation on how to setup simple LINC testbed check the
-"[Testbed setup](docs/testbed-setup.md)".
+"[Testbed setup](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/testbed-setup.md)".
 
 Read more...
 ============
 
- * About the [gen_switch behaviour](docs/gen_switch.md) and how to implement a
+ * About the [gen_switch behaviour](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/gen_switch.md) and how to implement a
    backend.
 
 Support
@@ -147,12 +147,12 @@ If you have any technical questions, problems or suggestions regarding LINC
 please contact <openflow@erlang-solutions.com>.
 
  [ovs]: http://openvswitch.org
- [ofp1]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.0.0.pdf
- [ofp2]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.1.0.pdf
- [ofp3]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.2.pdf
- [ofp4]: https://www.opennetworking.org/images/stories/downloads/openflow/openflow-spec-v1.3.0.pdf
- [ofc1]: https://www.opennetworking.org/images/stories/downloads/openflow/OF-Config1dot0-final.pdf
- [ofc2]: https://www.opennetworking.org/images/stories/downloads/openflow/OF-Config-1.1.pdf
+ [ofp1]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.0.0.pdf
+ [ofp2]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.1.0.pdf 
+ [ofp3]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.2.pdf 
+ [ofp4]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.3.0.pdf 
+ [ofc1]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config1dot0-final.pdf
+ [ofc2]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config-1.1.pdf
  [erlang-src]: http://www.erlang.org/download.html
  [erlang-bin]: http://www.erlang-solutions.com/section/132/download-erlang-otp
  [esl]: http://www.erlang-solutions.com

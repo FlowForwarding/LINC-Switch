@@ -29,7 +29,7 @@ Load records needed to send OpenFlow Protocol messages to the Switch,
 
 And actually start the Controller on port 6633.
 
-    (controller)3> of_controller:start(6633).
+    (controller)3> {ok, CtrlPid} = of_controller:start(6633).
 
 ### OpenFlow Switch
 
@@ -120,9 +120,13 @@ We create a `flow_mod` message containing a match field (match on packets receiv
                                                                            port = 2,
                                                                            max_len = 64}]}]}}.
 
+We query the switch's connection.
+
+    (controller)5> {ok, [Conn|_]} = of_controller:get_connections(CtrlPid).
+
 We send it to the switch.
 
-    (controller)5> of_controller:send(FlowMod).
+    (controller)6> of_controller:send(CtrlPid, Conn, FlowMod).
 
 We can take a look at the flow table `0` now to see it contains one flow entry received from the Controller.
 
@@ -149,7 +153,7 @@ Now when we send the same ping packet using `tcpreplay`...
 
 We create another `flow_mod` message - this time we want to remove all the flow entires from the flow table `0`.
 
-    (controller)6> RemoveFlows = #ofp_message{
+    (controller)7> RemoveFlows = #ofp_message{
                                     experimental = true,
                                     version = 3,
                                     xid = 200,
@@ -172,7 +176,7 @@ We create another `flow_mod` message - this time we want to remove all the flow 
 
 We send it to the Switch.
 
-    (controller)7> of_controller:send(RemoveFlows).
+    (controller)8> of_controller:send(CtrlPid, Conn, RemoveFlows).
 
 We can check if the flow entry we added earlier is gone from the flow table `0`.
 

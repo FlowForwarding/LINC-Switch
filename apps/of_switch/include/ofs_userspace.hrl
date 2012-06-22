@@ -14,8 +14,7 @@
                                   %% copy_ttl_out, copy_ttl_in,
                                   %% push_vlan, pop_vlan,
                                   %% push_mpls, pop_mpls,
-                                  %% set_field,
-                                  %% experimenter
+                                  %% set_field
                                  ]).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port, %% in_phy_port, metadata,
@@ -37,9 +36,7 @@
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
                                  %% write_metadata,
-                                 write_actions, apply_actions, clear_actions
-                                 %% experimenter
-                                ]).
+                                 write_actions, apply_actions, clear_actions]).
 -define(SUPPORTED_GROUP_TYPES, [all]).
 -define(SUPPORTED_GROUP_CAPABILITIES, []).
 

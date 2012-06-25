@@ -58,7 +58,7 @@
                 rate_bps :: integer(),
                 throttling_ets :: ets:tid()}).
 
--define(DEFAULT_QUEUE, 0).
+-define(DEFAULT_QUEUE, default).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -295,6 +295,10 @@ init({OfsPortNo, ConfigOpts}) ->
                                  ofs_port_no = OfsPortNo,
                                  rate_bps = Rate,
                                  throttling_ets = ThrottlingEts},
+
+            %% Add default queue with no min or max rate
+            do_attach_queue(State1, default, []),
+
             State2 = lists:foldl(fun({QueueId, QueueOpts}, StateAcc) ->
                                      do_attach_queue(StateAcc,
                                                      QueueId,

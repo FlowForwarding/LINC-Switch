@@ -58,7 +58,7 @@
                 rate_bps :: integer(),
                 throttling_ets :: ets:tid()}).
 
--define(DEFAULT_QUEUE, 0).
+-define(DEFAULT_QUEUE, default).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -207,14 +207,20 @@ remove(PortNo) ->
                              {ok, #state{}, timeout()} |
                              ignore |
                              {stop, Reason :: term()}.
-init(Args) ->
+init({OfsPortNo, ConfigOpts}) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
-    {interface, Interface} = lists:keyfind(interface, 1, Args),
-    {ofs_port_no, OfsPortNo} = lists:keyfind(ofs_port_no, 1, Args),
-    {queues, Queues} = lists:keyfind(queues, 1, Args),
-    {rate, RateDesc} = lists:keyfind(rate, 1, Args),
+
+    {ok, BackendOpts} = application:get_env(of_switch, backends),
+    {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
+    {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
+    {OfsPortNo, PortOpts} = lists:keyfind(OfsPortNo, 1, UserspacePorts),
+
+    {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
+    {rate, RateDesc} = lists:keyfind(rate, 1, ConfigOpts),
+    {queues, Queues} = lists:keyfind(queues, 1, ConfigOpts),
+
     Rate = rate_desc_to_bps(RateDesc),
     State = case re:run(Interface, "^tap.*$", [{capture, none}]) of
                 %% When switch connects to a tap interface, erlang receives file
@@ -229,7 +235,7 @@ init(Args) ->
                                 %% programatically as they can't be created in
                                 %% persistent mode before node startup.
                                 {unix, darwin} ->
-                                    {ip, IP} = lists:keyfind(ip, 1, Args),
+                                    {ip, IP} = lists:keyfind(ip, 1, PortOpts),
                                     ok = tuncer:up(Ref, IP);
                                 %% We assume that under linux TAP interfaces are
                                 %% already set up in persistent state and
@@ -289,6 +295,10 @@ init(Args) ->
                                  ofs_port_no = OfsPortNo,
                                  rate_bps = Rate,
                                  throttling_ets = ThrottlingEts},
+
+            %% Add default queue with no min or max rate
+            do_attach_queue(State1, default, []),
+
             State2 = lists:foldl(fun({QueueId, QueueOpts}, StateAcc) ->
                                      do_attach_queue(StateAcc,
                                                      QueueId,
@@ -475,18 +485,16 @@ unit_to_bps(gbps) -> 1000 * 1000 * 1000;
 unit_to_bps(gibps) -> 1024 * 1024 * 1024.
 
 get_min_rate_bps(QueueProps, PortRateBps) ->
-    case lists:keyfind(ofp_queue_prop_min_rate, 1, QueueProps) of
-        #ofp_queue_prop_min_rate{rate = Rate} when Rate =< 1000 ->
+    case lists:keyfind(min_rate, 1, QueueProps) of
+        {min_rate, Rate} when Rate =< 1000 ->
             Rate * PortRateBps div 1000;
-        #ofp_queue_prop_min_rate{} ->
-            no_qos;
         false ->
-            0
+            no_qos
     end.
 
 get_max_rate_bps(QueueProps, PortRateBps) ->
-    case lists:keyfind(ofp_queue_prop_max_rate, 1, QueueProps) of
-        #ofp_queue_prop_max_rate{rate = Rate} when Rate =< 1000 ->
+    case lists:keyfind(max_rate, 1, QueueProps) of
+        {max_rate, Rate} when Rate =< 1000 ->
             Rate * PortRateBps div 1000;
         _ ->
             no_max_rate

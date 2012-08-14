@@ -3,7 +3,6 @@
 all: compile
 
 compile: rebar
-	git config --global http.sslVerify false
 	./rebar get-deps compile
 
 rel: compile

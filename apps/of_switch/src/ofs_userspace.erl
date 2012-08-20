@@ -119,9 +119,7 @@ start(_Opts) ->
     flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #flow_table.id},
                                         {read_concurrency, true}]),
-    ets:insert(flow_tables, [#flow_table{id = Id,
-                                         entries = [],
-                                         config = drop}
+    ets:insert(flow_tables, [#flow_table{id = Id}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
     flow_table_counters = ets:new(flow_table_counters,
                                   [named_table, public,

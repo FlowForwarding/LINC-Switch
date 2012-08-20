@@ -59,10 +59,10 @@ stop(Pid) ->
 
 -spec loop({ofp_port_no(), ofp_queue_id()}, integer(), integer(), integer(),
            ets:tid(), sliding_window:sliding_window(), fun()) -> no_return().
-loop({OutPort, OutQueue} = MyKey, MinRate, MaxRate, PortRate,
+loop({_OutPort, _OutQueue} = MyKey, MinRate, MaxRate, PortRate,
      ThrottlingEts, History, SendFun) ->
     receive
-        {send, #ofs_pkt{packet = Packet} = OFSPkt} ->
+        {send, #ofs_pkt{packet = Packet}} ->
             Frame = pkt:encapsulate(Packet),
             NewHistory = sleep_and_send(MyKey, MinRate, MaxRate, PortRate,
                                         ThrottlingEts, History,

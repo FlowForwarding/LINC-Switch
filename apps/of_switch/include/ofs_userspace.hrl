@@ -59,9 +59,9 @@
          }).
 
 -record(flow_table, {
-          id             :: integer(),
-          entries = []   :: [#flow_entry{}],
-          config  = drop :: ofp_table_config()
+          id                   :: integer(),
+          entries = []         :: [#flow_entry{}],
+          config  = controller :: ofp_table_config()
          }).
 
 -record(flow_table_counter, {

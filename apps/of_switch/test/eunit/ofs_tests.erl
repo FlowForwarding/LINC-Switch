@@ -66,6 +66,8 @@ request_reply(Config, MessageType) ->
 setup() ->
     code:add_path("../../of_protocol/ebin"),
 
+    error_logger:tty(false),
+
     %% Suppress lager output
     lager:start(),
     lager:set_loglevel(lager_console_backend, notice),

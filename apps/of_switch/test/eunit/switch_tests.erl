@@ -8,6 +8,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 setup() ->
+    error_logger:tty(false),
+
     lager:start(),
     lager:set_loglevel(lager_console_backend, notice),
 

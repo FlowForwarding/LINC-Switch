@@ -139,7 +139,7 @@ match_and_goto_test() ->
                                                table_id = 1
                                               }]},
     ?assertEqual({ok, state}, ofs_userspace:ofp_flow_mod(state, FlowMod)),
-    ?assertEqual({nomatch, 1, drop}, ofs_userspace_routing:do_route(Pkt, 0)),
+    ?assertEqual({nomatch, 1, controller}, ofs_userspace_routing:do_route(Pkt, 0)),
     teardown().
 
 match_and_clear_actions_with_queue_test() ->
@@ -228,18 +228,23 @@ match_and_output_with_metadata_test() ->
 table_miss_test() ->
     setup(),
     Pkt = #ofs_pkt{},
+    TMDrop = #ofp_table_mod{table_id = 0, config = drop},
+    ?assertEqual({ok, state},
+                 ofs_userspace:ofp_table_mod(state, TMDrop)),
     assert_table_config(0, drop),
     ?assertEqual({nomatch, 0, drop}, ofs_userspace_routing:do_route(Pkt, 0)),
-    ?assertEqual({ok, state}, ofs_userspace:ofp_table_mod(state,
-                                                          #ofp_table_mod{table_id = 0,
-                                                                         config = continue})),
+    TMContinue = #ofp_table_mod{table_id = 0, config = continue},
+    ?assertEqual({ok, state},
+                 ofs_userspace:ofp_table_mod(state, TMContinue)),
     assert_table_config(0, continue),
-    ?assertEqual({nomatch, 1, drop}, ofs_userspace_routing:do_route(Pkt, 0)),
-    ?assertEqual({ok, state}, ofs_userspace:ofp_table_mod(state,
-                                                          #ofp_table_mod{table_id = 0,
-                                                                         config = controller})),
+    ?assertEqual({nomatch, 1, controller},
+                 ofs_userspace_routing:do_route(Pkt, 0)),
+    TMController = #ofp_table_mod{table_id = 0, config = controller},
+    ?assertEqual({ok, state},
+                 ofs_userspace:ofp_table_mod(state, TMController)),
     assert_table_config(0, controller),
-    ?assertEqual({nomatch, 0, controller}, ofs_userspace_routing:do_route(Pkt, 0)),
+    ?assertEqual({nomatch, 0, controller},
+                 ofs_userspace_routing:do_route(Pkt, 0)),
     teardown().
 
 assert_table_config(TableId, Config) ->
@@ -323,11 +328,15 @@ port_test() ->
     meck:expect(packet, send, fun(_, _, _) -> ok end),
 
     ?assertEqual([], ofs_userspace_port:list_ports()),
-    ofs_userspace:add_port(physical, [{interface, "zxc5"},
-                                            {ip, "10.0.0.0.1"},
-                                            {ofs_port_no, GoodPort},
-                                            {rate, {10, kbps}},
-                                            {queues, [{0, []}]}]),
+
+    application:load(of_switch),
+    application:set_env(of_switch, backends,
+                        [{userspace, [{ports,
+                                       [{GoodPort, [{interface, "zxc5"}]}]
+                                      }]}]),
+
+    ofs_userspace:add_port(physical, {GoodPort,[{rate, {10, kbps}},
+                                                {queues, [{0, []}]}]}),
     ?assertEqual(1, length(ofs_userspace_port:list_ports())),
     ?assertEqual(1, length(ofs_userspace_port:get_port_stats())),
     ?assert(is_record(ofs_userspace_port:get_port_stats(GoodPort),
@@ -335,18 +344,18 @@ port_test() ->
     ?assertEqual(bad_port, ofs_userspace_port:get_port_stats(BadPort)),
 
     ?assertEqual(bad_port, ofs_userspace_port:list_queues(BadPort)),
-    ?assertEqual(1, length(ofs_userspace_port:list_queues(GoodPort))),
+    ?assertEqual(2, length(ofs_userspace_port:list_queues(GoodPort))),
 
     ?assertEqual(bad_port, ofs_userspace_port:attach_queue(BadPort,
                                                            GoodQueue1,
                                                            [])),
     ofs_userspace_port:attach_queue(GoodPort, GoodQueue1, []),
     ofs_userspace_port:attach_queue(GoodPort, GoodQueue2, []),
-    ?assertEqual(3, length(ofs_userspace_port:list_queues(GoodPort))),
+    ?assertEqual(4, length(ofs_userspace_port:list_queues(GoodPort))),
 
-    ?assertEqual(3, length(ofs_userspace_port:get_queue_stats())),
+    ?assertEqual(4, length(ofs_userspace_port:get_queue_stats())),
     ?assertEqual(0, length(ofs_userspace_port:get_queue_stats(BadPort))),
-    ?assertEqual(3, length(ofs_userspace_port:get_queue_stats(GoodPort))),
+    ?assertEqual(4, length(ofs_userspace_port:get_queue_stats(GoodPort))),
     ?assertEqual(undefined, ofs_userspace_port:get_queue_stats(GoodPort,
                                                                BadQueue)),
     ?assert(is_record(ofs_userspace_port:get_queue_stats(GoodPort, GoodQueue1),
@@ -356,10 +365,10 @@ port_test() ->
                                                            GoodQueue1)),
     ?assertEqual(ok, ofs_userspace_port:detach_queue(GoodPort,
                                                      BadQueue)),
-    ?assertEqual(3, length(ofs_userspace_port:list_queues(GoodPort))),
+    ?assertEqual(4, length(ofs_userspace_port:list_queues(GoodPort))),
     ?assertEqual(ok, ofs_userspace_port:detach_queue(GoodPort,
                                                      GoodQueue1)),
-    ?assertEqual(2, length(ofs_userspace_port:list_queues(GoodPort))),
+    ?assertEqual(3, length(ofs_userspace_port:list_queues(GoodPort))),
 
     ?assertEqual(bad_port, ofs_userspace_port:send(BadPort, Pkt)),
     ?assertEqual(ok, ofs_userspace_port:send(GoodPort, Pkt)),

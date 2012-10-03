@@ -1,7 +1,6 @@
 -module(switch_tests).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
-
 -compile(export_all).
 
 -include_lib("of_switch/include/ofs_userspace.hrl").
@@ -16,11 +15,13 @@ setup() ->
     application:load(of_switch),
     application:set_env(of_switch, controllers, []),
     application:set_env(of_switch, ports, []),
+
+    application:start(mnesia),
     application:start(of_switch).
 
 teardown() ->
     application:stop(of_switch),
-    application:unload(of_switch).
+    application:stop(mnesia).
 
 match_and_group_test() ->
     setup(),

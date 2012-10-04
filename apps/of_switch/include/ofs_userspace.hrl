@@ -68,12 +68,31 @@
                                  write_actions,
                                  apply_actions,
                                  clear_actions]).
--define(SUPPORTED_GROUP_TYPES, [all]).
--define(SUPPORTED_GROUP_CAPABILITIES, []).
+-define(SUPPORTED_GROUP_TYPES, [all
+                                %% select,
+                                %% indirect,
+                                %% ff
+                               ]).
+-define(SUPPORTED_GROUP_CAPABILITIES, [%% select_weight,
+                                       %% select_liveness,
+                                       %% chaining,
+                                       %% chaining-check
+                                      ]).
+-define(SUPPORTED_RESERVED_PORTS, [all,
+                                   controller,
+                                   table,
+                                   inport,
+                                   any
+                                   %% normal
+                                   %% flood
+                                  ]).
 
 -define(MAX, (1 bsl 24)). %% some arbitrary big number
 -define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
+-define(MAX_TABLES, 255).
+-define(MAX_PORTS, ?MAX).
 -define(MAX_GROUP_ENTRIES, {?MAX, 0, 0, 0}).
+-define(MAX_BUFFERED_PACKETS, 0).
 
 -record(flow_entry, {
           priority          :: integer(),

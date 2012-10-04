@@ -253,37 +253,35 @@ get_flow_tables() ->
 
 %% @private
 get_logical_switches() ->
-    %% TODO: Get logical switch configuration.
-    %% Capabilities = #capabilities{max_buffered_packets = 0,
-    %%                              max_tables = 1024,
-    %%                              max_ports = 2048,
-    %%                              flow_statistics = true,
-    %%                              table_statistics = true,
-    %%                              port_statistics = true,
-    %%                              group_statistics = true,
-    %%                              queue_statistics = true,
-    %%                              reassemble_ip_fragments = false,
-    %%                              block_looping_ports = false,
-    %%                              reserved_port_types = [all],
-    %%                              group_types = [all, indirect],
-    %%                              group_capabilities = ['select-weight'],
-    %%                              action_types = [output],
-    %%                              instruction_types = ['write-actions']},
-    %% [#logical_switch{id = "LogicalSwitch0",
-    %%                  datapath_id = "datapath-id0",
-    %%                  enabled = true,
-    %%                  check_controller_certificate = false,
-    %%                  lost_connection_behavior = failSecureMode,
-    %%                  capabilities = Capabilities,
-    %%                  controllers = [],
-    %%                  resources = [{port,"port2"},
-    %%                               {port,"port3"},
-    %%                               {queue,"queue0"},
-    %%                               {queue,"queue1"},
-    %%                               {certificate,"ownedCertificate4"},
-    %%                               {flow_table,1},
-    %%                               {flow_table,2}]}],
-    [].
+    %% FIXME: Hardcoded single logical switch instance.
+    Caps = #capabilities{max_buffered_packets = ?MAX_BUFFERED_PACKETS,
+                         max_tables = ?MAX_TABLES,
+                         max_ports = ?MAX_PORTS,
+                         flow_statistics = true,
+                         table_statistics = true,
+                         port_statistics = true,
+                         group_statistics = true,
+                         queue_statistics = true,
+                         reassemble_ip_fragments = false,
+                         block_looping_ports = false,
+                         reserved_port_types = ?SUPPORTED_RESERVED_PORTS,
+                         group_types =
+                             group_types(?SUPPORTED_GROUP_TYPES),
+                         group_capabilities =
+                             group_caps(?SUPPORTED_GROUP_CAPABILITIES),
+                         action_types = actions(?SUPPORTED_WRITE_ACTIONS),
+                         instruction_types =
+                             instructions(?SUPPORTED_INSTRUCTIONS)},
+    FlowTables = [{flow_table, "FlowTable" ++ integer_to_list(I)}
+                  || I <- lists:seq(0, ?OFPTT_MAX)],
+    [#logical_switch{id = "LogicalSwitch0",
+                     datapath_id = "00:00:00:00:00:00:00:00",
+                     enabled = true,
+                     check_controller_certificate = false,
+                     lost_connection_behavior = failSecureMode,
+                     capabilities = Caps,
+                     controllers = [],
+                     resources = FlowTables}].
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions
@@ -415,10 +413,42 @@ actions([output | Rest], Actions) ->
 actions([set_queue | Rest], Actions) ->
     actions(Rest, ['set-queue' | Actions]);
 actions([group | Rest], Actions) ->
-    actions(Rest, ['group' | Actions]).
+    actions(Rest, [group | Actions]).
 %% actions([set_nw_ttl | Rest], Actions) ->
 %%     actions(Rest, ['set-nw-ttl' | Actions]);
 %% actions([dec_nw_ttl | Rest], Actions) ->
 %%     actions(Rest, ['dec-nw-ttl' | Actions]);
 %% actions([set_field | Rest], Actions) ->
 %%     actions(Rest, ['set-field' | Actions]).
+
+%% @private
+group_types(Types) ->
+    group_types(Types, []).
+
+%% @private
+group_types([], Types) ->
+    lists:reverse(Types);
+group_types([all | Rest], Types) ->
+    group_types(Rest, [all | Types]).
+%% group_types([select | Rest], Types) ->
+%%     group_types(Rest, [select | Types]);
+%% group_types([indirect | Rest], Types) ->
+%%     group_types(Rest, [indirect | Types]);
+%% group_types([ff | Rest], Types) ->
+%%     group_types(Rest, ['fast-failover' | Types]).
+
+%% @private
+group_caps(Capabilities) ->
+    group_caps(Capabilities, []).
+
+%% @private
+group_caps([], Capabilities) ->
+    lists:reverse(Capabilities);
+group_caps([select_weight | Rest], Capabilities) ->
+    group_caps(Rest, ['select-weight' | Capabilities]);
+group_caps([select_liveness | Rest], Capabilities) ->
+    group_caps(Rest, ['select_liveness' | Capabilities]);
+group_caps([chaining | Rest], Capabilities) ->
+    group_caps(Rest, [chaining | Capabilities]);
+group_caps([chaining_check | Rest], Capabilities) ->
+    group_caps(Rest, ['chaining-check' | Capabilities]).

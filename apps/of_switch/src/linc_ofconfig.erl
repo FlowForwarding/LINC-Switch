@@ -44,6 +44,8 @@
          handle_get/2]).
 
 -include_lib("of_config/include/of_config.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include("ofs_userspace.hrl").
 
 -record(ofconfig, {
           name = running :: running | startup | candidate,
@@ -235,20 +237,19 @@ get_certificates() ->
 
 %% @private
 get_flow_tables() ->
-    %% TODO: Generate supported flow table list.
-    %% #flow_table{resource_id = "flowtable1",
-    %%             max_entries = 255,
-    %%             next_tables = [2, 3, 4, 5],
-    %%             instructions = ['apply-actions'],
-    %%             matches = ['input-port'],
-    %%             write_actions = [output],
-    %%             apply_actions = [output],
-    %%             write_setfields = ['ethernet-dest'],
-    %%             apply_setfields = ['ethernet-dest'],
-    %%             wildcards = ['udp-dest'],
-    %%             metadata_match = 30,
-    %%             metadata_write = 30},
-    [].
+    [#flow_table{resource_id = "FlowTable" ++ integer_to_list(I),
+                 max_entries = ?MAX_FLOW_TABLE_ENTRIES,
+                 next_tables = lists:seq(I + 1, ?OFPTT_MAX),
+                 instructions = instructions(?SUPPORTED_INSTRUCTIONS),
+                 matches = fields(?SUPPORTED_MATCH_FIELDS),
+                 write_actions = actions(?SUPPORTED_WRITE_ACTIONS),
+                 apply_actions = actions(?SUPPORTED_APPLY_ACTIONS),
+                 write_setfields = fields(?SUPPORTED_WRITE_SETFIELDS),
+                 apply_setfields = fields(?SUPPORTED_APPLY_SETFIELDS),
+                 wildcards = fields(?SUPPORTED_WILDCARDS),
+                 metadata_match = 16#ffff,
+                 metadata_write = 16#ffff}
+     || I <- lists:seq(0, ?OFPTT_MAX)].
 
 %% @private
 get_logical_switches() ->
@@ -283,3 +284,141 @@ get_logical_switches() ->
     %%                               {flow_table,1},
     %%                               {flow_table,2}]}],
     [].
+
+%%------------------------------------------------------------------------------
+%% Helper conversion functions
+%%------------------------------------------------------------------------------
+
+%% @private
+instructions(Instructions) ->
+    instructions(Instructions, []).
+
+%% @private
+instructions([], Instructions) ->
+    lists:reverse(Instructions);
+instructions([apply_actions | Rest], Instructions) ->
+    instructions(Rest, ['apply-actions' | Instructions]);
+instructions([clear_actions | Rest], Instructions) ->
+    instructions(Rest, ['clear-actions' | Instructions]);
+instructions([write_actions | Rest], Instructions) ->
+    instructions(Rest, ['write-actions' | Instructions]);
+%% instructions([write_metadata | Rest], Instructions) ->
+%%     instructions(Rest, ['write-metadata' | Instructions]);
+instructions([goto_table | Rest], Instructions) ->
+    instructions(Rest, ['goto-table' | Instructions]).
+
+%% @private
+fields(Fields) ->
+    fields(Fields, []).
+
+%% @private
+fields([], Fields) ->
+    lists:reverse(Fields);
+fields([in_port | Rest], Fields) ->
+    fields(Rest, ['input-port' | Fields]);
+%% fields([in_phy_port | Rest], Fields) ->
+%%     fields(Rest, ['physical-input-port' | Fields]);
+%% fields([metadata | Rest], Fields) ->
+%%     fields(Rest, ['metadata' | Fields]);
+fields([eth_dst | Rest], Fields) ->
+    fields(Rest, ['ethernet-dest' | Fields]);
+fields([eth_src | Rest], Fields) ->
+    fields(Rest, ['ethernet-src' | Fields]);
+fields([eth_type | Rest], Fields) ->
+    fields(Rest, ['ethernet-frame-type' | Fields]);
+fields([vlan_vid | Rest], Fields) ->
+    fields(Rest, ['vlan-id' | Fields]);
+fields([vlan_pcp | Rest], Fields) ->
+    fields(Rest, ['vlan-priority' | Fields]);
+fields([ip_dscp | Rest], Fields) ->
+    fields(Rest, ['ip-dscp' | Fields]);
+fields([ip_ecn | Rest], Fields) ->
+    fields(Rest, ['ip-ecn' | Fields]);
+fields([ip_proto | Rest], Fields) ->
+    fields(Rest, ['ip-protocol' | Fields]);
+fields([ipv4_src | Rest], Fields) ->
+    fields(Rest, ['ipv4-src' | Fields]);
+fields([ipv4_dst | Rest], Fields) ->
+    fields(Rest, ['ipv4-dest' | Fields]);
+fields([tcp_src | Rest], Fields) ->
+    fields(Rest, ['tcp-src' | Fields]);
+fields([tcp_dst | Rest], Fields) ->
+    fields(Rest, ['tcp-dest' | Fields]);
+fields([udp_src | Rest], Fields) ->
+    fields(Rest, ['udp-src' | Fields]);
+fields([udp_dst | Rest], Fields) ->
+    fields(Rest, ['udp-dest' | Fields]);
+fields([sctp_src | Rest], Fields) ->
+    fields(Rest, ['sctp-src' | Fields]);
+fields([sctp_dst | Rest], Fields) ->
+    fields(Rest, ['sctp-dest' | Fields]);
+fields([icmpv4_type | Rest], Fields) ->
+    fields(Rest, ['icmpv4-type' | Fields]);
+fields([icmpv4_code | Rest], Fields) ->
+    fields(Rest, ['icmpv4-code' | Fields]);
+fields([arp_op | Rest], Fields) ->
+    fields(Rest, ['arp-op' | Fields]);
+fields([arp_spa | Rest], Fields) ->
+    fields(Rest, ['arp-src-ip-address' | Fields]);
+fields([arp_tpa | Rest], Fields) ->
+    fields(Rest, ['arp-target-ip-address' | Fields]);
+fields([arp_sha | Rest], Fields) ->
+    fields(Rest, ['arp-src-hardware-address' | Fields]);
+fields([arp_tha | Rest], Fields) ->
+    fields(Rest, ['arp-target-hardware-address' | Fields]);
+fields([ipv6_src | Rest], Fields) ->
+    fields(Rest, ['ipv6-src' | Fields]);
+fields([ipv6_dst | Rest], Fields) ->
+    fields(Rest, ['ipv6-dest' | Fields]);
+fields([ipv6_flabel | Rest], Fields) ->
+    fields(Rest, ['ipv6-flow-label' | Fields]);
+fields([icmpv6_type | Rest], Fields) ->
+    fields(Rest, ['icmpv6-type' | Fields]);
+fields([icmpv6_code | Rest], Fields) ->
+    fields(Rest, ['icmpv6-code' | Fields]);
+fields([ipv6_nd_target | Rest], Fields) ->
+    fields(Rest, ['ipv6-nd-target' | Fields]);
+fields([ipv6_nd_sll | Rest], Fields) ->
+    fields(Rest, ['ipv6-nd-source-link-layer' | Fields]);
+fields([ipv6_nd_tll | Rest], Fields) ->
+    fields(Rest, ['ipv6-nd-target-link-layer' | Fields]);
+fields([mpls_label | Rest], Fields) ->
+    fields(Rest, ['mpls-label' | Fields]);
+fields([mpls_tc | Rest], Fields) ->
+    fields(Rest, ['mpls-tc' | Fields]).
+
+%% @private
+actions(Actions) ->
+    actions(Actions, []).
+
+%% @private
+actions([], Actions) ->
+    lists:reverse(Actions);
+actions([output | Rest], Actions) ->
+    actions(Rest, [output | Actions]);
+%% actions([copy_ttl_out | Rest], Actions) ->
+%%     actions(Rest, ['copy-ttl-out' | Actions]);
+%% actions([copy_ttl_in | Rest], Actions) ->
+%%     actions(Rest, ['copy-ttl-in' | Actions]);
+%% actions([set_mpls_ttl | Rest], Actions) ->
+%%     actions(Rest, ['set-mpls-ttl' | Actions]);
+%% actions([dec_mpls_ttl | Rest], Actions) ->
+%%     actions(Rest, ['dec-mpls-ttl' | Actions]);
+%% actions([push_vlan | Rest], Actions) ->
+%%     actions(Rest, ['push-vlan' | Actions]);
+%% actions([pop_vlan | Rest], Actions) ->
+%%     actions(Rest, ['pop-vlan' | Actions]);
+%% actions([push_mpls | Rest], Actions) ->
+%%     actions(Rest, ['push-mpls' | Actions]);
+%% actions([pop_mpls | Rest], Actions) ->
+%%     actions(Rest, ['pop-mpls' | Actions]);
+actions([set_queue | Rest], Actions) ->
+    actions(Rest, ['set-queue' | Actions]);
+actions([group | Rest], Actions) ->
+    actions(Rest, ['group' | Actions]).
+%% actions([set_nw_ttl | Rest], Actions) ->
+%%     actions(Rest, ['set-nw-ttl' | Actions]);
+%% actions([dec_nw_ttl | Rest], Actions) ->
+%%     actions(Rest, ['dec-nw-ttl' | Actions]);
+%% actions([set_field | Rest], Actions) ->
+%%     actions(Rest, ['set-field' | Actions]).

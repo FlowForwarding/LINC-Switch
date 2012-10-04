@@ -95,21 +95,22 @@ apply_action_list(_TableId, [], Pkt) ->
 -spec apply_flow(#ofs_pkt{}, integer()) -> match() | miss().
 apply_flow(Pkt, FlowId) ->
     [FlowTable] = ets:lookup(flow_tables, FlowId),
-    FlowTableId = FlowTable#flow_table.id,
-    case match_flow_entries(Pkt, FlowTableId, FlowTable#flow_table.entries) of
+    FlowTableId = FlowTable#linc_flow_table.id,
+    case match_flow_entries(Pkt, FlowTableId,
+                            FlowTable#linc_flow_table.entries) of
         {match, goto, NextFlowId, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
             {match, goto, NextFlowId, NewPkt};
         {match, Action, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
             {match, Action, NewPkt};
-        table_miss when FlowTable#flow_table.config == drop ->
+        table_miss when FlowTable#linc_flow_table.config == drop ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, drop};
-        table_miss when FlowTable#flow_table.config == controller ->
+        table_miss when FlowTable#linc_flow_table.config == controller ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, controller};
-        table_miss when FlowTable#flow_table.config == continue ->
+        table_miss when FlowTable#linc_flow_table.config == continue ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, continue, FlowId + 1}
     end.

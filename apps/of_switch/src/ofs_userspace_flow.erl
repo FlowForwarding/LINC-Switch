@@ -17,7 +17,7 @@
 
 %%% Flow mod functions ---------------------------------------------------------
 
--spec get_flow_tables(integer() | all) -> [#flow_table{}].
+-spec get_flow_tables(integer() | all) -> [#linc_flow_table{}].
 get_flow_tables(all) ->
     ets:tab2list(flow_tables);
 get_flow_tables(TableId) when is_integer(TableId) ->
@@ -56,19 +56,21 @@ apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
 
 modify_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
-      fun(#flow_table{entries = Entries} = Table) ->
+      fun(#linc_flow_table{entries = Entries} = Table) ->
               NewEntries = [modify_flow_entry(Entry, FlowMod, MatchFun)
                             || Entry <- Entries],
-              ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
+              ets:insert(flow_tables,
+                         Table#linc_flow_table{entries = NewEntries})
       end, get_flow_tables(TableId)).
 
 delete_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
-      fun(#flow_table{entries = Entries} = Table) ->
+      fun(#linc_flow_table{entries = Entries} = Table) ->
               NewEntries = lists:filter(fun(Entry) ->
                                                 not MatchFun(Entry, FlowMod)
                                         end, Entries),
-              ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
+              ets:insert(flow_tables,
+                         Table#linc_flow_table{entries = NewEntries})
       end, get_flow_tables(TableId)).
 
 -spec create_flow_entry(ofp_flow_mod(), integer()) -> #flow_entry{}.
@@ -93,7 +95,7 @@ has_priority_overlap(Flags, Priority, Tables) ->
         andalso
         lists:any(fun(Table) ->
                           lists:keymember(Priority, #flow_entry.priority,
-                                          Table#flow_table.entries)
+                                          Table#linc_flow_table.entries)
                   end, Tables).
 
 %% strict match: use all match fields (including the masks) and the priority

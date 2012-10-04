@@ -11,14 +11,12 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([
-         route/1,
+-export([route/1,
          add_port/2,
          remove_port/1,
          parse_ofs_pkt/2,
          get_group_stats/0,
-         get_group_stats/1
-        ]).
+         get_group_stats/1]).
 
 %% gen_switch callbacks
 -export([start/1,
@@ -117,9 +115,9 @@ get_group_stats(GroupId) ->
 start(_Opts) ->
     %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
-                                        {keypos, #flow_table.id},
+                                        {keypos, #linc_flow_table.id},
                                         {read_concurrency, true}]),
-    ets:insert(flow_tables, [#flow_table{id = Id}
+    ets:insert(flow_tables, [#linc_flow_table{id = Id}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
     flow_table_counters = ets:new(flow_table_counters,
                                   [named_table, public,
@@ -180,11 +178,11 @@ ofp_flow_mod(State, #ofp_flow_mod{command = add,
                           priority = Priority,
                           flags = Flags} = FlowMod) ->
     AddFlowEntry =
-        fun(#flow_table{entries = Entries} = Table) ->
+        fun(#linc_flow_table{entries = Entries} = Table) ->
                 NewEntry = ofs_userspace_flow:create_flow_entry(FlowMod,
                                                                 TableId),
                 NewEntries = ordsets:add_element(NewEntry, Entries),
-                NewTable = Table#flow_table{entries = NewEntries},
+                NewTable = Table#linc_flow_table{entries = NewEntries},
                 ets:insert(flow_tables, NewTable)
         end,
     Tables = ofs_userspace_flow:get_flow_tables(TableId),
@@ -220,7 +218,7 @@ ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
 ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
     lists:foreach(fun(FlowTable) ->
                           ets:insert(flow_tables,
-                                     FlowTable#flow_table{config = Config})
+                                     FlowTable#linc_flow_table{config = Config})
                   end, ofs_userspace_flow:get_flow_tables(TableId)),
     {ok, State}.
 
@@ -330,7 +328,7 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
                                     {error, ofp_error(), #state{}}.
 ofp_flow_stats_request(State,
                        #ofp_flow_stats_request{table_id = TableId} = Request) ->
-    Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
+    Stats = lists:flatmap(fun(#linc_flow_table{id = TID, entries = Entries}) ->
                                   ofs_userspace_flow:get_flow_stats(TID,
                                                                     Entries,
                                                                     Request)
@@ -345,7 +343,7 @@ ofp_flow_stats_request(State,
 ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
     Tables = ofs_userspace_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
     %% for each table, for each flow, collect matching stats
-    Reply = lists:foldl(fun(#flow_table{id = TableId, entries = Entries},
+    Reply = lists:foldl(fun(#linc_flow_table{id = TableId, entries = Entries},
                             OuterAcc) ->
                                 lists:foldl(fun(Entry, Acc) ->
                                                     ofs_userspace_stats:update_aggregate_stats(Acc,

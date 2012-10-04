@@ -8,35 +8,66 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_switch/include/of_switch.hrl").
 
--define(SUPPORTED_WRITE_ACTIONS, [output, group, set_queue
-                                  %% set_mpls_ttl, dec_mpls_ttl,
-                                  %% set_nw_ttl, dec_nw_ttl,
-                                  %% copy_ttl_out, copy_ttl_in,
-                                  %% push_vlan, pop_vlan,
-                                  %% push_mpls, pop_mpls,
+-define(SUPPORTED_WRITE_ACTIONS, [output,
+                                  group,
+                                  set_queue
+                                  %% set_mpls_ttl,
+                                  %% dec_mpls_ttl,
+                                  %% set_nw_ttl,
+                                  %% dec_nw_ttl,
+                                  %% copy_ttl_out,
+                                  %% copy_ttl_in,
+                                  %% push_vlan,
+                                  %% pop_vlan,
+                                  %% push_mpls,
+                                  %% pop_mpls,
                                   %% set_field
                                  ]).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).
--define(SUPPORTED_MATCH_FIELDS, [in_port, %% in_phy_port, metadata,
-                                 eth_dst, eth_src, eth_type,
-                                 vlan_vid, vlan_pcp,
-                                 ip_dscp, ip_ecn, ip_proto,
-                                 ipv4_src, ipv4_dst,
-                                 tcp_src, tcp_dst,
-                                 udp_src, udp_dst,
-                                 sctp_src, sctp_dst,
-                                 icmpv4_type, icmpv4_code,
-                                 arp_op, arp_spa, arp_tpa, arp_sha, arp_tha,
-                                 ipv6_src, ipv6_dst, ipv6_flabel,
-                                 icmpv6_type, icmpv6_code,
-                                 ipv6_nd_target, ipv6_nd_sll, ipv6_nd_tll,
-                                 mpls_label, mpls_tc]).
+-define(SUPPORTED_MATCH_FIELDS, [in_port,
+                                 %% in_phy_port,
+                                 %% metadata,
+                                 eth_dst,
+                                 eth_src,
+                                 eth_type,
+                                 vlan_vid,
+                                 vlan_pcp,
+                                 ip_dscp,
+                                 ip_ecn,
+                                 ip_proto,
+                                 ipv4_src,
+                                 ipv4_dst,
+                                 tcp_src,
+                                 tcp_dst,
+                                 udp_src,
+                                 udp_dst,
+                                 sctp_src,
+                                 sctp_dst,
+                                 icmpv4_type,
+                                 icmpv4_code,
+                                 arp_op,
+                                 arp_spa,
+                                 arp_tpa,
+                                 arp_sha,
+                                 arp_tha,
+                                 ipv6_src,
+                                 ipv6_dst,
+                                 ipv6_flabel,
+                                 icmpv6_type,
+                                 icmpv6_code,
+                                 ipv6_nd_target,
+                                 ipv6_nd_sll,
+                                 ipv6_nd_tll,
+                                 mpls_label,
+                                 mpls_tc]).
 -define(SUPPORTED_WILDCARDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_WRITE_SETFIELDS, []).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
                                  %% write_metadata,
-                                 write_actions, apply_actions, clear_actions]).
+                                 write_actions,
+                                 apply_actions,
+                                 clear_actions]).
 -define(SUPPORTED_GROUP_TYPES, [all]).
 -define(SUPPORTED_GROUP_CAPABILITIES, []).
 
@@ -58,7 +89,7 @@
           received_bytes   = 0 :: integer()
          }).
 
--record(flow_table, {
+-record(linc_flow_table, {
           id                   :: integer(),
           entries = []         :: [#flow_entry{}],
           config  = controller :: ofp_table_config()

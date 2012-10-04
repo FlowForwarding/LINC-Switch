@@ -237,19 +237,20 @@ get_certificates() ->
 
 %% @private
 get_flow_tables() ->
-    [#flow_table{resource_id = "FlowTable" ++ integer_to_list(I),
-                 max_entries = ?MAX_FLOW_TABLE_ENTRIES,
-                 next_tables = lists:seq(I + 1, ?OFPTT_MAX),
-                 instructions = instructions(?SUPPORTED_INSTRUCTIONS),
-                 matches = fields(?SUPPORTED_MATCH_FIELDS),
-                 write_actions = actions(?SUPPORTED_WRITE_ACTIONS),
-                 apply_actions = actions(?SUPPORTED_APPLY_ACTIONS),
-                 write_setfields = fields(?SUPPORTED_WRITE_SETFIELDS),
-                 apply_setfields = fields(?SUPPORTED_APPLY_SETFIELDS),
-                 wildcards = fields(?SUPPORTED_WILDCARDS),
-                 metadata_match = 16#ffff,
-                 metadata_write = 16#ffff}
-     || I <- lists:seq(0, ?OFPTT_MAX)].
+    %% [#flow_table{resource_id = "FlowTable" ++ integer_to_list(I),
+    %%              max_entries = ?MAX_FLOW_TABLE_ENTRIES,
+    %%              next_tables = lists:seq(I + 1, ?OFPTT_MAX),
+    %%              instructions = instructions(?SUPPORTED_INSTRUCTIONS),
+    %%              matches = fields(?SUPPORTED_MATCH_FIELDS),
+    %%              write_actions = actions(?SUPPORTED_WRITE_ACTIONS),
+    %%              apply_actions = actions(?SUPPORTED_APPLY_ACTIONS),
+    %%              write_setfields = fields(?SUPPORTED_WRITE_SETFIELDS),
+    %%              apply_setfields = fields(?SUPPORTED_APPLY_SETFIELDS),
+    %%              wildcards = fields(?SUPPORTED_WILDCARDS),
+    %%              metadata_match = 16#ffff,
+    %%              metadata_write = 16#ffff}
+    %%  || I <- lists:seq(0, ?OFPTT_MAX)].
+    [].
 
 %% @private
 get_logical_switches() ->
@@ -272,8 +273,9 @@ get_logical_switches() ->
                          action_types = actions(?SUPPORTED_WRITE_ACTIONS),
                          instruction_types =
                              instructions(?SUPPORTED_INSTRUCTIONS)},
-    FlowTables = [{flow_table, "FlowTable" ++ integer_to_list(I)}
-                  || I <- lists:seq(0, ?OFPTT_MAX)],
+    %% FlowTables = [{flow_table, "FlowTable" ++ integer_to_list(I)}
+    %%               || I <- lists:seq(0, ?OFPTT_MAX)],
+    FlowTables = [],
     [#logical_switch{id = "LogicalSwitch0",
                      datapath_id = "00:00:00:00:00:00:00:00",
                      enabled = true,

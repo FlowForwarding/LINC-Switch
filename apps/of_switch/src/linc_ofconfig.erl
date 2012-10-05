@@ -84,8 +84,21 @@ init([]) ->
     {ok, #state{}}.
 
 %% @private
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
+    [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Source),
+    EncodedConfig = of_config:encode(Config),
+    {reply, {ok, EncodedConfig}, State};
+handle_call({edit_config, _SessionId, running, {xml, Config}}, _From, State) ->
+    Decoded = of_config:decode(Config),
+    io:format("Decoded: ~p~n", [Decoded]),
+
+    [Switch0] = Decoded#capable_switch.logical_switches,
+    Controllers = Switch0#logical_switch.controllers,
+    [add_controller(running, Ctrl) || Ctrl <- Controllers],
+
+    {reply, ok, State};
+handle_call(_, _, State) ->
+    {reply, {error, {operation_failed, application}}, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -108,12 +121,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%------------------------------------------------------------------------------
 
 %% @private
-handle_get_config(_SessionId, _Source, _Filter) ->
-    {ok, "<capable-switch/>"}.
+handle_get_config(SessionId, Source, Filter) ->
+    gen_server:call(?MODULE,
+                    {get_config, SessionId, Source, Filter}, infinity).
 
 %% @private
-handle_edit_config(_SessionId, _Target, _Config) ->
-    ok.
+handle_edit_config(SessionId, Target, Config) ->
+    gen_server:call(?MODULE,
+                    {edit_config, SessionId, Target, Config}, infinity).
 
 %% @private
 handle_copy_config(_SessionId, _Source, _Target) ->
@@ -454,3 +469,27 @@ group_caps([chaining | Rest], Capabilities) ->
     group_caps(Rest, [chaining | Capabilities]);
 group_caps([chaining_check | Rest], Capabilities) ->
     group_caps(Rest, ['chaining-check' | Capabilities]).
+
+%% @private
+add_controller(Target, Controller) ->
+    [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Target),
+
+    State = #controller_state{connection_state = up,
+                              current_version = undefined,
+                              supported_versions = []},
+    NewCtrl = Controller#controller{role = equal,
+                                    local_ip_address = undefined,
+                                    local_port = undefined,
+                                    state = State},
+
+    IP = Controller#controller.ip_address,
+    Port = Controller#controller.port,
+    ofs_receiver_sup:open(IP, Port),
+
+    [Switch0] = Config#capable_switch.logical_switches,
+    NewSwitch = Switch0#logical_switch{controllers = [NewCtrl]},
+
+    NewConfig = Config#capable_switch{logical_switches = [NewSwitch]},
+
+    mnesia:dirty_write(?MODULE, #ofconfig{name = Target,
+                                          config = NewConfig}).

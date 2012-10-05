@@ -31,7 +31,8 @@
           connections = [] :: [#connection{}],
           generation_id :: integer(),
           backend_mod :: atom(),
-          backend_state :: term()
+          backend_state :: term(),
+          datapath_mac :: binary()
          }).
 
 %%%-----------------------------------------------------------------------------
@@ -81,7 +82,8 @@ init([BackendMod, BackendOpts]) ->
     [ofs_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
     {ok, BackendState} = BackendMod:start(BackendOpts),
     {ok, #state{backend_mod = BackendMod,
-                backend_state = BackendState}}.
+                backend_state = BackendState,
+                datapath_mac = get_ifhwaddr()}}.
 
 handle_call({get_connection, Pid}, _From,
             #state{connections = Connections} = State) ->
@@ -169,8 +171,8 @@ handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
     State;
 handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
-               State) ->
-    FeaturesReply = #ofp_features_reply{datapath_mac = <<0:48>>,
+               #state{datapath_mac = DatapathMac} = State) ->
+    FeaturesReply = #ofp_features_reply{datapath_mac = DatapathMac,
                                         datapath_id = 0,
                                         n_buffers = 0,
                                         n_tables = 255},
@@ -348,3 +350,26 @@ do_send(Socket, Message) ->
 
 send_reply(Socket, Request, ReplyBody) ->
     do_send(Socket, Request#ofp_message{body = ReplyBody}).
+
+-spec get_ifhwaddr() -> binary().
+get_ifhwaddr() ->
+    {ok, Ifs}  = inet:getifaddrs(),
+    HwAddrs = lists:map(fun({_, Opts}) -> hwaddr(Opts) end, Ifs),
+    case lists:filter(fun (undefined) -> false;
+                          (_) -> true end,
+                      HwAddrs) of
+        %% No mac addresses in the system
+        [] ->
+            %% TODO
+            erorr;
+        [Addr | _] ->
+            Addr
+    end.
+
+-spec hwaddr(list()) -> binary() | undefined.
+hwaddr([]) ->
+    undefined;
+hwaddr([{hwaddr, [M1, M2, M3, M4, M5, M6]} | _]) ->
+    <<M1, M2, M3, M4, M5, M6>>;
+hwaddr([_ | Rest]) ->
+    hwaddr(Rest).

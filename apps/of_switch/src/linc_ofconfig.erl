@@ -487,7 +487,9 @@ add_controller(Target, Controller) ->
     ofs_receiver_sup:open(IP, Port),
 
     [Switch0] = Config#capable_switch.logical_switches,
-    NewSwitch = Switch0#logical_switch{controllers = [NewCtrl]},
+    Controllers = Switch0#logical_switch.controllers,
+    NewControllers = [NewCtrl | Controllers],
+    NewSwitch = Switch0#logical_switch{controllers = NewControllers},
 
     NewConfig = Config#capable_switch{logical_switches = [NewSwitch]},
 

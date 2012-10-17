@@ -78,6 +78,8 @@ remove_port(PortNo) ->
 parse_ofs_pkt(Binary, PortNum) ->
     try
         Packet = pkt:decapsulate(Binary),
+        %% FIXME: List comprehension without generator is undocumented and undefined
+        %%        syntax construct. The next line should not compile, but does!
         Fields = [ofs_userspace_convert:ofp_field(in_port, <<PortNum:32>>)
                   || is_integer(PortNum)]
             ++ ofs_userspace_convert:packet_fields(Packet),

@@ -3,11 +3,16 @@
 
 -export([do_route/2,
          apply_action_list/3]).
+%% for debug
+-export([action_pop_vlan/2, action_push_vlan/2]).
 
 -include("ofs_userspace.hrl").
+-include_lib("pkt/include/pkt.hrl").
 
 %%% Routing functions ----------------------------------------------------------
 
+%% @doc Applies flow instructions to a packet
+%% @enc
 -spec do_route(#ofs_pkt{}, integer()) -> route_result().
 do_route(Pkt, FlowId) ->
     case apply_flow(Pkt, FlowId) of
@@ -30,58 +35,82 @@ do_route(Pkt, FlowId) ->
             do_route(Pkt, NextFlowId)
     end.
 
+%% @doc Does the routing decisions on the package according to the action list
+%% @end
 -spec apply_action_list(integer(),
                         list(ofp_action()),
                         #ofs_pkt{}) -> #ofs_pkt{}.
+
 apply_action_list(TableId, [#ofp_action_output{port = PortNum} | _Rest], Pkt) ->
     %% Required action
     route_to_output(TableId, Pkt, PortNum),
     Pkt;
+
 apply_action_list(_TableId, [#ofp_action_group{group_id = GroupId} | _Rest],
                   Pkt) ->
     %% Required action
     apply_group(GroupId, Pkt);
+
 apply_action_list(TableId,
                   [#ofp_action_set_queue{queue_id = QueueId} | Rest],
                   Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt#ofs_pkt{queue_id = QueueId});
+
 apply_action_list(TableId, [#ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_set_nw_ttl{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
-apply_action_list(TableId, [#ofp_action_push_vlan{} | Rest], Pkt) ->
-    %% Optional action
-    apply_action_list(TableId, Rest, Pkt);
-apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt) ->
-    %% Optional action
-    apply_action_list(TableId, Rest, Pkt);
+
+%% Optional action
+apply_action_list(TableId, [Act = #ofp_action_push_vlan{} | Rest], Pkt) ->
+    %% Push a new VLAN header onto the packet. The Ethertype is used as Ethertype
+    %% for the tag. Only Ethertype 0x8100 and 0x88A8 should be used.
+    Pkt2 = action_push_vlan(Act, Pkt),
+    apply_action_list(TableId, Rest, Pkt2);
+
+%% Optional action
+apply_action_list(TableId, [Act = #ofp_action_pop_vlan{} | Rest], Pkt) ->
+    %% pops the outermost VLAN header from the packet.
+    %% "The effect of any inconsistent actions on matched packet is undefined" OF1.3 spec PDF page 32
+    Pkt2 = action_pop_vlan(Act, Pkt),
+    apply_action_list(TableId, Rest, Pkt2);
+
 apply_action_list(TableId, [#ofp_action_push_mpls{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_set_field{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
     %% Optional action
     apply_action_list(TableId, Rest, Pkt);
+
 apply_action_list(_TableId, [], Pkt) ->
     Pkt.
 
@@ -89,6 +118,47 @@ apply_action_list(_TableId, [], Pkt) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% @doc Pop a topmost VLAN header from the packet. If there is no VLAN header,
+%% action is undefined by spec (page 32 of OF1.3 PDF)
+-spec action_pop_vlan(#ofp_action_pop_vlan{}, #ofs_pkt{}) -> #ofs_pkt{}.
+
+action_pop_vlan(Action = #ofp_action_pop_vlan{},
+                Pkt = #ofs_pkt{ packet = PktDecaps, size=PktSize })
+  when PktSize > 4 ->
+    %% the 'when' clause might be redundant?
+    [EtherHeader, _ | Tail] = PktDecaps,
+    PktDecaps2 = [EtherHeader | Tail],
+    Pkt#ofs_pkt{
+        packet = PktDecaps2,
+        size = PktSize - 4
+      }.
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% @doc Push a new VLAN header onto the packet. The Ethertype is used as Ethertype
+%% for the tag. Only Ethertype 0x8100 and 0x88A8 should be used.
+-spec action_push_vlan(#ofp_action_push_vlan{}, #ofs_pkt{}) -> #ofs_pkt{}.
+
+action_push_vlan(Action = #ofp_action_push_vlan{ ethertype = EtherType },
+                 Pkt = #ofs_pkt{ packet = PktDecaps, size=PktSize }) ->
+    [EtherHeader|Tail] = PktDecaps,
+    %% structure from deps/pkt/include/pkt.hrl
+    %% pushing an empty VLAN tag
+    %% I expect this will be modified by the following set-field command? //Dmytro
+    VLANHeader = #ieee802_1q_tag{
+            pcp = 0,
+            cfi = 0,
+            vid = <<1:12>>, %% default VLAN 1
+            ether_type = EtherType
+          },
+    PktDecaps2 = [EtherHeader, VLANHeader | Tail],
+    Pkt#ofs_pkt{
+        packet = PktDecaps2,
+        size = PktSize + 4 %% size of VLAN tag
+      }.
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -type miss() :: tuple(table_miss, drop | controller) |
                 tuple(table_miss, continue, integer()).
 

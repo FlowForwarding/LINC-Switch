@@ -49,7 +49,8 @@ pop_test() ->
     #ofs_pkt{packet = P2} = OfsP,
     ?assertEqual(count_vlan_headers(P2), 1),
     %% extract list item 2, check for correct tag
-    ?assertEqual(element(1, hd(tl(P2))), ieee802_1q_tag).
+    [_, Tag1 | _] = P2,
+    ?assertEqual(element(1, Tag1), ieee802_1q_tag).
 
 %%-----------------------------------------------------------------------------
 %% @doc Loads a packet capture with 2 VLAN headers, counts them, pushes one,
@@ -67,8 +68,8 @@ push_test() ->
     #ofs_pkt{packet = P2} = OfsP,
     ?assertEqual(count_vlan_headers(P2), 3),
     %% extract list items 2, 3, 4, check that all have correct tag
-    P2Tl = tl(P2),
-    ?assertEqual(element(1, hd(P2Tl)), ieee802_1q_tag),
-    ?assertEqual(element(1, hd(tl(P2Tl))), ieee802_1q_tag),
-    ?assertEqual(element(1, hd(tl(tl(P2Tl)))), ieee802_1q_tag).
+    [_, Tag1, Tag2, Tag3 | _] = P2,
+    ?assertEqual(element(1, Tag1), ieee802_1q_tag),
+    ?assertEqual(element(1, Tag2), ieee802_1q_tag),
+    ?assertEqual(element(1, Tag3), ieee802_1q_tag).
 

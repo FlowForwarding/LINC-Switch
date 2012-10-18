@@ -88,7 +88,7 @@ apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
 	apply_action_list(TableId, Rest, Pkt2);
 
 %% Optional action
-%% Sets IPv4 packet header TTL to a defined value
+%% Sets IPv4 AND IPv6 packet header TTL to a defined value. NOTE: spec says OR, not AND!
 %% Nothing happens if packet had no IPv4 header
 apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt) ->
 	Pkt2 = find_and_edit_packet_tag(
@@ -96,10 +96,15 @@ apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt
 			 fun(T) ->
 					 T#ipv4{ ttl = NewTTL }
 			 end),
-	apply_action_list(TableId, Rest, Pkt2);
+	Pkt3 = find_and_edit_packet_tag(
+			 Pkt2, ipv6,
+			 fun(T) ->
+					 T#ipv6{ ttl = NewTTL }
+			 end),
+	apply_action_list(TableId, Rest, Pkt3);
 
 %% Optional action
-%% Decrements IPv4 packet header TTL by 1.
+%% Decrements IPv4 AND IPv6 packet header TTL by 1. NOTE: spec says OR, not AND!
 %% Nothing happens if packet had no IPv4 header.Clamps values below 0 to 0.
 apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
 	Pkt2 = find_and_edit_packet_tag(
@@ -108,30 +113,113 @@ apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
 					 Decremented = erlang:max(0, T#ipv4.ttl - 1),
 					 T#ipv4{ ttl = Decremented }
 			 end),
+	Pkt3 = find_and_edit_packet_tag(
+			 Pkt2, ipv6,
+			 fun(T) ->
+					 Decremented = erlang:max(0, T#ipv6.ttl - 1),
+					 T#ipv6{ ttl = Decremented }
+			 end),
+	apply_action_list(TableId, Rest, Pkt3);
+
+%% Optional action
+%% Copy the TTL from next-to-outermost to outermost header with TTL.
+%% Copy can be IPv4-IPv4, MPLS-MPLS, IPv4-MPLS
+apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
+	Tags = lists:filter(Pkt,
+						fun(T) when is_tuple(T) ->
+								element(1,T) =:= mpls_tag orelse
+									element(1,T) =:= ipv4
+						end),
+
+	%% this will crash if less than 2 ipv4/mpls tags found
+	[Outermost, NextOutermost | _] = Tags,
+
+	%% NOTE: the following code abuses the fact records are tuples
+	case {element(1, Outermost), element(1, NextOutermost)} of
+		{ipv4, ipv4} ->
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, ipv4,
+					 fun(T) ->
+							 T#ipv4{ ttl = NextOutermost#ipv4.ttl }
+					 end);
+		{mpls_tag, ipv4} ->
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, mpls_tag,
+					 fun(T) ->
+							 T#mpls_tag{ ttl = NextOutermost#ipv4.ttl }
+					 end);
+		{mpls_tag, mpls_tag} ->
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, mpls_tag,
+					 fun(T) ->
+							 T#mpls_tag{ ttl = NextOutermost#mpls_tag.ttl }
+					 end);
+		{_, _} ->
+			Pkt2 = Pkt
+	end,
 	apply_action_list(TableId, Rest, Pkt2);
 
-apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
-	%% Optional action
-	apply_action_list(TableId, Rest, Pkt);
-
+%% Optional action
+%% Copy the TTL from outermost to next-to-outermost header with TTL
+%% Copy can be IPv4-IPv4, MPLS-MPLS, MPLS-IPv4
 apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
-	%% Optional action
-	apply_action_list(TableId, Rest, Pkt);
+	Tags = lists:filter(Pkt,
+						fun(T) when is_tuple(T) ->
+								element(1,T) =:= mpls_tag orelse
+									element(1,T) =:= ipv4
+						end),
+
+	%% this will crash if less than 2 ipv4/mpls tags found
+	[Outermost, NextOutermost | _] = Tags,
+
+	%% NOTE: the following code abuses the fact records are tuples
+	case {element(1, Outermost), element(1, NextOutermost)} of
+		{ipv4, ipv4} ->
+			Pkt2 = find_and_edit_packet_tag_skip(
+					 Pkt, ipv4,
+					 fun(T) ->
+							 T#ipv4{ ttl = Outermost#ipv4.ttl }
+					 end, 1);
+		{mpls_tag, ipv4} ->
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, ipv4,
+					 fun(T) ->
+							 T#ipv4{ ttl = Outermost#mpls_tag.ttl }
+					 end);
+		{mpls_tag, mpls_tag} ->
+			Pkt2 = find_and_edit_packet_tag_skip(
+					 Pkt, mpls_tag,
+					 fun(T) ->
+							 T#mpls_tag{ ttl = Outermost#mpls_tag.ttl }
+					 end, 1);
+		{_, _} ->
+			Pkt2 = Pkt
+	end,
+	apply_action_list(TableId, Rest, Pkt2);
 
 %% Optional action
 %% Push a new VLAN header onto the packet.
 %% Only Ethertype 0x8100 and 0x88A8 should be used (this is not checked)
-apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Rest], Pkt) ->
+apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Rest], Pkt)
+  when EtherType =:= 16#8100; EtherType =:= 16#88A8-> %% might be 'when' is redundant
+	%% When pushing, fields are based on existing tag if there is any
+	case find_packet_tag(Pkt, ieee802_1q_tag) of
+		not_found ->
+			InheritVid = 1,
+			InheritPrio = 0;
+		{_, BasedOnTag} ->
+			InheritVid = BasedOnTag#ieee802_1q_tag.vid,
+			InheritPrio = BasedOnTag#ieee802_1q_tag.pcp
+	end,
 	Pkt2 = find_and_edit_packet_tag(
 			 Pkt, ether,
-			 %% found ether element, return it plus VLAN tag for insertion
 			 fun(T) -> 
 					 NewTag = #ieee802_1q_tag{
-								 pcp = 0,
-								 cfi = 0,
-								 vid = <<1:12>>, %% default VLAN 1
+								 pcp = InheritPrio,
+								 vid = InheritVid,
 								 ether_type = EtherType
 								},
+					 %% found ether element, return it plus VLAN tag for insertion
 					 [T, NewTag]
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
@@ -149,13 +237,67 @@ apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt)
 			 fun(_) -> 'delete' end),
 	apply_action_list(TableId, Rest, Pkt2);
 
-apply_action_list(TableId, [#ofp_action_push_mpls{} | Rest], Pkt) ->
-	%% Optional action
-	apply_action_list(TableId, Rest, Pkt);
+%% Optional action
+%% Finds an MPLS tag, and pushes an item in its stack. If there is no MPLS tag,
+%% a new one is added.
+%% Only ethertype 0x8847 or 0x88A8 should be used (OF1.2 spec, p.16)
+apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Rest], Pkt)
+  when EtherType =:= 16#8847;
+	   EtherType =:= 16#88A8 -> %% might be 'when' is redundant
+	case find_packet_tag(Pkt, mpls_tag) of
+		not_found ->
+			%% Must insert after ether or vlan tag, whichever is deeper in the packet
+			InsertAfter = case find_packet_tag(Pkt, vlan) of
+							  not_found -> ether;
+							  _ -> vlan
+						  end,
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, InsertAfter,
+					 fun(T) -> 
+							 NewEntry = #mpls_stack_entry{},
+							 NewTag = #mpls_tag{
+										 stack = [NewEntry],
+										 ethertype = EtherType
+										},
+							 %% found ether or vlan element, return it plus
+							 %% MPLS tag for insertion
+							 [T, NewTag]
+					 end);
+		%% found an MPLS shim header, and will push tag into it
+		_ ->
+			Pkt2 = find_and_edit_packet_tag(
+					 Pkt, mpls_tag,
+					 fun(T) -> 
+							 %% base the newly inserted entry on a previous one
+							 NewEntry = case T#mpls_tag.stack of
+											[] -> #mpls_stack_entry{};
+											[H|_] -> H
+										end,
+							 T#mpls_tag{
+							   stack = [NewEntry | T#mpls_tag.stack],
+							   ethertype = EtherType
+							  }
+					 end)
+	end,
+	apply_action_list(TableId, Rest, Pkt2);
 
+%% Optional action
+%% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
+%% inside it is empty. Nothing happens if no MPLS header found.
 apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
-	%% Optional action
-	apply_action_list(TableId, Rest, Pkt);
+	Pkt2 = find_and_edit_packet_tag(
+			 Pkt, mpls_tag,
+			 fun(T) ->
+					 Stk = T#mpls_tag.stack,
+					 %% based on how many elements were in stack, either pop a
+					 %% top most element or delete the whole tag (for empty)
+					 case Stk of
+						 [] -> 'delete';
+						 L when is_list(L), length(L) =:= 1 -> 'delete';
+						 [_|Rest] -> T#mpls_tag{ stack = Rest }
+					 end
+			 end),
+	apply_action_list(TableId, Rest, Pkt2);
 
 apply_action_list(TableId, [#ofp_action_set_field{} | Rest], Pkt) ->
 	%% Optional action
@@ -172,18 +314,58 @@ apply_action_list(_TableId, [], Pkt) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
--spec find_and_edit_packet_tag(Pkt :: pkt:packet(), Tag :: atom(), F :: fun()) -> pkt:packet().
+%% @doc Looks for given element/tag in packet, returns 'not_found' or the
+%% tuple {index where found, element which was found}. The index is to find
+%% which element occured before other while doing searches for different tags.
+-spec find_packet_tag(Pkt :: pkt:packet(), Tag :: atom()) ->
+							 not_found | {integer(), tuple()}.
 
+find_packet_tag(Pkt, Tag) -> find_packet_tag_2(Pkt, Tag, 0).
+
+find_packet_tag_2([], _, _) ->
+	not_found;
+find_packet_tag_2([X | Rest], Tag, Index) when element(1, X) =:= Tag ->
+	{Index, Element};
+find_packet_tag_2([_ | Rest], Tag, Index) ->
+	find_packet_tag_2(Rest, Tag, Index+1).
+	
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% @doc Scans the packet Pkt until first element of type Tag found, runs fun() F on it,
 %% returns modified packet with the return value of fun() F. Different actions are taken
 %% if F() returns list of atom 'delete' (see code below)
-find_and_edit_packet_tag(Pkt, Tag, F) ->
-	find_and_edit_packet_tag_2(Pkt, Tag, F, []).
+-spec find_and_edit_packet_tag(Pkt :: pkt:packet(),
+							   Tag :: atom(),
+							   F :: fun()) -> pkt:packet().
 
-find_and_edit_packet_tag_2([], _, _, Accum) ->
+find_and_edit_packet_tag(Pkt, Tag, F) ->
+	find_and_edit_packet_tag_2(Pkt, Tag, F, [], 0).
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% @doc Scans the packet Pkt until first element of type Tag found, runs fun() F on it,
+%% returns modified packet with the return value of fun() F. Different actions are taken
+%% if F() returns list of atom 'delete' (see code below)
+-spec find_and_edit_packet_tag_skip(Pkt :: pkt:packet(),
+							   Tag :: atom(),
+							   F :: fun(),
+							   Skips :: integer()) -> pkt:packet().
+
+find_and_edit_packet_tag_skip(Pkt, Tag, F, Skips) ->
+	find_and_edit_packet_tag_2(Pkt, Tag, F, [], Skips).
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+find_and_edit_packet_tag_2([], _, _, Accum, _) ->
 	lists:reverse(Accum);
 
-find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum)
+-spec find_and_edit_packet_tag_2(Pkt :: pkt:packet(),
+								 Tag :: atom(),
+								 F :: fun(),
+								 Accum :: pkt:packet(),
+								 Skips :: integer()) -> pkt:packet().
+
+%% When match found and Skip count is 0 (no skip)
+%% NOTE: the following code abuses the fact records are tuples
+find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum, 0)
   when element(1, PktFirst) =:= Tag ->
 	%% F() should return new tag to replace the one we're processing,
 	%% a list of tags (to replace and insert) or a special atom 'delete'.
@@ -199,8 +381,13 @@ find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum)
 			lists:reverse(Accum) ++ [NewPktElement | Rest]
 	end;
 
-find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum) ->
-	find_and_edit_packet_tag_2(Rest, Tag, F, [PktFirst | Accum]).
+%% When match found but skip is requested, just decrement skip and continue
+find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum, Skips)
+  when element(1, PktFirst) =:= Tag ->
+	find_and_edit_packet_tag_2(Rest, Tag, F, [PktFirst | Accum], Skips-1);
+
+find_and_edit_packet_tag_2([PktFirst | Rest], Tag, F, Accum, Skips) ->
+	find_and_edit_packet_tag_2(Rest, Tag, F, [PktFirst | Accum], Skips).
 
 %%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% @-doc Pop a topmost VLAN header from the packet. If there is no VLAN header,

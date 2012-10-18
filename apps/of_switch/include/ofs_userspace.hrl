@@ -8,7 +8,7 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_switch/include/of_switch.hrl").
 
--define(SUPPORTED_WRITE_ACTIONS, [output, group, set_queue
+-define(SUPPORTED_WRITE_ACTIONS, [output, group, set_queue,
                                   set_mpls_ttl, dec_mpls_ttl,
                                   set_nw_ttl, dec_nw_ttl,
                                   copy_ttl_out, copy_ttl_in,

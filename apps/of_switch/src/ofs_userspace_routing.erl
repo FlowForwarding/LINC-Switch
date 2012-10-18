@@ -35,6 +35,7 @@ do_route(Pkt, FlowId) ->
 			do_route(Pkt, NextFlowId)
 	end.
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% @doc Does the routing decisions on the package according to the action list
 %% @end
 -spec apply_action_list(integer(),
@@ -46,17 +47,20 @@ apply_action_list(TableId, [#ofp_action_output{port = PortNum} | _Rest], Pkt) ->
 	route_to_output(TableId, Pkt, PortNum),
 	Pkt;
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 apply_action_list(_TableId, [#ofp_action_group{group_id = GroupId} | _Rest],
 				  Pkt) ->
 	%% Required action
 	apply_group(GroupId, Pkt);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 apply_action_list(TableId,
 				  [#ofp_action_set_queue{queue_id = QueueId} | Rest],
 				  Pkt) ->
 	%% Optional action
 	apply_action_list(TableId, Rest, Pkt#ofs_pkt{queue_id = QueueId});
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Modifies top tag on MPLS stack to set ttl field to a value
 %% Nothing happens if packet had no MPLS header
@@ -71,6 +75,7 @@ apply_action_list(TableId, [Act = #ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Modifies top tag on MPLS stack to have TTL reduced by 1.
 %% Nothing happens if packet had no MPLS header. Clamps value below 0 to 0.
@@ -87,8 +92,9 @@ apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
-%% Sets IPv4 AND IPv6 packet header TTL to a defined value. NOTE: spec says OR, not AND!
+%% Sets IPv4 or IPv6 packet header TTL to a defined value. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header
 apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt) ->
 	Pkt2 = find_and_edit_packet_tag(
@@ -96,15 +102,11 @@ apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt
 			 fun(T) ->
 					 T#ipv4{ ttl = NewTTL }
 			 end),
-	Pkt3 = find_and_edit_packet_tag(
-			 Pkt2, ipv6,
-			 fun(T) ->
-					 T#ipv6{ ttl = NewTTL }
-			 end),
-	apply_action_list(TableId, Rest, Pkt3);
+	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
-%% Decrements IPv4 AND IPv6 packet header TTL by 1. NOTE: spec says OR, not AND!
+%% Decrements IPv4 or IPv6 packet header TTL by 1. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header.Clamps values below 0 to 0.
 apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
 	Pkt2 = find_and_edit_packet_tag(
@@ -113,14 +115,9 @@ apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
 					 Decremented = erlang:max(0, T#ipv4.ttl - 1),
 					 T#ipv4{ ttl = Decremented }
 			 end),
-	Pkt3 = find_and_edit_packet_tag(
-			 Pkt2, ipv6,
-			 fun(T) ->
-					 Decremented = erlang:max(0, T#ipv6.ttl - 1),
-					 T#ipv6{ ttl = Decremented }
-			 end),
-	apply_action_list(TableId, Rest, Pkt3);
+	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Copy the TTL from next-to-outermost to outermost header with TTL.
 %% Copy can be IPv4-IPv4, MPLS-MPLS, IPv4-MPLS
@@ -146,19 +143,33 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
 			Pkt2 = find_and_edit_packet_tag(
 					 Pkt, mpls_tag,
 					 fun(T) ->
-							 T#mpls_tag{ ttl = NextOutermost#ipv4.ttl }
+							 [Stack1 | StackRest] = T#mpls_tag.stack,
+							 Stack1b = Stack1#mpls_stack_entry{
+										 ttl = NextOutermost#ipv4.ttl
+										},
+							 T#mpls_tag{
+							   stack = [Stack1b | StackRest]
+							  }
 					 end);
-		{mpls_tag, mpls_tag} ->
+		%% matches on MPLS tag/whatever and does the copy inside MPLS tag
+		{mpls_tag, _} ->
 			Pkt2 = find_and_edit_packet_tag(
 					 Pkt, mpls_tag,
 					 fun(T) ->
-							 T#mpls_tag{ ttl = NextOutermost#mpls_tag.ttl }
+							 [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
+							 Stack1b = Stack1#mpls_stack_entry{
+										 ttl = Stack2#mpls_stack_entry.ttl
+										},
+							 T#mpls_tag{
+							   stack = [Stack1b, Stack2 | StackRest] %% reconstruct the stack
+							  }
 					 end);
 		{_, _} ->
 			Pkt2 = Pkt
 	end,
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Copy the TTL from outermost to next-to-outermost header with TTL
 %% Copy can be IPv4-IPv4, MPLS-MPLS, MPLS-IPv4
@@ -184,19 +195,29 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
 			Pkt2 = find_and_edit_packet_tag(
 					 Pkt, ipv4,
 					 fun(T) ->
-							 T#ipv4{ ttl = Outermost#mpls_tag.ttl }
+							 T#ipv4{ ttl = mpls_get_outermost_ttl(Outermost) }
 					 end);
-		{mpls_tag, mpls_tag} ->
-			Pkt2 = find_and_edit_packet_tag_skip(
+		%% matches on MPLS tag/whatever and does the copy inside MPLS tag
+		{mpls_tag, _} ->
+			%% Copies TTL from outermost to next-outermost tag inside the same MPLS tag
+			%% TODO: can the packet contain two MPLS stacks? Then this code needs change
+			Pkt2 = find_and_edit_packet_tag(
 					 Pkt, mpls_tag,
 					 fun(T) ->
-							 T#mpls_tag{ ttl = Outermost#mpls_tag.ttl }
-					 end, 1);
+							 [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
+							 Stack2b = Stack2#mpls_stack_entry{
+										 ttl = Stack1#mpls_stack_entry.ttl
+										},
+							 T#mpls_tag{
+							   stack = [Stack1, Stack2b | StackRest] %% reconstruct the stack
+							  }
+					 end);
 		{_, _} ->
 			Pkt2 = Pkt
 	end,
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Push a new VLAN header onto the packet.
 %% Only Ethertype 0x8100 and 0x88A8 should be used (this is not checked)
@@ -224,6 +245,7 @@ apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Res
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% pops the outermost VLAN header from the packet.
 %% "The effect of any inconsistent actions on matched packet is undefined"
@@ -237,6 +259,7 @@ apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt)
 			 fun(_) -> 'delete' end),
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Finds an MPLS tag, and pushes an item in its stack. If there is no MPLS tag,
 %% a new one is added.
@@ -257,7 +280,7 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
 							 NewEntry = #mpls_stack_entry{},
 							 NewTag = #mpls_tag{
 										 stack = [NewEntry],
-										 ethertype = EtherType
+										 ether_type = EtherType
 										},
 							 %% found ether or vlan element, return it plus
 							 %% MPLS tag for insertion
@@ -275,12 +298,13 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
 										end,
 							 T#mpls_tag{
 							   stack = [NewEntry | T#mpls_tag.stack],
-							   ethertype = EtherType
+							   ether_type = EtherType
 							  }
 					 end)
 	end,
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% Optional action
 %% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
 %% inside it is empty. Nothing happens if no MPLS header found.
@@ -299,20 +323,28 @@ apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 apply_action_list(TableId, [#ofp_action_set_field{} | Rest], Pkt) ->
 	%% Optional action
 	apply_action_list(TableId, Rest, Pkt);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
 	%% Optional action
 	apply_action_list(TableId, Rest, Pkt);
 
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 apply_action_list(_TableId, [], Pkt) ->
 	Pkt.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+%% @doc Extracts a TTL value from given MPLS tag's stack topmost entry
+mpls_get_outermost_ttl(T = #mpls_tag{}) ->
+	[H | _] = T#mpls_tag.stack,
+	H#mpls_stack_entry.ttl.
 
 %% @doc Looks for given element/tag in packet, returns 'not_found' or the
 %% tuple {index where found, element which was found}. The index is to find
@@ -324,8 +356,8 @@ find_packet_tag(Pkt, Tag) -> find_packet_tag_2(Pkt, Tag, 0).
 
 find_packet_tag_2([], _, _) ->
 	not_found;
-find_packet_tag_2([X | Rest], Tag, Index) when element(1, X) =:= Tag ->
-	{Index, Element};
+find_packet_tag_2([X | _], Tag, Index) when element(1, X) =:= Tag ->
+	{Index, X};
 find_packet_tag_2([_ | Rest], Tag, Index) ->
 	find_packet_tag_2(Rest, Tag, Index+1).
 	
@@ -354,14 +386,14 @@ find_and_edit_packet_tag_skip(Pkt, Tag, F, Skips) ->
 	find_and_edit_packet_tag_2(Pkt, Tag, F, [], Skips).
 
 %%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-find_and_edit_packet_tag_2([], _, _, Accum, _) ->
-	lists:reverse(Accum);
-
 -spec find_and_edit_packet_tag_2(Pkt :: pkt:packet(),
 								 Tag :: atom(),
 								 F :: fun(),
 								 Accum :: pkt:packet(),
 								 Skips :: integer()) -> pkt:packet().
+
+find_and_edit_packet_tag_2([], _, _, Accum, _) ->
+	lists:reverse(Accum);
 
 %% When match found and Skip count is 0 (no skip)
 %% NOTE: the following code abuses the fact records are tuples

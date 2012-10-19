@@ -48,7 +48,7 @@ header_fields(#arp{op = Op,
 header_fields(#sctp{sport = Src,
                     dport = Dst}) ->
     [ofp_field(sctp_src, <<Src:16>>),
-     ofp_field(sctp_src, <<Dst:16>>)];
+     ofp_field(sctp_dst, <<Dst:16>>)]; %% fixed src->dst here
 header_fields(#mpls_tag{stack = [#mpls_stack_entry{label = L,
                                                    qos = QOS,
                                                    pri = PRI,
@@ -84,11 +84,21 @@ header_fields(#icmpv6{type = Type, code = Code}) ->
     [ofp_field(icmpv6_type, <<Type:8>>),
      ofp_field(icmpv6_code, <<Code:8>>)];
 header_fields(#ndp_ns{tgt_addr = Addr, sll = SLL}) ->
-    [ofp_field(ipv6_nd_target, Addr)] ++
-    [ofp_field(ipv6_nd_sll, SLL) || SLL =/= undefined];
+    [ofp_field(ipv6_nd_target, Addr)]
+	%% construct is not in language syntax, compiles due to error in erlang parser
+    %% ++ [ofp_field(ipv6_nd_sll, SLL) || SLL =/= undefined];
+		++ case SLL =/= undefined of
+			   true -> [ofp_field(ipv6_nd_sll, SLL)];
+			   false -> []
+		   end;
 header_fields(#ndp_na{src_addr = Addr, tll = TLL}) ->
-    [ofp_field(ipv6_nd_target, Addr)] ++ %% not a typo, target = src_addr
-    [ofp_field(ipv6_nd_tll, TLL) || TLL =/= undefined];
+    [ofp_field(ipv6_nd_target, Addr)] %% not a typo, target = src_addr
+	%% construct is not in language syntax, compiles due to error in erlang parser
+	%%++ [ofp_field(ipv6_nd_tll, TLL) || TLL =/= undefined];
+		++ case TLL =/= undefined of
+			   true -> [ofp_field(ipv6_nd_tll, TLL)];
+			   false -> []
+		   end;
 header_fields(#tcp{sport = SPort,
                    dport = DPort}) ->
     [ofp_field(tcp_src, <<SPort:16>>),

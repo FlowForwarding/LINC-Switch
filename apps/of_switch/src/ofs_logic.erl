@@ -271,46 +271,46 @@ handle_role(#ofp_role_request{role = equal,
                               generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections} = State) ->
-            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
-                                        Connection#connection{role = equal}),
-            RoleReply = #ofp_role_reply{role = equal,
-                                        generation_id = GenerationId},
-            {RoleReply, State#state{connections = NewConns}};
+    NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
+				Connection#connection{role = equal}),
+    RoleReply = #ofp_role_reply{role = equal,
+				generation_id = GenerationId},
+    {RoleReply, State#state{connections = NewConns}};
 handle_role(#ofp_role_request{role = Role,
                               generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections,
                    generation_id = CurrentGenId} = State) ->
-            if
-                (CurrentGenId /= undefined)
-                andalso (GenerationId - CurrentGenId < 0) ->
-                    ErrorReply = #ofp_error{type = role_request_failed,
-                                            code = stale},
-                    {ErrorReply, State};
-                true ->
-                    NewConn = Connection#connection{role = Role},
-                    NewConns = lists:keyreplace(Pid, #connection.pid,
-                                                Connections, NewConn),
-                    case Role of
-                        master ->
-                            Fun = fun(Conn = #connection{role = R}) ->
-                                          case R of
-                                              master ->
-                                                  Conn#connection{role = slave};
-                                              _ ->
-                                                  Conn
-                                          end
-                                  end,
-                            NewConns2 = lists:map(Fun, NewConns);
-                        slave ->
-                            NewConns2 = NewConns
-                    end,
-                    NewState = State#state{connections = NewConns2,
-                                           generation_id = GenerationId},
-                    RoleReply = #ofp_role_reply{role = Role,
-                                                generation_id = GenerationId},
-                    {RoleReply, NewState}
-            end.
+    if
+	(CurrentGenId /= undefined)
+	andalso (GenerationId - CurrentGenId < 0) ->
+	    ErrorReply = #ofp_error{type = role_request_failed,
+				    code = stale},
+	    {ErrorReply, State};
+	true ->
+	    NewConn = Connection#connection{role = Role},
+	    NewConns = lists:keyreplace(Pid, #connection.pid,
+					Connections, NewConn),
+	    case Role of
+		master ->
+		    Fun = fun(Conn = #connection{role = R}) ->
+				  case R of
+				      master ->
+					  Conn#connection{role = slave};
+				      _ ->
+					  Conn
+				  end
+			  end,
+		    NewConns2 = lists:map(Fun, NewConns);
+		slave ->
+		    NewConns2 = NewConns
+	    end,
+	    NewState = State#state{connections = NewConns2,
+				   generation_id = GenerationId},
+	    RoleReply = #ofp_role_reply{role = Role,
+					generation_id = GenerationId},
+	    {RoleReply, NewState}
+    end.
 
 should_do_flow_mod_packet_out(delete, _) ->
     false;

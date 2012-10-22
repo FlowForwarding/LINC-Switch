@@ -259,19 +259,28 @@ decide_on_version(ReceivedVersion) ->
 
 -spec handle_role(ofp_role_request(), connection(), #state{}) ->
                          {ofp_role_reply(), #state{}}.
+handle_role(#ofp_role_request{role = nochange,
+                              generation_id = GenerationId},
+            #connection{pid = Pid},
+            #state{connections = Connections} = State) ->
+    #connection{role=MyRole} = lists:keyfind(Pid,#connection.pid,Connections),
+    RoleReply = #ofp_role_reply{role = MyRole,
+				generation_id = GenerationId},
+    {RoleReply, State};
+handle_role(#ofp_role_request{role = equal,
+                              generation_id = GenerationId},
+            #connection{pid = Pid} = Connection,
+            #state{connections = Connections} = State) ->
+            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
+                                        Connection#connection{role = equal}),
+            RoleReply = #ofp_role_reply{role = equal,
+                                        generation_id = GenerationId},
+            {RoleReply, State#state{connections = NewConns}};
 handle_role(#ofp_role_request{role = Role,
                               generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections,
                    generation_id = CurrentGenId} = State) ->
-    case Role of
-        equal ->
-            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
-                                        Connection#connection{role = equal}),
-            RoleReply = #ofp_role_reply{role = Role,
-                                        generation_id = GenerationId},
-            {RoleReply, State#state{connections = NewConns}};
-        _ ->
             if
                 (CurrentGenId /= undefined)
                 andalso (GenerationId - CurrentGenId < 0) ->
@@ -301,8 +310,7 @@ handle_role(#ofp_role_request{role = Role,
                     RoleReply = #ofp_role_reply{role = Role,
                                                 generation_id = GenerationId},
                     {RoleReply, NewState}
-            end
-    end.
+            end.
 
 should_do_flow_mod_packet_out(delete, _) ->
     false;

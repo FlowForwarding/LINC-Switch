@@ -170,7 +170,7 @@ handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
 handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
                State) ->
-    FeaturesReply = #ofp_features_reply{datapath_mac = <<0:48>>,
+    FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
                                         n_tables = 255},
@@ -356,3 +356,11 @@ do_send(Socket, Message) ->
 
 send_reply(Socket, Request, ReplyBody) ->
     do_send(Socket, Request#ofp_message{body = ReplyBody}).
+
+get_datapath_mac() ->
+    {ok,Ifs}=inet:getifaddrs(),
+    [MAC|_] = [hw_addr(Ps)||{_IF,Ps}<-Ifs, lists:keymember(hwaddr,1,Ps)],
+    list_to_binary(MAC).
+    
+hw_addr(Ps) ->
+    element(2,lists:keyfind(hwaddr,1,Ps)).

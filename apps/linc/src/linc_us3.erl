@@ -190,22 +190,18 @@ ofp_flow_mod(State, #ofp_flow_mod{command = add,
                           table_id = TableId,
                           priority = Priority,
                           flags = Flags} = FlowMod) ->
-    AddFlowEntry =
-        fun(#linc_flow_table{entries = Entries} = Table) ->
-                NewEntry = linc_us3_flow:create_flow_entry(FlowMod,
-                                                                TableId),
-                NewEntries = ordsets:add_element(NewEntry, Entries),
-                NewTable = Table#linc_flow_table{entries = NewEntries},
-                ets:insert(flow_tables, NewTable)
-        end,
-    Tables = linc_us3_flow:get_flow_tables(TableId),
-    case linc_us3_flow:has_priority_overlap(Flags, Priority, Tables) of
+    [Table] = linc_us3_flow:get_flow_tables(TableId),
+    case linc_us3_flow:has_priority_overlap(Flags, Priority, Table) of
         true ->
             OverlapError = #ofp_error_msg{type = flow_mod_failed,
                                           code = overlap},
             {error, OverlapError, State};
         false ->
-            lists:foreach(AddFlowEntry, Tables),
+            #flow_table{entries = Entries} = Table,
+            NewEntry = ofs_userspace_flow:create_flow_entry(FlowMod, TableId),
+            NewEntries = ordsets:add_element(NewEntry, Entries),
+            NewTable = Table#flow_table{entries = NewEntries},
+            ets:insert(flow_tables, NewTable),
             {ok, State}
     end;
 ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->

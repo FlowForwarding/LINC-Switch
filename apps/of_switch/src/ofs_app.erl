@@ -19,9 +19,24 @@
 %% @doc Start the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
+    case application:get_env(of_switch, of_config) of
+        {ok, enabled} ->
+            ok = application:start(ssh),
+            ok = application:start(enetconf),
+            ok = application:start(of_config);
+        _ ->
+            ok
+    end,
     ofs_sup:start_link().
 
 %% @doc Stop the application
 -spec stop(any()) -> ok.
 stop(_State) ->
-    ok.
+    case application:get_env(of_switch, of_config) of
+        {ok, enabled} ->
+            ok = application:stop(of_config),
+            ok = application:stop(enetconf),
+            ok = application:stop(ssh);
+        _ ->
+            ok
+    end.

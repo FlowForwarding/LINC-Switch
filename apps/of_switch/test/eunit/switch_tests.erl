@@ -23,65 +23,65 @@ teardown() ->
     application:stop(of_switch),
     application:stop(mnesia).
 
-match_and_group_test() ->
-    setup(),
-    meck:new(ofs_userspace_port, [passthrough]),
-    GroupId = 100,
-    OutPort = 1,
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
-    Pkt = #ofs_pkt{fields = Match,
-                   actions = []},
-    FlowMod = #ofp_flow_mod{
-      command = add,
-      table_id = 0,
-      priority = 1,
-      cookie = cookie,
-      match = Match,
-      instructions = [#ofp_instruction_write_actions{
-                         actions = [
-                                    %% this action should be omitted in the
-                                    %% favour of group action
-                                    #ofp_action_output{
-                                       port = 200
-                                      },
-                                    #ofp_action_group{
-                                                       group_id = GroupId
-                                                     }
-                                   ]
-                        }]},
-    GroupMod = #ofp_group_mod{
-      command = add,
-      group_id = GroupId,
-      type = all,
-      buckets = [#ofp_bucket{
-                    actions = [#ofp_action_output{
-                                  port = OutPort
-                                 }]
-                   }]
-     },
-    meck:expect(ofs_userspace_port, send_to_wire,
-                fun(Port, Queue, OutPkt) ->
-                    ?assertEqual(OutPort, Port),
-                    ?assertEqual(0, Queue),
-                    ?assertEqual(1, length(OutPkt#ofs_pkt.actions))
-                end),
-    ?assertEqual({ok, state}, ofs_userspace:ofp_flow_mod(state, FlowMod)),
-    ?assertEqual({ok, state}, ofs_userspace:ofp_group_mod(state, GroupMod)),
-    ?assertEqual({match, 0, output}, ofs_userspace_routing:do_route(Pkt, 0)),
-    meck:unload(ofs_userspace_port),
-    teardown().
+%% match_and_group_test() ->
+%%     setup(),
+%%     meck:new(ofs_userspace_port, [passthrough]),
+%%     GroupId = 100,
+%%     OutPort = 1,
+%%     Match = #ofp_match{fields = [#ofp_field{
+%%                                     name = eth_src,
+%%                                     value = <<1,2,3>>
+%%                                    }]},
+%%     Pkt = #ofs_pkt{fields = Match,
+%%                    actions = []},
+%%     FlowMod = #ofp_flow_mod{
+%%       command = add,
+%%       table_id = 0,
+%%       priority = 1,
+%%       cookie = cookie,
+%%       match = Match,
+%%       instructions = [#ofp_instruction_write_actions{
+%%                          actions = [
+%%                                     %% this action should be omitted in the
+%%                                     %% favour of group action
+%%                                     #ofp_action_output{
+%%                                        port = 200
+%%                                       },
+%%                                     #ofp_action_group{
+%%                                                        group_id = GroupId
+%%                                                      }
+%%                                    ]
+%%                         }]},
+%%     GroupMod = #ofp_group_mod{
+%%       command = add,
+%%       group_id = GroupId,
+%%       type = all,
+%%       buckets = [#ofp_bucket{
+%%                     actions = [#ofp_action_output{
+%%                                   port = OutPort
+%%                                  }]
+%%                    }]
+%%      },
+%%     meck:expect(ofs_userspace_port, send_to_wire,
+%%                 fun(Port, Queue, OutPkt) ->
+%%                     ?assertEqual(OutPort, Port),
+%%                     ?assertEqual(0, Queue),
+%%                     ?assertEqual(1, length(OutPkt#ofs_pkt.actions))
+%%                 end),
+%%     ?assertEqual({ok, state}, ofs_userspace:ofp_flow_mod(state, FlowMod)),
+%%     ?assertEqual({ok, state}, ofs_userspace:ofp_group_mod(state, GroupMod)),
+%%     ?assertEqual({match, 0, output}, ofs_userspace_routing:do_route(Pkt, 0)),
+%%     meck:unload(ofs_userspace_port),
+%%     teardown().
 
 match_and_apply_actions_test() ->
     meck:new(ofs_userspace_port, [passthrough]),
     setup(),
     OutPort = 1,
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
+    Match = #ofp_match{fields = [#ofp_field{
+                                    name = eth_src,
+                                    value = <<1,2,3>>
+                                   }]},
     Pkt = #ofs_pkt{fields = Match,
                    actions = []},
     FlowMod = #ofp_flow_mod{command = add,
@@ -111,10 +111,10 @@ match_and_apply_actions_test() ->
 
 match_but_drop_test() ->
     setup(),
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
+    Match = #ofp_match{fields = [#ofp_field{
+                                    name = eth_src,
+                                    value = <<1,2,3>>
+                                   }]},
     Pkt = #ofs_pkt{fields = Match},
     FlowMod = #ofp_flow_mod{command = add,
                             table_id = 0,
@@ -128,10 +128,10 @@ match_but_drop_test() ->
 
 match_and_goto_test() ->
     setup(),
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
+    Match = #ofp_match{fields = [#ofp_field{
+                                    name = eth_src,
+                                    value = <<1,2,3>>
+                                   }]},
     Pkt = #ofs_pkt{fields = Match},
     FlowMod = #ofp_flow_mod{command = add,
                             table_id = 0,
@@ -150,10 +150,10 @@ match_and_clear_actions_with_queue_test() ->
     setup(),
     OutPort = 1,
     QueueId = 1,
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
+    Match = #ofp_match{fields = [#ofp_field{
+                                    name = eth_src,
+                                    value = <<1,2,3>>
+                                   }]},
     Pkt = #ofs_pkt{fields = Match,
                    actions = [#ofp_action_copy_ttl_in{},
                               #ofp_action_pop_vlan{}]},
@@ -192,10 +192,10 @@ match_and_output_with_metadata_test() ->
     FlowMetadata = <<1,1,1,1,1,1,1,1>>,
     FlowMask = <<1,1,1,0,0,0,0,1>>,
     ResultMetadata = <<1,1,1,0,1,0,0,1>>,
-    Match = #ofp_match{oxm_fields = [#ofp_field{
-                                        field = eth_src,
-                                        value = <<1,2,3>>
-                                       }]},
+    Match = #ofp_match{fields = [#ofp_field{
+                                    name = eth_src,
+                                    value = <<1,2,3>>
+                                   }]},
     Pkt = #ofs_pkt{fields = Match,
                    metadata = PktMetadata},
     FlowMod = #ofp_flow_mod{command = add,
@@ -402,7 +402,7 @@ group_mod_test() ->
     GroupAdd = #ofp_group_mod{command = add, group_id = 1, buckets = []},
     ?assertEqual({ok, State},
                  ofs_userspace:ofp_group_mod(State, GroupAdd)),
-    GroupExists = {error,{ofp_error,group_mod_failed,group_exists,<<>>},[]},
+    GroupExists = {error,{ofp_error_msg,group_mod_failed,group_exists,<<>>},[]},
     ?assertEqual(GroupExists,
                  ofs_userspace:ofp_group_mod(State, GroupAdd)),
 
@@ -413,7 +413,7 @@ group_mod_test() ->
     ?assertEqual(some, ets:lookup_element(group_table, 1, #group.buckets)),
 
     GroupModBad = #ofp_group_mod{command = modify, group_id = 99, buckets = []},
-    GroupModFailed = {error,{ofp_error,group_mod_failed,unknown_group,<<>>},[]},
+    GroupModFailed = {error,{ofp_error_msg,group_mod_failed,unknown_group,<<>>},[]},
     ?assertEqual(GroupModFailed,
                  ofs_userspace:ofp_group_mod(State, GroupModBad)),
 

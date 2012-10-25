@@ -267,7 +267,9 @@ init({OfsPortNo, ConfigOpts}) ->
                                              {filter, ""}]),
                     {S, I} = case os:type() of
                                  {unix, darwin} ->
-                                     darwin_raw_socket(Interface);
+                                     bpf_raw_socket(Interface);
+                                 {unix, netbsd} ->
+                                     bpf_raw_socket(Interface);
                                  {unix, linux} ->
                                      linux_raw_socket(Interface)
                              end,
@@ -391,20 +393,20 @@ update_port_received_counters(PortNum, Bytes) ->
                         {#ofp_port_stats.rx_bytes, Bytes}]).
 
 %% TODO: Add typespecs to bpf and procket in general to avoid:
-%% ofs_userspace_port.erl:446: Function darwin_raw_socket/1 has no local return
+%% ofs_userspace_port.erl:446: Function bpf_raw_socket/1 has no local return
 %% warnings in dialyzer.
--spec darwin_raw_socket(string()) -> tuple(integer(), 0).
-darwin_raw_socket(Interface) ->
+-spec bpf_raw_socket(string()) -> tuple(integer(), 0).
+bpf_raw_socket(Interface) ->
     case bpf:open(Interface) of
         {ok, Socket, _Length} ->
             bpf:ctl(Socket, setif, Interface),
             {Socket, 0};
         {error, Error} ->
-            ?ERROR("Cannot open darwin raw socket for"
+            ?ERROR("Cannot open bpf raw socket for"
                         " interface ~p because: ~p", [Interface, Error]),
             {0, 0};
         Any ->
-            ?ERROR("Cannot open darwin raw socket for"
+            ?ERROR("Cannot open bpf raw socket for"
                         " interface ~p because: ~p", [Interface, Any]),
             {0, 0}
     end.
@@ -451,6 +453,8 @@ queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
 send_to_wire(Socket, Ifindex, Frame) ->
     case os:type() of
         {unix, darwin} ->
+            ofs_userspace_port_procket:send(Socket, Frame);
+        {unix, netbsd} ->
             ofs_userspace_port_procket:send(Socket, Frame);
         {unix, linux} ->
             packet:send(Socket, Ifindex, Frame)

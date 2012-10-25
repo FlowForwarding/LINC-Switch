@@ -30,7 +30,8 @@ start_link() ->
 init([]) ->
     UserspaceQueueSup = {ofs_userspace_queue_sup,
                          {ofs_userspace_queue_sup, start_link, []},
-                         permanent, 5000, supervisor, [ofs_userspace_queue_sup]},
+                         permanent, 5000, supervisor,
+                         [ofs_userspace_queue_sup]},
     UserspacePortSup = {ofs_userspace_port_sup,
                         {ofs_userspace_port_sup, start_link, []},
                         permanent, 5000, supervisor, [ofs_userspace_port_sup]},
@@ -40,9 +41,11 @@ init([]) ->
     ReceiverSup = {ofs_receiver_sup,
                    {ofs_receiver_sup, start_link, []},
                    permanent, 5000, supervisor, [ofs_receiver_sup]},
-    {ok, {{one_for_all, 5, 10}, [
-                                 UserspaceQueueSup,
+    OFConfig = {linc_ofconfig,
+                {linc_ofconfig, start_link, []},
+                permanent, 5000, worker, [linc_ofconfig]},
+    {ok, {{one_for_all, 5, 10}, [UserspaceQueueSup,
                                  UserspacePortSup,
                                  ReceiverSup,
-                                 SwitchLogic
-                                ]}}.
+                                 SwitchLogic,
+                                 OFConfig]}}.

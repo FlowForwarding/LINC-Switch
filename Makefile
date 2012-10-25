@@ -1,14 +1,17 @@
-.PHONY: rel compile get-deps test clean deep-clean
+.PHONY: rel compile get-deps update-deps test clean deep-clean
 
 rel: compile
 	@./rebar generate -f
 	@./scripts/post_generate_hook
 
-compile: get-deps
+compile: get-deps update-deps
 	@./rebar compile
 
 get-deps:
 	@./rebar get-deps
+
+update-deps:
+	@./rebar update-deps
 
 test: compile
 	@./rebar skip_deps=true eunit

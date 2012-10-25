@@ -157,8 +157,8 @@ match_flow_entries(_Pkt, _FlowTableId, []) ->
 -spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{})
                       -> match() | nomatch.
 match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#ofp_match.oxm_fields,
-                      FlowEntry#flow_entry.match#ofp_match.oxm_fields) of
+    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
+                      FlowEntry#flow_entry.match#ofp_match.fields) of
         true ->
             apply_instructions(FlowTableId,
                                FlowEntry#flow_entry.instructions,
@@ -177,8 +177,8 @@ fields_match(PktFields, FlowFields) ->
               end, FlowFields).
 
 %% TODO: check for different types and classes
-two_fields_match(#ofp_field{field = F1},
-                 #ofp_field{field = F2}) when F1 =/= F2 ->
+two_fields_match(#ofp_field{name = F1},
+                 #ofp_field{name = F2}) when F1 =/= F2 ->
     false;
 two_fields_match(#ofp_field{value=Val},
                  #ofp_field{value=Val, has_mask = false}) ->

@@ -105,7 +105,7 @@ handle_cast({send, #ofp_message{body = Body} = Message},
             #state{connections = Connections} = State) ->
     Target = if
                  (is_record(Body, ofp_port_status))
-                 orelse (is_record(Body, ofp_error)) ->
+                 orelse (is_record(Body, ofp_error_msg)) ->
                      Connections;
                  (is_record(Body, ofp_packet_in))
                  orelse (is_record(Body, ofp_flow_removed)) ->
@@ -152,8 +152,8 @@ handle_message(#ofp_message{version = ReceivedVersion,
                                               Connections, NewConnection),
             State#state{connections = NewConnections};
         error ->
-            send_reply(Socket, Message, #ofp_error{type = hello_failed,
-                                                   code = incompatible}),
+            send_reply(Socket, Message, #ofp_error_msg{type = hello_failed,
+                                                       code = incompatible}),
             State
     end;
 handle_message(_Message, #connection{version = undefined}, State) ->
@@ -162,7 +162,7 @@ handle_message(_Message, #connection{version = undefined}, State) ->
 handle_message(#ofp_message{body = #ofp_hello{}}, _, State) ->
     %% Drop hello messages once version is known.
     State;
-handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
+handle_message(#ofp_message{body = #ofp_error_msg{type = hello_failed}},
                #connection{pid = Pid}, State) ->
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
@@ -200,8 +200,8 @@ handle_message(#ofp_message{body = RequestBody} = Request,
                            is_record(RequestBody, ofp_port_mod);
                            is_record(RequestBody, ofp_table_mod) ->
     %% Don't allow slave controllers to modify flows, groups, ports and tables.
-    send_reply(Socket, Request, #ofp_error{type = bad_request,
-                                           code = is_slave}),
+    send_reply(Socket, Request, #ofp_error_msg{type = bad_request,
+                                               code = is_slave}),
     State;
 handle_message(#ofp_message{body = #ofp_flow_mod{} = FlowMod} = Request,
                Connection,
@@ -284,8 +284,8 @@ handle_role(#ofp_role_request{role = Role,
     if
         (CurrentGenId /= undefined)
         andalso (GenerationId - CurrentGenId < 0) ->
-            ErrorReply = #ofp_error{type = role_request_failed,
-                                    code = stale},
+            ErrorReply = #ofp_error_msg{type = role_request_failed,
+                                        code = stale},
             {ErrorReply, State};
         true ->
             NewConn = Connection#connection{role = Role},
@@ -337,7 +337,7 @@ handle_in_backend(#ofp_message{body = RequestBody} = Request,
                 send_reply(Socket, Request, ErrorMessage)
         end,
         State#state{backend_state = NewBackendState}
-    catch #ofp_error{} = ErrorMsg ->
+    catch #ofp_error_msg{} = ErrorMsg ->
         send_reply(Socket, Request, ErrorMsg),
         State#state{backend_state = BackendState}
     end.

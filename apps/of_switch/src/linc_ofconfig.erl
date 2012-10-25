@@ -44,7 +44,6 @@
          handle_get/2]).
 
 -include_lib("of_config/include/of_config.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
 -include("ofs_userspace.hrl").
 
 -record(ofconfig, {

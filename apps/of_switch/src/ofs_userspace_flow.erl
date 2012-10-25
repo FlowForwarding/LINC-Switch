@@ -113,11 +113,10 @@ fm_non_strict_match(FlowEntry, #ofp_flow_mod{match = Match,
         andalso
         non_strict_match(FlowEntry, Match).
 
-non_strict_match(#flow_entry{match = #ofp_match{type = oxm,
-                                                oxm_fields = EntryFields}},
-                 #ofp_match{type = oxm, oxm_fields = FlowModFields}) ->
-    lists:all(fun(#ofp_field{field = Field} = FlowModField) ->
-                      case lists:keyfind(Field, #ofp_field.field, EntryFields) of
+non_strict_match(#flow_entry{match = #ofp_match{fields = EntryFields}},
+                 #ofp_match{fields = FlowModFields}) ->
+    lists:all(fun(#ofp_field{name = Field} = FlowModField) ->
+                      case lists:keyfind(Field, #ofp_field.name, EntryFields) of
                           #ofp_field{} = EntryField ->
                               is_more_specific(EntryField, FlowModField);
                           false ->
@@ -125,7 +124,7 @@ non_strict_match(#flow_entry{match = #ofp_match{type = oxm,
                       end
               end, FlowModFields);
 non_strict_match(_FlowEntry, _Match) ->
-    throw(#ofp_error{type = bad_match, code = bad_type}).
+    throw(#ofp_error_msg{type = bad_match, code = bad_type}).
 
 cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
     mask_match(Cookie1, Cookie2, CookieMask).
@@ -149,7 +148,7 @@ modify_flow_entry(#flow_entry{} = Entry,
 
 is_more_specific(#ofp_field{class = Cls1}, #ofp_field{class = Cls2}) when
       Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
-    throw(#ofp_error{type = bad_match, code = bad_field});
+    throw(#ofp_error_msg{type = bad_match, code = bad_field});
 is_more_specific(#ofp_field{has_mask = true},
                  #ofp_field{has_mask = false}) ->
     false; %% masked is less specific than non-masked

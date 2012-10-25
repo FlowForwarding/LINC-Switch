@@ -22,8 +22,7 @@ start(_StartType, _StartArgs) ->
     case application:get_env(of_switch, of_config) of
         {ok, enabled} ->
             ok = application:start(ssh),
-            ok = application:start(enetconf),
-            ok = application:start(of_config);
+            ok = application:start(enetconf);
         _ ->
             ok
     end,
@@ -34,7 +33,6 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     case application:get_env(of_switch, of_config) of
         {ok, enabled} ->
-            ok = application:stop(of_config),
             ok = application:stop(enetconf),
             ok = application:stop(ssh);
         _ ->

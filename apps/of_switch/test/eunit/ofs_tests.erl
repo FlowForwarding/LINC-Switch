@@ -79,6 +79,8 @@ setup() ->
     application:load(of_switch),
     application:set_env(of_switch, controllers, [{"localhost", 6634}]),
     application:set_env(of_switch, ports, []),
+
+    application:start(mnesia),
     application:start(of_switch),
 
     %% Wait for connection
@@ -94,7 +96,8 @@ teardown(Config) ->
     of_controller:stop(ControllerPid),
 
     %% Stop the switch
-    application:stop(of_switch).
+    application:stop(of_switch),
+    application:stop(mnesia).
 
 %%%-----------------------------------------------------------------------------
 %%% Helper functions

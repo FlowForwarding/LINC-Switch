@@ -95,21 +95,22 @@ apply_action_list(_TableId, [], Pkt) ->
 -spec apply_flow(#ofs_pkt{}, integer()) -> match() | miss().
 apply_flow(Pkt, FlowId) ->
     [FlowTable] = ets:lookup(flow_tables, FlowId),
-    FlowTableId = FlowTable#flow_table.id,
-    case match_flow_entries(Pkt, FlowTableId, FlowTable#flow_table.entries) of
+    FlowTableId = FlowTable#linc_flow_table.id,
+    case match_flow_entries(Pkt, FlowTableId,
+                            FlowTable#linc_flow_table.entries) of
         {match, goto, NextFlowId, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
             {match, goto, NextFlowId, NewPkt};
         {match, Action, NewPkt} ->
             update_flow_table_match_counters(FlowTableId),
             {match, Action, NewPkt};
-        table_miss when FlowTable#flow_table.config == drop ->
+        table_miss when FlowTable#linc_flow_table.config == drop ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, drop};
-        table_miss when FlowTable#flow_table.config == controller ->
+        table_miss when FlowTable#linc_flow_table.config == controller ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, controller};
-        table_miss when FlowTable#flow_table.config == continue ->
+        table_miss when FlowTable#linc_flow_table.config == continue ->
             update_flow_table_miss_counters(FlowTableId),
             {table_miss, continue, FlowId + 1}
     end.
@@ -156,8 +157,8 @@ match_flow_entries(_Pkt, _FlowTableId, []) ->
 -spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{})
                       -> match() | nomatch.
 match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#ofp_match.oxm_fields,
-                      FlowEntry#flow_entry.match#ofp_match.oxm_fields) of
+    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
+                      FlowEntry#flow_entry.match#ofp_match.fields) of
         true ->
             apply_instructions(FlowTableId,
                                FlowEntry#flow_entry.instructions,
@@ -176,8 +177,8 @@ fields_match(PktFields, FlowFields) ->
               end, FlowFields).
 
 %% TODO: check for different types and classes
-two_fields_match(#ofp_field{field = F1},
-                 #ofp_field{field = F2}) when F1 =/= F2 ->
+two_fields_match(#ofp_field{name = F1},
+                 #ofp_field{name = F2}) when F1 =/= F2 ->
     false;
 two_fields_match(#ofp_field{value=Val},
                  #ofp_field{value=Val, has_mask = false}) ->

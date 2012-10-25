@@ -8,7 +8,7 @@
 
 %%% Stats functions ------------------------------------------------------------
 
-table_stats(#flow_table{id = Id, entries = Entries, config = Config}) ->
+table_stats(#linc_flow_table{id = Id, entries = Entries, config = Config}) ->
     TableName = list_to_binary(io_lib:format("Flow Table 0x~2.16.0b", [Id])),
     ActiveCount = length(Entries),
     [#flow_table_counter{packet_lookups = LookupCount,

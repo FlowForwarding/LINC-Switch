@@ -9,11 +9,10 @@
           pid :: pid(),
           socket :: port(),
           version :: integer(),
-          role = equal :: role()
+          role = equal :: equal | master | slave
          }).
 
 -type connection() :: #connection{}.
--type role() :: master | slave | equal.
 
 %%%-----------------------------------------------------------------------------
 %%% Logging macros

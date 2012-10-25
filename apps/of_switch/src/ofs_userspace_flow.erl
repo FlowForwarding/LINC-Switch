@@ -17,7 +17,7 @@
 
 %%% Flow mod functions ---------------------------------------------------------
 
--spec get_flow_tables(integer() | all) -> [#flow_table{}].
+-spec get_flow_tables(integer() | all) -> [#linc_flow_table{}].
 get_flow_tables(all) ->
     ets:tab2list(flow_tables);
 get_flow_tables(TableId) when is_integer(TableId) ->
@@ -56,19 +56,21 @@ apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
 
 modify_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
-      fun(#flow_table{entries = Entries} = Table) ->
+      fun(#linc_flow_table{entries = Entries} = Table) ->
               NewEntries = [modify_flow_entry(Entry, FlowMod, MatchFun)
                             || Entry <- Entries],
-              ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
+              ets:insert(flow_tables,
+                         Table#linc_flow_table{entries = NewEntries})
       end, get_flow_tables(TableId)).
 
 delete_entries(#ofp_flow_mod{table_id = TableId} = FlowMod, MatchFun) ->
     lists:foreach(
-      fun(#flow_table{entries = Entries} = Table) ->
+      fun(#linc_flow_table{entries = Entries} = Table) ->
               NewEntries = lists:filter(fun(Entry) ->
                                                 not MatchFun(Entry, FlowMod)
                                         end, Entries),
-              ets:insert(flow_tables, Table#flow_table{entries = NewEntries})
+              ets:insert(flow_tables,
+                         Table#linc_flow_table{entries = NewEntries})
       end, get_flow_tables(TableId)).
 
 -spec create_flow_entry(ofp_flow_mod(), integer()) -> #flow_entry{}.
@@ -93,7 +95,7 @@ has_priority_overlap(Flags, Priority, Tables) ->
         andalso
         lists:any(fun(Table) ->
                           lists:keymember(Priority, #flow_entry.priority,
-                                          Table#flow_table.entries)
+                                          Table#linc_flow_table.entries)
                   end, Tables).
 
 %% strict match: use all match fields (including the masks) and the priority
@@ -111,11 +113,10 @@ fm_non_strict_match(FlowEntry, #ofp_flow_mod{match = Match,
         andalso
         non_strict_match(FlowEntry, Match).
 
-non_strict_match(#flow_entry{match = #ofp_match{type = oxm,
-                                                oxm_fields = EntryFields}},
-                 #ofp_match{type = oxm, oxm_fields = FlowModFields}) ->
-    lists:all(fun(#ofp_field{field = Field} = FlowModField) ->
-                      case lists:keyfind(Field, #ofp_field.field, EntryFields) of
+non_strict_match(#flow_entry{match = #ofp_match{fields = EntryFields}},
+                 #ofp_match{fields = FlowModFields}) ->
+    lists:all(fun(#ofp_field{name = Field} = FlowModField) ->
+                      case lists:keyfind(Field, #ofp_field.name, EntryFields) of
                           #ofp_field{} = EntryField ->
                               is_more_specific(EntryField, FlowModField);
                           false ->
@@ -123,7 +124,7 @@ non_strict_match(#flow_entry{match = #ofp_match{type = oxm,
                       end
               end, FlowModFields);
 non_strict_match(_FlowEntry, _Match) ->
-    throw(#ofp_error{type = bad_match, code = bad_type}).
+    throw(#ofp_error_msg{type = bad_match, code = bad_type}).
 
 cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
     mask_match(Cookie1, Cookie2, CookieMask).
@@ -147,7 +148,7 @@ modify_flow_entry(#flow_entry{} = Entry,
 
 is_more_specific(#ofp_field{class = Cls1}, #ofp_field{class = Cls2}) when
       Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
-    throw(#ofp_error{type = bad_match, code = bad_field});
+    throw(#ofp_error_msg{type = bad_match, code = bad_field});
 is_more_specific(#ofp_field{has_mask = true},
                  #ofp_field{has_mask = false}) ->
     false; %% masked is less specific than non-masked

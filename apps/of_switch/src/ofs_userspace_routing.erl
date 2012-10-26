@@ -5,6 +5,11 @@
          apply_action_list/3]).
 
 -include("ofs_userspace.hrl").
+-include_lib("pkt/include/pkt.hrl").
+
+%% FIXME: Hack to make OF1.3 code compile under OF1.2
+-record(ofp_action_push_pbb, { seq = 6, ethertype :: integer() }).
+-record(ofp_action_pop_pbb, { seq = 3 }).
 
 %%%
 %%% Routing functions ----------------------------------------------------------
@@ -58,7 +63,7 @@ apply_action_list(TableId,
 %% Optional action
 %% Modifies top tag on MPLS stack to set ttl field to a value
 %% Nothing happens if packet had no MPLS header
-apply_action_list(TableId, [#ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
+apply_action_list(TableId, [Act = #ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
 	NewTTL = Act#ofp_action_set_mpls_ttl.mpls_ttl,
 	Pkt2 = ofs_packet_edit:find_and_edit(
 			 Pkt, mpls_tag,
@@ -66,7 +71,7 @@ apply_action_list(TableId, [#ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
 					 [TopTag | StackTail] = T#mpls_tag.stack,
 					 NewTag = TopTag#mpls_stack_entry{ ttl = NewTTL },
 					 T#mpls_tag{ stack = [NewTag | StackTail] }
-			 end),2
+			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
 %%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -251,7 +256,7 @@ apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt)
 	Pkt2 = ofs_packet_edit:find_and_edit(
 			 Pkt, ieee802_1q_tag,
 			 %% returning 'delete' atom will work for first VLAN tag only
-			 fun(_) -> 'delete' end),22
+			 fun(_) -> 'delete' end),
 	apply_action_list(TableId, Rest, Pkt2);
 
 %%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -330,181 +335,53 @@ apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
 			 end),
 	apply_action_list(TableId, Rest, Pkt2);
 
-+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  	340 	
-
-+%% Optional action
-
-  	341 	
-
-+%% Logically pushes a new PBB service instance header onto the packet (I-TAG TCI)
-
-  	342 	
-
-+%% and copies the original Ethernet addresses of the packet into the customer
-
-  	343 	
-
-+%% addresses (C-DA, C-SA) of the tag. The customer addresses of the I-TAG are in
-
-  	344 	
-
-+%% the location of the original Ethernet addresses of the encapsulated packet,
-
-  	345 	
-
-+%% therefore this operations can be seen as adding both the backbone MAC-in-MAC
-
-  	346 	
-
-+%% header and the I-SID field to the front of the packet. The backbone VLAN
-
-  	347 	
-
-+%% header (B-TAG) is not added via this operaion, it can be added via the Push VLAN
-
-  	348 	
-
-+%% header action. After this operation regular set-field actions can be used to
-
-  	349 	
-
-+%% modify the outer Ethernet addresses B-DA and B-SA
-
-  	350 	
-
-+%% picture at http://www.carrierethernetstudyguide.org/MEF SG/pages/2transport/studyguide_2-1-1-3.html
-
-  	351 	
-
-+apply_action_list(TableId, [#ofp_action_push_pbb{ ethertype = EtherType } | Rest], Pkt) ->
-
-  	352 	
-
-+  %% Cut out the first header to take addrs from it
-
-  	353 	
-
-+  [OriginalEther = #ether{} | _] = Pkt,
-
-  	354 	
-
-+  %% If there was PBB tag, copy isid from it
-
-  	355 	
-
-+  case ofs_packet_edit:find(Pkt, pbb_ether) of
-
-  	356 	
-
-+    not_found ->
-
-  	357 	
-
-+      SetEISID = 1;
-
-  	358 	
-
-+    {_, PreviousPBB} ->
-
-  	359 	
-
-+      SetEISID = PreviousPBB#pbb_ether.encap_i_sid
-
-  	360 	
-
-+  end,
-
-  	361 	
-
-+  %% If there was VLAN tag, copy PCP from it
-
-  	362 	
-
-+  case ofs_packet_edit:find(Pkt, ieee802_1q_tag) of
-
-  	363 	
-
-+    not_found ->
-
-  	364 	
-
-+      SetVLANPCP = 0;
-
-  	365 	
-
-+    {_, PreviousVLAN} ->
-
-  	366 	
-
-+      SetVLANPCP = PreviousVLAN#ieee802_1q_tag.pcp
-
-  	367 	
-
-+  end,
-
-  	368 	
-
-+  %% Create the new header
-
-  	369 	
-
-+  H1 = #pbb_ether{
-
-  	370 	
-
-+      shost = OriginalEther#ether.shost, % copy src from original ether
-
-  	371 	
-
-+      dhost = OriginalEther#ether.dhost, % copy src from original ether
-
-  	372 	
-
-+      b_tag = 0,
-
-  	373 	
-
-+      b_vid = 1,
-
-  	374 	
-
-+      encap_flag_pcp = SetVLANPCP,
-
-  	375 	
-
-+      encap_flag_dei = 0,
-
-  	376 	
-
-+      encap_i_sid = SetEISID
-
-  	377 	
-
-+       },
-
-  	378 	
-
-+  %% prepending a new ethernet header
-
-  	379 	
-
-+  Pkt2 = [H1 | Pkt],
-
-  	380 	
-
-+  apply_action_list(TableId, Rest, Pkt2);
-
-  	381 	
-
-+
-
-  	382 	
-
-+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  	383 	
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% Optional action
+%% Logically pushes a new PBB service instance header onto the packet (I-TAG TCI)
+%% and copies the original Ethernet addresses of the packet into the customer
+%% addresses (C-DA, C-SA) of the tag. The customer addresses of the I-TAG are in
+%% the location of the original Ethernet addresses of the encapsulated packet,
+%% therefore this operations can be seen as adding both the backbone MAC-in-MAC
+%% header and the I-SID field to the front of the packet. The backbone VLAN
+%% header (B-TAG) is not added via this operaion, it can be added via the Push VLAN
+%% header action. After this operation regular set-field actions can be used to
+%% modify the outer Ethernet addresses B-DA and B-SA
+%% picture at http://www.carrierethernetstudyguide.org/MEF SG/pages/2transport/studyguide_2-1-1-3.html
+apply_action_list(TableId, [#ofp_action_push_pbb{} | Rest], Pkt) ->
+	%% Cut out the first header to take addrs from it
+	[OriginalEther = #ether{} | _] = Pkt,
+
+	%% If there was PBB tag, copy isid from it
+	case ofs_packet_edit:find(Pkt, pbb_ether) of
+		not_found ->
+			SetEISID = 1;
+		{_, PreviousPBB} ->
+			SetEISID = PreviousPBB#pbb_ether.encap_i_sid
+	end,
+
+	%% If there was VLAN tag, copy PCP from it
+	case ofs_packet_edit:find(Pkt, ieee802_1q_tag) of
+		not_found ->
+			SetVLANPCP = 0;
+		{_, PreviousVLAN} ->
+			SetVLANPCP = PreviousVLAN#ieee802_1q_tag.pcp
+	end,
+	%% Create the new header
+	H1 = #pbb_ether{
+			shost = OriginalEther#ether.shost, % copy src from original ether
+			dhost = OriginalEther#ether.dhost, % copy src from original ether
+			b_tag = 0,
+			b_vid = 1,
+			encap_flag_pcp = SetVLANPCP,
+			encap_flag_dei = 0,
+			encap_i_sid = SetEISID
+		   },
+
+	%% prepending a new ethernet header
+	Pkt2 = [H1 | Pkt],
+	apply_action_list(TableId, Rest, Pkt2);
+
+%%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %% Optional action
 %% Logically pops up the outermost PBB service header from the packet (I-TAG TCI)
@@ -517,8 +394,8 @@ apply_action_list(TableId, [#ofp_action_pop_pbb{} | Rest], Pkt) ->
 	Pkt2 = case Pkt of
 			   [PBBEther = #pbb_ether{}, Ether | Rest] ->
 				   Ether2 = Ether#ether{
-							  saddr = PBBEther#pbb_ether.saddr,
-							  daddr = PBBEther#pbb_ether.daddr
+							  shost = PBBEther#pbb_ether.shost,
+							  dhost = PBBEther#pbb_ether.dhost
 							 },
 				   [Ether2 | Rest];
 			   _ ->

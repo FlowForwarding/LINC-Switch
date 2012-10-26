@@ -11,7 +11,7 @@
 
 -define(SUPPORTED_WRITE_ACTIONS, [output,
                                   group,
-                                  set_queue
+                                  set_queue,
                                   set_mpls_ttl,
                                   dec_mpls_ttl,
                                   set_nw_ttl,

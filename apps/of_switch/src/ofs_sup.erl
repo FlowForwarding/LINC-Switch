@@ -28,8 +28,9 @@ start_link() ->
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
+    {ok, {BackendMod, BackendOpts}} = application:get_env(of_switch, backend),
     SwitchLogic = {ofs_logic,
-                   {ofs_logic, start_link, [ofs_userspace, []]},
+                   {ofs_logic, start_link, [BackendMod, BackendOpts]},
                    permanent, 5000, worker, [ofs_logic]},
     ReceiverSup = {ofs_receiver_sup,
                    {ofs_receiver_sup, start_link, []},

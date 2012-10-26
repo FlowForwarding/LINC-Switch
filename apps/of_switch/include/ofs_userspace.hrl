@@ -22,8 +22,8 @@
                                   pop_vlan,
                                   push_mpls,
                                   pop_mpls,
-								  push_pbb,
-								  pop_pbb,
+                                  push_pbb,
+                                  pop_pbb,
                                   set_field
                                  ]).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).

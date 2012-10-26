@@ -11,18 +11,20 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([
-         route/1,
+-export([route/1,
          add_port/2,
          remove_port/1,
          parse_ofs_pkt/2,
          get_group_stats/0,
-         get_group_stats/1
-        ]).
+         get_group_stats/1]).
 
 %% gen_switch callbacks
 -export([start/1,
-         ofp_flow_mod/2,
+         stop/1,
+         handle_message/2]).
+
+%% Handle all message types
+-export([ofp_flow_mod/2,
          ofp_table_mod/2,
          ofp_port_mod/2,
          ofp_group_mod/2,
@@ -37,11 +39,9 @@
          ofp_queue_stats_request/2,
          ofp_group_stats_request/2,
          ofp_group_desc_stats_request/2,
-         ofp_group_features_stats_request/2,
-         stop/1]).
+         ofp_group_features_stats_request/2]).
 
 -include_lib("pkt/include/pkt.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
 -include("ofs_userspace.hrl").
 
 -record(state, {}).
@@ -83,8 +83,7 @@ parse_ofs_pkt(Binary, PortNum) ->
             ++ ofs_userspace_convert:packet_fields(Packet),
         #ofs_pkt{packet = Packet,
                  fields =
-                     #ofp_match{type = oxm,
-                                oxm_fields = Fields},
+                     #ofp_match{fields = Fields},
                  in_port = PortNum,
                  size = byte_size(Binary)}
     catch
@@ -115,11 +114,12 @@ get_group_stats(GroupId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
+    ofs_userspace_sup:start_link(),
     %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
-                                        {keypos, #flow_table.id},
+                                        {keypos, #linc_flow_table.id},
                                         {read_concurrency, true}]),
-    ets:insert(flow_tables, [#flow_table{id = Id}
+    ets:insert(flow_tables, [#linc_flow_table{id = Id}
                              || Id <- lists:seq(0, ?OFPTT_MAX)]),
     flow_table_counters = ets:new(flow_table_counters,
                                   [named_table, public,
@@ -174,24 +174,35 @@ stop(_State) ->
     ets:delete(group_stats),
     ok.
 
+-spec handle_message(state(), ofp_message_body()) ->
+                            {ok, state()} |
+                            {error, ofp_error_msg(), state()}.
+handle_message(State, Message) ->
+    MessageName = element(1, Message),
+    erlang:apply(?MODULE, MessageName, [State, Message]).
+
+%%%-----------------------------------------------------------------------------
+%%% Handling of messages
+%%%-----------------------------------------------------------------------------
+
 %% @doc Modify flow entry in the flow table.
 ofp_flow_mod(State, #ofp_flow_mod{command = add,
                           table_id = TableId,
                           priority = Priority,
                           flags = Flags} = FlowMod) ->
     AddFlowEntry =
-        fun(#flow_table{entries = Entries} = Table) ->
+        fun(#linc_flow_table{entries = Entries} = Table) ->
                 NewEntry = ofs_userspace_flow:create_flow_entry(FlowMod,
                                                                 TableId),
                 NewEntries = ordsets:add_element(NewEntry, Entries),
-                NewTable = Table#flow_table{entries = NewEntries},
+                NewTable = Table#linc_flow_table{entries = NewEntries},
                 ets:insert(flow_tables, NewTable)
         end,
     Tables = ofs_userspace_flow:get_flow_tables(TableId),
     case ofs_userspace_flow:has_priority_overlap(Flags, Priority, Tables) of
         true ->
-            OverlapError = #ofp_error{type = flow_mod_failed,
-                                      code = overlap},
+            OverlapError = #ofp_error_msg{type = flow_mod_failed,
+                                          code = overlap},
             {error, OverlapError, State};
         false ->
             lists:foreach(AddFlowEntry, Tables),
@@ -216,22 +227,22 @@ ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
 
 %% @doc Modify flow table configuration.
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
-                           {ok, #state{}} | {error, ofp_error(), #state{}}.
+                           {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
     lists:foreach(fun(FlowTable) ->
                           ets:insert(flow_tables,
-                                     FlowTable#flow_table{config = Config})
+                                     FlowTable#linc_flow_table{config = Config})
                   end, ofs_userspace_flow:get_flow_tables(TableId)),
     {ok, State}.
 
 %% @doc Modify port configuration.
 -spec ofp_port_mod(state(), ofp_port_mod()) ->
-      {ok, #state{}} | {error, ofp_error(), #state{}}.
+      {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
     case ofs_userspace_port:change_config(PortNo, PortMod) of
         {error, Code} ->
-            Error = #ofp_error{type = port_mod_failed,
-                               code = Code},
+            Error = #ofp_error_msg{type = port_mod_failed,
+                                   code = Code},
             {error, Error, State};
         ok ->
             {ok, State}
@@ -239,7 +250,7 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
-                           {ok, #state{}} | {error, ofp_error(), #state{}}.
+                           {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
     %% Add new entry to the group table, if entry with given group id is already
@@ -253,8 +264,8 @@ ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
         true ->
             {ok, State};
         false ->
-            {error, #ofp_error{type = group_mod_failed,
-                               code = group_exists}, State}
+            {error, #ofp_error_msg{type = group_mod_failed,
+                                   code = group_exists}, State}
     end;
 ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
@@ -266,8 +277,8 @@ ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type
             ets:insert(group_table, Entry),
             {ok, State};
         false ->
-            {error, #ofp_error{type = group_mod_failed,
-                               code = unknown_group}, State}
+            {error, #ofp_error_msg{type = group_mod_failed,
+                                   code = unknown_group}, State}
     end;
 ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
     %% Deletes existing entry in the group table, if entry with given group id
@@ -290,7 +301,7 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
 
 %% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
-                            {ok, #state{}} | {error, ofp_error(), #state{}}.
+                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
@@ -300,21 +311,21 @@ ofp_packet_out(State, #ofp_packet_out{actions = Actions,
 
 %% @doc Reply to echo request.
 -spec ofp_echo_request(state(), ofp_echo_request()) ->
-      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error(), #state{}}.
+      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
     EchoReply = #ofp_echo_reply{data = Data},
     {ok, EchoReply, State}.
 
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
-                                 {ok, #ofp_barrier_reply{}, #state{}} | {error, ofp_error(), #state{}}.
+                                 {ok, #ofp_barrier_reply{}, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_barrier_request(State, #ofp_barrier_request{}) ->
     BarrierReply = #ofp_barrier_reply{},
     {ok, BarrierReply, State}.
 
 %% @doc Get switch description statistics.
 -spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
-      {ok, ofp_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+      {ok, ofp_desc_stats_reply(), #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
     {ok, #ofp_desc_stats_reply{flags = [],
                                mfr_desc = get_env(manufacturer_desc),
@@ -327,10 +338,10 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
 %% @doc Get flow entry statistics.
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
                                     {ok, ofp_flow_stats_reply(), #state{}} |
-                                    {error, ofp_error(), #state{}}.
+                                    {error, ofp_error_msg(), #state{}}.
 ofp_flow_stats_request(State,
                        #ofp_flow_stats_request{table_id = TableId} = Request) ->
-    Stats = lists:flatmap(fun(#flow_table{id = TID, entries = Entries}) ->
+    Stats = lists:flatmap(fun(#linc_flow_table{id = TID, entries = Entries}) ->
                                   ofs_userspace_flow:get_flow_stats(TID,
                                                                     Entries,
                                                                     Request)
@@ -341,11 +352,11 @@ ofp_flow_stats_request(State,
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
                                          {ok, ofp_aggregate_stats_reply(),
                                           #state{}} |
-                                         {error, ofp_error(), #state{}}.
+                                         {error, ofp_error_msg(), #state{}}.
 ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
     Tables = ofs_userspace_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
     %% for each table, for each flow, collect matching stats
-    Reply = lists:foldl(fun(#flow_table{id = TableId, entries = Entries},
+    Reply = lists:foldl(fun(#linc_flow_table{id = TableId, entries = Entries},
                             OuterAcc) ->
                                 lists:foldl(fun(Entry, Acc) ->
                                                     ofs_userspace_stats:update_aggregate_stats(Acc,
@@ -359,7 +370,7 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
                                      {ok, ofp_table_stats_reply(), #state{}} |
-                                     {error, ofp_error(), #state{}}.
+                                     {error, ofp_error_msg(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
     Stats = [ofs_userspace_stats:table_stats(Table) ||
                 Table <- lists:sort(ets:tab2list(flow_tables))],
@@ -369,7 +380,7 @@ ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
                                     {ok, ofp_port_stats_reply(), #state{}} |
-                                    {error, ofp_error(), #state{}}.
+                                    {error, ofp_error_msg(), #state{}}.
 ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
     %% TODO: Should we return error when bad_port is encountered?
     Stats = case ofs_userspace_port:get_port_stats(PortNo) of
@@ -383,7 +394,7 @@ ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {ok, ofp_queue_stats_reply(), #state{}} |
-                                     {error, ofp_error(), #state{}}.
+                                     {error, ofp_error_msg(), #state{}}.
 ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
                                                         queue_id = QueueId}) ->
     %% TODO: Should we return error when undefined is encountered?
@@ -398,7 +409,7 @@ ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
                                      {ok, ofp_group_stats_reply(), #state{}} |
-                                     {error, ofp_error(), #state{}}.
+                                     {error, ofp_error_msg(), #state{}}.
 ofp_group_stats_request(State, #ofp_group_stats_request{group_id = GroupId}) ->
     Stats = case get_group_stats(GroupId) of
                 undefined ->
@@ -410,7 +421,8 @@ ofp_group_stats_request(State, #ofp_group_stats_request{group_id = GroupId}) ->
 
 %% @doc Get group description statistics.
 -spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
-      {ok, ofp_group_desc_stats_reply(), #state{}} | {error, ofp_error(), #state{}}.
+                                          {ok, ofp_group_desc_stats_reply(), #state{}} |
+                                          {error, ofp_error_msg(), #state{}}.
 ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
     %% TODO: Add group description statistics
     {ok, #ofp_group_desc_stats_reply{}, State}.
@@ -418,7 +430,7 @@ ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
 %% @doc Get group features statistics.
 -spec ofp_group_features_stats_request(state(), ofp_group_features_stats_request()) ->
                                               {ok, ofp_group_features_stats_reply(), #state{}} |
-                                              {error, ofp_error(), #state{}}.
+                                              {error, ofp_error_msg(), #state{}}.
 ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
     Stats = #ofp_group_features_stats_reply{
       types = ?SUPPORTED_GROUP_TYPES,

@@ -105,7 +105,7 @@ handle_cast({send, #ofp_message{body = Body} = Message},
             #state{connections = Connections} = State) ->
     Target = if
                  (is_record(Body, ofp_port_status))
-                 orelse (is_record(Body, ofp_error)) ->
+                 orelse (is_record(Body, ofp_error_msg)) ->
                      Connections;
                  (is_record(Body, ofp_packet_in))
                  orelse (is_record(Body, ofp_flow_removed)) ->
@@ -152,8 +152,8 @@ handle_message(#ofp_message{version = ReceivedVersion,
                                               Connections, NewConnection),
             State#state{connections = NewConnections};
         error ->
-            send_reply(Socket, Message, #ofp_error{type = hello_failed,
-                                                   code = incompatible}),
+            send_reply(Socket, Message, #ofp_error_msg{type = hello_failed,
+                                                       code = incompatible}),
             State
     end;
 handle_message(_Message, #connection{version = undefined}, State) ->
@@ -162,7 +162,7 @@ handle_message(_Message, #connection{version = undefined}, State) ->
 handle_message(#ofp_message{body = #ofp_hello{}}, _, State) ->
     %% Drop hello messages once version is known.
     State;
-handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
+handle_message(#ofp_message{body = #ofp_error_msg{type = hello_failed}},
                #connection{pid = Pid}, State) ->
     %% Disconnect when hello_failed was received.
     ofs_receiver:stop(Pid),
@@ -170,7 +170,7 @@ handle_message(#ofp_message{body = #ofp_error{type = hello_failed}},
 handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
                State) ->
-    FeaturesReply = #ofp_features_reply{datapath_mac = <<0:48>>,
+    FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
                                         n_tables = 255},
@@ -200,8 +200,8 @@ handle_message(#ofp_message{body = RequestBody} = Request,
                            is_record(RequestBody, ofp_port_mod);
                            is_record(RequestBody, ofp_table_mod) ->
     %% Don't allow slave controllers to modify flows, groups, ports and tables.
-    send_reply(Socket, Request, #ofp_error{type = bad_request,
-                                           code = is_slave}),
+    send_reply(Socket, Request, #ofp_error_msg{type = bad_request,
+                                               code = is_slave}),
     State;
 handle_message(#ofp_message{body = #ofp_flow_mod{} = FlowMod} = Request,
                Connection,
@@ -259,49 +259,57 @@ decide_on_version(ReceivedVersion) ->
 
 -spec handle_role(ofp_role_request(), connection(), #state{}) ->
                          {ofp_role_reply(), #state{}}.
+handle_role(#ofp_role_request{role = nochange,
+                              generation_id = GenerationId},
+            #connection{pid = Pid},
+            #state{connections = Connections} = State) ->
+    #connection{role=MyRole} = lists:keyfind(Pid,#connection.pid,Connections),
+    RoleReply = #ofp_role_reply{role = MyRole,
+                                generation_id = GenerationId},
+    {RoleReply, State};
+handle_role(#ofp_role_request{role = equal,
+                              generation_id = GenerationId},
+            #connection{pid = Pid} = Connection,
+            #state{connections = Connections} = State) ->
+    NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
+                                Connection#connection{role = equal}),
+    RoleReply = #ofp_role_reply{role = equal,
+                                generation_id = GenerationId},
+    {RoleReply, State#state{connections = NewConns}};
 handle_role(#ofp_role_request{role = Role,
                               generation_id = GenerationId},
             #connection{pid = Pid} = Connection,
             #state{connections = Connections,
                    generation_id = CurrentGenId} = State) ->
-    case Role of
-        equal ->
-            NewConns = lists:keyreplace(Pid, #connection.pid, Connections,
-                                        Connection#connection{role = equal}),
+    if
+        (CurrentGenId /= undefined)
+        andalso (GenerationId - CurrentGenId < 0) ->
+            ErrorReply = #ofp_error_msg{type = role_request_failed,
+                                        code = stale},
+            {ErrorReply, State};
+        true ->
+            NewConn = Connection#connection{role = Role},
+            NewConns = lists:keyreplace(Pid, #connection.pid,
+                                        Connections, NewConn),
+            case Role of
+                master ->
+                    Fun = fun(Conn = #connection{role = R}) ->
+                                  case R of
+                                      master ->
+                                          Conn#connection{role = slave};
+                                      _ ->
+                                          Conn
+                                  end
+                          end,
+                    NewConns2 = lists:map(Fun, NewConns);
+                slave ->
+                    NewConns2 = NewConns
+            end,
+            NewState = State#state{connections = NewConns2,
+                                   generation_id = GenerationId},
             RoleReply = #ofp_role_reply{role = Role,
                                         generation_id = GenerationId},
-            {RoleReply, State#state{connections = NewConns}};
-        _ ->
-            if
-                (CurrentGenId /= undefined)
-                andalso (GenerationId - CurrentGenId < 0) ->
-                    ErrorReply = #ofp_error{type = role_request_failed,
-                                            code = stale},
-                    {ErrorReply, State};
-                true ->
-                    NewConn = Connection#connection{role = Role},
-                    NewConns = lists:keyreplace(Pid, #connection.pid,
-                                                Connections, NewConn),
-                    case Role of
-                        master ->
-                            Fun = fun(Conn = #connection{role = R}) ->
-                                          case R of
-                                              master ->
-                                                  Conn#connection{role = slave};
-                                              _ ->
-                                                  Conn
-                                          end
-                                  end,
-                            NewConns2 = lists:map(Fun, NewConns);
-                        slave ->
-                            NewConns2 = NewConns
-                    end,
-                    NewState = State#state{connections = NewConns2,
-                                           generation_id = GenerationId},
-                    RoleReply = #ofp_role_reply{role = Role,
-                                                generation_id = GenerationId},
-                    {RoleReply, NewState}
-            end
+            {RoleReply, NewState}
     end.
 
 should_do_flow_mod_packet_out(delete, _) ->
@@ -329,7 +337,7 @@ handle_in_backend(#ofp_message{body = RequestBody} = Request,
                 send_reply(Socket, Request, ErrorMessage)
         end,
         State#state{backend_state = NewBackendState}
-    catch #ofp_error{} = ErrorMsg ->
+    catch #ofp_error_msg{} = ErrorMsg ->
         send_reply(Socket, Request, ErrorMsg),
         State#state{backend_state = BackendState}
     end.
@@ -348,3 +356,11 @@ do_send(Socket, Message) ->
 
 send_reply(Socket, Request, ReplyBody) ->
     do_send(Socket, Request#ofp_message{body = ReplyBody}).
+
+get_datapath_mac() ->
+    {ok,Ifs}=inet:getifaddrs(),
+    [MAC|_] = [hw_addr(Ps)||{_IF,Ps}<-Ifs, lists:keymember(hwaddr,1,Ps)],
+    list_to_binary(MAC).
+    
+hw_addr(Ps) ->
+    element(2,lists:keyfind(hwaddr,1,Ps)).

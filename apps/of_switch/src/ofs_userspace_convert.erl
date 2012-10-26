@@ -12,7 +12,7 @@
 -spec ofp_field(atom(), binary() | integer()) -> ofp_field().
 ofp_field(Field, Value) ->
     #ofp_field{class = openflow_basic,
-               field = Field,
+               name = Field,
                has_mask = false,
                value = Value}.
 

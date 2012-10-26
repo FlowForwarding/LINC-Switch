@@ -53,7 +53,7 @@ apply_action_list(_TableId, [#ofp_action_group{group_id = GroupId} | _Rest],
                   Pkt) ->
     %% Required action
     apply_group(GroupId, Pkt);
-apply_action_list(TableId, 
+apply_action_list(TableId,
                   [#ofp_action_set_queue{queue_id = QueueId} | Rest],
                   Pkt) ->
     %% Optional action

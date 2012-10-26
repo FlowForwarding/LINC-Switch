@@ -28,15 +28,9 @@ start_link() ->
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    UserspaceQueueSup = {ofs_userspace_queue_sup,
-                         {ofs_userspace_queue_sup, start_link, []},
-                         permanent, 5000, supervisor,
-                         [ofs_userspace_queue_sup]},
-    UserspacePortSup = {ofs_userspace_port_sup,
-                        {ofs_userspace_port_sup, start_link, []},
-                        permanent, 5000, supervisor, [ofs_userspace_port_sup]},
+    {ok, {BackendMod, BackendOpts}} = application:get_env(of_switch, backend),
     SwitchLogic = {ofs_logic,
-                   {ofs_logic, start_link, [ofs_userspace, []]},
+                   {ofs_logic, start_link, [BackendMod, BackendOpts]},
                    permanent, 5000, worker, [ofs_logic]},
     ReceiverSup = {ofs_receiver_sup,
                    {ofs_receiver_sup, start_link, []},
@@ -44,8 +38,6 @@ init([]) ->
     OFConfig = {linc_ofconfig,
                 {linc_ofconfig, start_link, []},
                 permanent, 5000, worker, [linc_ofconfig]},
-    {ok, {{one_for_all, 5, 10}, [UserspaceQueueSup,
-                                 UserspacePortSup,
-                                 ReceiverSup,
+    {ok, {{one_for_all, 5, 10}, [ReceiverSup,
                                  SwitchLogic,
                                  OFConfig]}}.

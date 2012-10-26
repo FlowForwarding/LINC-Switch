@@ -114,6 +114,7 @@ get_group_stats(GroupId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
+    ofs_userspace_sup:start_link(),
     %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #linc_flow_table.id},

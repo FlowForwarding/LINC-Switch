@@ -48,7 +48,7 @@ header_fields(#arp{op = Op,
 header_fields(#sctp{sport = Src,
                     dport = Dst}) ->
     [ofp_field(sctp_src, <<Src:16>>),
-     ofp_field(sctp_src, <<Dst:16>>)];
+     ofp_field(sctp_dst, <<Dst:16>>)]; %% fixed _src to _dst here
 header_fields(#mpls_tag{stack = [#mpls_stack_entry{label = L,
                                                    qos = QOS,
                                                    pri = PRI,

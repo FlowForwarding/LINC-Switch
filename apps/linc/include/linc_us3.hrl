@@ -7,7 +7,7 @@
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("of_switch/include/of_switch.hrl").
+-include("linc.hrl").
 
 -define(SUPPORTED_WRITE_ACTIONS, [output,
                                   group,
@@ -22,8 +22,8 @@
                                   pop_vlan,
                                   push_mpls,
                                   pop_mpls,
-                                  push_pbb,
-                                  pop_pbb,
+                                  %% push_pbb,
+                                  %% pop_pbb,
                                   set_field
                                  ]).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).

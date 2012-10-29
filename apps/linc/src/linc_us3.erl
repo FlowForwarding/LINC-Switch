@@ -5,7 +5,7 @@
 %%% @doc Userspace implementation of the OpenFlow Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_userspace).
+-module(linc_us3).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(gen_switch).
@@ -42,7 +42,7 @@
          ofp_group_features_stats_request/2]).
 
 -include_lib("pkt/include/pkt.hrl").
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 -record(state, {}).
 -type state() :: #state{}.
@@ -53,11 +53,11 @@
 
 -spec route(#ofs_pkt{}) -> pid().
 route(Pkt) ->
-    proc_lib:spawn_link(ofs_userspace_routing, do_route, [Pkt, 0]).
+    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt, 0]).
 
 -spec add_port(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
 add_port(physical, Opts) ->
-    case supervisor:start_child(ofs_userspace_port_sup, [Opts]) of
+    case supervisor:start_child(linc_us3_port_sup, [Opts]) of
         {ok, Pid} ->
             ?INFO("Created port: ~p", [Opts]),
             Pid;
@@ -72,15 +72,15 @@ add_port(reserved, _Opts) ->
 
 -spec remove_port(ofp_port_no()) -> ok | bad_port.
 remove_port(PortNo) ->
-    ofs_userspace_port:remove(PortNo).
+    linc_us3_port:remove(PortNo).
 
 -spec parse_ofs_pkt(binary(), ofp_port_no()) -> #ofs_pkt{}.
 parse_ofs_pkt(Binary, PortNum) ->
     try
         Packet = pkt:decapsulate(Binary),
-        Fields = [ofs_userspace_convert:ofp_field(in_port, <<PortNum:32>>)
+        Fields = [linc_us3_convert:ofp_field(in_port, <<PortNum:32>>)
                   || is_integer(PortNum)]
-            ++ ofs_userspace_convert:packet_fields(Packet),
+            ++ linc_us3_convert:packet_fields(Packet),
         #ofs_pkt{packet = Packet,
                  fields =
                      #ofp_match{fields = Fields},
@@ -114,7 +114,7 @@ get_group_stats(GroupId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    ofs_userspace_sup:start_link(),
+    linc_us3_sup:start_link(),
     %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #linc_flow_table.id},
@@ -152,15 +152,15 @@ start(_Opts) ->
                                         {keypos, #ofp_group_stats.group_id},
                                         {read_concurrency, true},
                                         {write_concurrency, true}]),
-    {ok, Ports} = application:get_env(of_switch, ports),
+    {ok, Ports} = application:get_env(linc, ports),
     [add_port(physical, PortOpts) || PortOpts <- Ports],
     {ok, #state{}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
 stop(_State) ->
-    [ofs_userspace_port:remove(PortNo) ||
-        #ofs_port{number = PortNo} <- ofs_userspace_port:list_ports()],
+    [linc_us3_port:remove(PortNo) ||
+        #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
     ets:delete(flow_tables),
     ets:delete(flow_table_counters),
@@ -192,14 +192,14 @@ ofp_flow_mod(State, #ofp_flow_mod{command = add,
                           flags = Flags} = FlowMod) ->
     AddFlowEntry =
         fun(#linc_flow_table{entries = Entries} = Table) ->
-                NewEntry = ofs_userspace_flow:create_flow_entry(FlowMod,
+                NewEntry = linc_us3_flow:create_flow_entry(FlowMod,
                                                                 TableId),
                 NewEntries = ordsets:add_element(NewEntry, Entries),
                 NewTable = Table#linc_flow_table{entries = NewEntries},
                 ets:insert(flow_tables, NewTable)
         end,
-    Tables = ofs_userspace_flow:get_flow_tables(TableId),
-    case ofs_userspace_flow:has_priority_overlap(Flags, Priority, Tables) of
+    Tables = linc_us3_flow:get_flow_tables(TableId),
+    case linc_us3_flow:has_priority_overlap(Flags, Priority, Tables) of
         true ->
             OverlapError = #ofp_error_msg{type = flow_mod_failed,
                                           code = overlap},
@@ -209,21 +209,21 @@ ofp_flow_mod(State, #ofp_flow_mod{command = add,
             {ok, State}
     end;
 ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
-    ofs_userspace_flow:apply_flow_mod(State, FlowMod,
-                                      fun ofs_userspace_flow:modify_entries/2,
-                                      fun ofs_userspace_flow:fm_non_strict_match/2);
+    linc_us3_flow:apply_flow_mod(State, FlowMod,
+                                      fun linc_us3_flow:modify_entries/2,
+                                      fun linc_us3_flow:fm_non_strict_match/2);
 ofp_flow_mod(State, #ofp_flow_mod{command = modify_strict} = FlowMod) ->
-    ofs_userspace_flow:apply_flow_mod(State, FlowMod,
-                                      fun ofs_userspace_flow:modify_entries/2,
-                                      fun ofs_userspace_flow:fm_strict_match/2);
+    linc_us3_flow:apply_flow_mod(State, FlowMod,
+                                      fun linc_us3_flow:modify_entries/2,
+                                      fun linc_us3_flow:fm_strict_match/2);
 ofp_flow_mod(State, #ofp_flow_mod{command = delete} = FlowMod) ->
-    ofs_userspace_flow:apply_flow_mod(State, FlowMod,
-                                      fun ofs_userspace_flow:delete_entries/2,
-                                      fun ofs_userspace_flow:fm_non_strict_match/2);
+    linc_us3_flow:apply_flow_mod(State, FlowMod,
+                                      fun linc_us3_flow:delete_entries/2,
+                                      fun linc_us3_flow:fm_non_strict_match/2);
 ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
-    ofs_userspace_flow:apply_flow_mod(State, FlowMod,
-                                      fun ofs_userspace_flow:delete_entries/2,
-                                      fun ofs_userspace_flow:fm_strict_match/2).
+    linc_us3_flow:apply_flow_mod(State, FlowMod,
+                                      fun linc_us3_flow:delete_entries/2,
+                                      fun linc_us3_flow:fm_strict_match/2).
 
 %% @doc Modify flow table configuration.
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
@@ -232,14 +232,14 @@ ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
     lists:foreach(fun(FlowTable) ->
                           ets:insert(flow_tables,
                                      FlowTable#linc_flow_table{config = Config})
-                  end, ofs_userspace_flow:get_flow_tables(TableId)),
+                  end, linc_us3_flow:get_flow_tables(TableId)),
     {ok, State}.
 
 %% @doc Modify port configuration.
 -spec ofp_port_mod(state(), ofp_port_mod()) ->
       {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
-    case ofs_userspace_port:change_config(PortNo, PortMod) of
+    case linc_us3_port:change_config(PortNo, PortMod) of
         {error, Code} ->
             Error = #ofp_error_msg{type = port_mod_failed,
                                    code = Code},
@@ -305,7 +305,7 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    ofs_userspace_routing:apply_action_list(0, Actions,
+    linc_us3_routing:apply_action_list(0, Actions,
                                             parse_ofs_pkt(Data, InPort)),
     {ok, State}.
 
@@ -342,10 +342,10 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
 ofp_flow_stats_request(State,
                        #ofp_flow_stats_request{table_id = TableId} = Request) ->
     Stats = lists:flatmap(fun(#linc_flow_table{id = TID, entries = Entries}) ->
-                                  ofs_userspace_flow:get_flow_stats(TID,
+                                  linc_us3_flow:get_flow_stats(TID,
                                                                     Entries,
                                                                     Request)
-                          end, ofs_userspace_flow:get_flow_tables(TableId)),
+                          end, linc_us3_flow:get_flow_tables(TableId)),
     {ok, #ofp_flow_stats_reply{flags = [], stats = Stats}, State}.
 
 %% @doc Get aggregated flow statistics.
@@ -354,12 +354,12 @@ ofp_flow_stats_request(State,
                                           #state{}} |
                                          {error, ofp_error_msg(), #state{}}.
 ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
-    Tables = ofs_userspace_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
+    Tables = linc_us3_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
     %% for each table, for each flow, collect matching stats
     Reply = lists:foldl(fun(#linc_flow_table{id = TableId, entries = Entries},
                             OuterAcc) ->
                                 lists:foldl(fun(Entry, Acc) ->
-                                                    ofs_userspace_stats:update_aggregate_stats(Acc,
+                                                    linc_us3_stats:update_aggregate_stats(Acc,
                                                                                                TableId,
                                                                                                Entry,
                                                                                                Request)
@@ -372,7 +372,7 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
                                      {ok, ofp_table_stats_reply(), #state{}} |
                                      {error, ofp_error_msg(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
-    Stats = [ofs_userspace_stats:table_stats(Table) ||
+    Stats = [linc_us3_stats:table_stats(Table) ||
                 Table <- lists:sort(ets:tab2list(flow_tables))],
     {ok, #ofp_table_stats_reply{flags = [],
                                 stats = Stats}, State}.
@@ -383,7 +383,7 @@ ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
                                     {error, ofp_error_msg(), #state{}}.
 ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
     %% TODO: Should we return error when bad_port is encountered?
-    Stats = case ofs_userspace_port:get_port_stats(PortNo) of
+    Stats = case linc_us3_port:get_port_stats(PortNo) of
                 bad_port ->
                     [];
                 PortStats ->
@@ -398,7 +398,7 @@ ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
 ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
                                                         queue_id = QueueId}) ->
     %% TODO: Should we return error when undefined is encountered?
-    Stats = case ofs_userspace_port:get_queue_stats(PortNo, QueueId) of
+    Stats = case linc_us3_port:get_queue_stats(PortNo, QueueId) of
                 undefined ->
                     [];
                 QueueStats ->
@@ -444,5 +444,5 @@ ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
 %%%-----------------------------------------------------------------------------i
 
 get_env(Env) ->
-    {ok, Value} = application:get_env(of_switch, Env),
+    {ok, Value} = application:get_env(linc, Env),
     Value.

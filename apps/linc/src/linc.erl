@@ -4,7 +4,7 @@
 %%% @doc Callback module for OpenFlow Logical Switch application.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_app).
+-module(linc).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(application).
@@ -19,19 +19,19 @@
 %% @doc Start the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
-    case application:get_env(of_switch, of_config) of
+    case application:get_env(linc, of_config) of
         {ok, enabled} ->
             ok = application:start(ssh),
             ok = application:start(enetconf);
         _ ->
             ok
     end,
-    ofs_sup:start_link().
+    linc_sup:start_link().
 
 %% @doc Stop the application
 -spec stop(any()) -> ok.
 stop(_State) ->
-    case application:get_env(of_switch, of_config) of
+    case application:get_env(linc, of_config) of
         {ok, enabled} ->
             ok = application:stop(enetconf),
             ok = application:stop(ssh);

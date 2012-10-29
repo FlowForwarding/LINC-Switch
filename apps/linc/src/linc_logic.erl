@@ -4,7 +4,7 @@
 %%% @doc OpenFlow Logical Switch logic.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_logic).
+-module(linc_logic).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(gen_server).
@@ -23,9 +23,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("of_switch.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
+-include("linc.hrl").
 
 -record(state, {
           connections = [] :: [#connection{}],
@@ -77,8 +77,8 @@ init([BackendMod, BackendOpts]) ->
     %% We trap exit signals here to handle shutdown initiated by the supervisor
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
-    {ok, Controllers} = application:get_env(of_switch, controllers),
-    [ofs_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
+    {ok, Controllers} = application:get_env(linc, controllers),
+    [linc_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
     {ok, BackendState} = BackendMod:start(BackendOpts),
     {ok, #state{backend_mod = BackendMod,
                 backend_state = BackendState}}.
@@ -125,8 +125,8 @@ handle_info(_Info, State) ->
 
 terminate(_Reason, #state{backend_mod = BackendMod,
                           backend_state = BackendState}) ->
-    {ok, Controllers} = application:get_env(of_switch, controllers),
-    [ofs_receiver_sup:close(Host, Port) || {Host, Port} <- Controllers],
+    {ok, Controllers} = application:get_env(linc, controllers),
+    [linc_receiver_sup:close(Host, Port) || {Host, Port} <- Controllers],
     BackendMod:stop(BackendState).
 
 code_change(_OldVersion, State, _Extra) ->
@@ -165,7 +165,7 @@ handle_message(#ofp_message{body = #ofp_hello{}}, _, State) ->
 handle_message(#ofp_message{body = #ofp_error_msg{type = hello_failed}},
                #connection{pid = Pid}, State) ->
     %% Disconnect when hello_failed was received.
-    ofs_receiver:stop(Pid),
+    linc_receiver:stop(Pid),
     State;
 handle_message(#ofp_message{body = #ofp_features_request{}} = Request,
                #connection{socket = Socket},
@@ -242,7 +242,7 @@ handle_message(_, _, State) ->
 
 -spec decide_on_version(integer()) -> {ok, integer()} | error.
 decide_on_version(ReceivedVersion) ->
-    {ok, SupportedVersions} = application:get_env(of_switch,
+    {ok, SupportedVersions} = application:get_env(linc,
                                                   supported_versions),
     ProposedVersion = lists:max(SupportedVersions),
     if

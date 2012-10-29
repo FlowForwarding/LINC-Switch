@@ -11,7 +11,7 @@
 %%% provided by this module.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_userspace_port).
+-module(linc_us3_port).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(gen_server).
@@ -46,7 +46,7 @@
          terminate/2,
          code_change/3]).
 
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 -record(state, {port :: port(),
                 port_ref :: pid(),
@@ -83,7 +83,7 @@ send(PortNo, QueueId, OFSPkt) ->
     case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
         %% XXX: move no_fwd to ETS and check it
         [#ofs_port_queue{queue_pid = Pid}] ->
-            ofs_userspace_queue:send(Pid, OFSPkt);
+            linc_us3_queue:send(Pid, OFSPkt);
         [] ->
             case ets:lookup(ofs_ports, PortNo) of
                 [_] -> bad_queue;
@@ -195,7 +195,7 @@ remove(PortNo) ->
         bad_port ->
             bad_port;
         Pid ->
-            supervisor:terminate_child(ofs_userspace_port_sup, Pid)
+            supervisor:terminate_child(linc_us3_port_sup, Pid)
     end.
 
 %%%-----------------------------------------------------------------------------
@@ -212,7 +212,7 @@ init({OfsPortNo, ConfigOpts}) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
 
-    {ok, BackendOpts} = application:get_env(of_switch, backends),
+    {ok, BackendOpts} = application:get_env(linc, backends),
     {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
     {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
     {OfsPortNo, PortOpts} = lists:keyfind(OfsPortNo, 1, UserspacePorts),
@@ -382,9 +382,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 handle_frame(Frame, OfsPortNo) ->
-    OFSPacket = ofs_userspace:parse_ofs_pkt(Frame, OfsPortNo),
+    OFSPacket = linc_us3:parse_ofs_pkt(Frame, OfsPortNo),
     update_port_received_counters(OfsPortNo, byte_size(Frame)),
-    ofs_userspace:route(OFSPacket).
+    linc_us3:route(OFSPacket).
 
 -spec update_port_received_counters(integer(), integer()) -> any().
 update_port_received_counters(PortNum, Bytes) ->
@@ -393,7 +393,7 @@ update_port_received_counters(PortNum, Bytes) ->
                         {#ofp_port_stats.rx_bytes, Bytes}]).
 
 %% TODO: Add typespecs to bpf and procket in general to avoid:
-%% ofs_userspace_port.erl:446: Function bpf_raw_socket/1 has no local return
+%% linc_us3_port.erl:446: Function bpf_raw_socket/1 has no local return
 %% warnings in dialyzer.
 -spec bpf_raw_socket(string()) -> tuple(integer(), 0).
 bpf_raw_socket(Interface) ->
@@ -412,7 +412,7 @@ bpf_raw_socket(Interface) ->
     end.
 
 %% TODO: Add typespecs to packet and procket in general to avoid:
-%% ofs_userspace_port.erl:462: Function linux_raw_socket/1 has no local return
+%% linc_us3_port.erl:462: Function linux_raw_socket/1 has no local return
 %% warnings in dialyzer.
 -spec linux_raw_socket(string()) -> tuple(integer(), integer()).
 linux_raw_socket(Interface) ->
@@ -447,15 +447,15 @@ queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
                      tx_packets = TxPackets, tx_errors = TxErrors}.
 
 %% TODO: Add typespecs to packet and procket in general to avoid:
-%% ofs_userspace_port.erl:496: Function send_to_wire/3 has no local return
+%% linc_us3_port.erl:496: Function send_to_wire/3 has no local return
 %% warnings in dialyzer.
 -spec send_to_wire(integer(), integer(), binary()) -> ok.
 send_to_wire(Socket, Ifindex, Frame) ->
     case os:type() of
         {unix, darwin} ->
-            ofs_userspace_port_procket:send(Socket, Frame);
+            linc_us3_port_procket:send(Socket, Frame);
         {unix, netbsd} ->
-            ofs_userspace_port_procket:send(Socket, Frame);
+            linc_us3_port_procket:send(Socket, Frame);
         {unix, linux} ->
             packet:send(Socket, Ifindex, Frame)
     end.
@@ -473,7 +473,7 @@ close_ports(#state{socket = Socket, port_ref = undefined,
         _ ->
             ok
     end,
-    ofs_userspace_port_procket:close(Socket).
+    linc_us3_port_procket:close(Socket).
 
 rate_desc_to_bps(Bps) when is_integer(Bps) ->
     Bps;
@@ -521,7 +521,7 @@ do_attach_queue(#state{socket = Socket,
     end,
     MinRateBps = get_min_rate_bps(QueueProps, PortRateBps),
     MaxRateBps = get_max_rate_bps(QueueProps, PortRateBps),
-    {ok, Pid} = ofs_userspace_queue_sup:add_queue(Key,
+    {ok, Pid} = linc_us3_queue_sup:add_queue(Key,
                                                   MinRateBps,
                                                   MaxRateBps,
                                                   PortRateBps,
@@ -537,7 +537,7 @@ do_detach_queue(#state{ofs_port_no = OfsPortNo,
                 QueueId) ->
     case ets:lookup(ofs_port_queue, {OfsPortNo, QueueId}) of
         [#ofs_port_queue{queue_pid = Pid}] ->
-            ofs_userspace_queue:stop(Pid);
+            linc_us3_queue:stop(Pid);
         [] ->
             ok
     end,

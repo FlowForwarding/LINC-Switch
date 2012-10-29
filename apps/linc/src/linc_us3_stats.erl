@@ -1,10 +1,10 @@
--module(ofs_userspace_stats).
+-module(linc_us3_stats).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([table_stats/1,
          update_aggregate_stats/4]).
 
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 %%% Stats functions ------------------------------------------------------------
 
@@ -44,10 +44,10 @@ update_aggregate_stats(#ofp_aggregate_stats_reply{
                          cookie_mask = RequestCookieMask,
                          match = Match}) ->
     FlowMatchesRequestSpec =
-        ofs_userspace_flow:cookie_match(FlowEntry, RequestCookie,
+        linc_us3_flow:cookie_match(FlowEntry, RequestCookie,
                                         RequestCookieMask)
         andalso
-        ofs_userspace_flow:non_strict_match(FlowEntry, Match)
+        linc_us3_flow:non_strict_match(FlowEntry, Match)
         andalso
         entry_writes_to_port(FlowEntry, RequestOutPort)
         andalso

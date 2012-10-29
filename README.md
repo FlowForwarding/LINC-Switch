@@ -101,9 +101,9 @@ Generate an Erlang release:
 
     % make rel
 
-Adjust switch configuration by editing the `rel/openflow/releases/0.1/sys.config` file which looks like this:
+Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` file which looks like this:
 
-    {of_switch, [
+    {linc, [
         {controllers, [
             {"localhost", 6633}
         ]},
@@ -126,7 +126,7 @@ switch.
 
 Start LINC switch in `console` mode:
 
-    % rel/openflow/bin/openflow console
+    % rel/linc/bin/linc console
 
 For further instructions on how to use LINC check the
 "[Ping example](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/example-ping.md)".

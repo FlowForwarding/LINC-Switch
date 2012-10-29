@@ -1,16 +1,16 @@
 %%%-----------------------------------------------------------------------------
 %%% Use is subject to License terms.
 %%% @copyright (C) 2012 FlowForwarding.org
-%%% @doc Supervisor module for the receiver processes.
+%%% @doc Supervisor module for the userspace switch implementation.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_receiver_sup).
+-module(linc_us3_sup).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, open/2, close/2]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -19,24 +19,21 @@
 %%% API functions
 %%%-----------------------------------------------------------------------------
 
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-open(Controller, Port) ->
-    Id = list_to_atom(Controller ++ "_" ++ integer_to_list(Port)),
-    ChildSpec = {Id, {ofs_receiver, start_link, [Id, Controller, Port]},
-                 permanent, 5000, worker, [ofs_receiver]},
-    supervisor:start_child(ofs_receiver_sup, ChildSpec).
-
--spec close(string(), integer()) -> ok.
-close(Controller, Port) ->
-    Id = list_to_atom(Controller ++ "_" ++ integer_to_list(Port)),
-    supervisor:terminate_child(ofs_receiver_sup, Id),
-    supervisor:delete_child(ofs_receiver_sup, Id).
+    {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    {ok, {{one_for_one, 5, 10}, []}}.
+    UserspaceQueueSup = {linc_us3_queue_sup,
+                         {linc_us3_queue_sup, start_link, []},
+                         permanent, 5000, supervisor,
+                         [linc_us3_queue_sup]},
+    UserspacePortSup = {linc_us3_port_sup,
+                        {linc_us3_port_sup, start_link, []},
+                        permanent, 5000, supervisor, [linc_us3_port_sup]},
+    {ok, {{one_for_one, 5, 10}, [UserspaceQueueSup,
+                                 UserspacePortSup]}}.

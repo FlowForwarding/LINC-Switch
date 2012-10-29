@@ -18,7 +18,7 @@
 %% is never empty, thus queue's youngest element - hd(Tail) is
 %% always available in O(1) time.
 
--module(sliding_window).
+-module(linc_us3_sliding_window).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([new/2,

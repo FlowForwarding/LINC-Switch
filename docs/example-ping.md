@@ -21,7 +21,7 @@ To start the controller we execute the Erlang shell,
 
 Compile the controller,
 
-    (controller)1> c("apps/of_switch/test/of_controller.erl").
+    (controller)1> c("scripts/of_controller.erl").
 
 Load records needed to send OpenFlow Protocol messages to the Switch,
 
@@ -37,7 +37,7 @@ When the Controller is running we can start our Erlang OpenFlow Switch implement
 
 We edit the `rel/files/sys.config` file, which contains the Switch configuration and check if the Controller (`localhost:6633`) and two ports (`tap0` and `tap1`) are specified and uncommented.
 
-    {of_switch,
+    {linc,
      [
       {controllers, [
                      {"localhost", 6633}
@@ -56,7 +56,7 @@ We edit the `rel/files/sys.config` file, which contains the Switch configuration
 We build and run the switch (we need `sudo` to create the ports).
 
     % make rel
-    % sudo rel/openflow/bin/openflow console
+    % sudo rel/linc/bin/linc console
 
 The switch automatically connects to the controller which accepts the connection.
 

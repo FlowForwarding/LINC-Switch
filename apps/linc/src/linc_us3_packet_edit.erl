@@ -2,7 +2,7 @@
 %%% @doc Module defines tools and functions for packet manipulations
 %%%-----------------------------------------------------------------------------
 
--module(ofs_packet_edit).
+-module(linc_us3_packet_edit).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([find/2,
@@ -12,7 +12,7 @@
          set_field/2]).
 
 -include_lib("pkt/include/pkt.hrl").
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 %%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% @doc Looks for given element/tag in packet, returns 'not_found' or the

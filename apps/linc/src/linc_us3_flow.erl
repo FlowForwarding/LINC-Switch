@@ -1,4 +1,4 @@
--module(ofs_userspace_flow).
+-module(linc_us3_flow).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([get_flow_tables/1,
@@ -13,7 +13,7 @@
          non_strict_match/2,
          cookie_match/3]).
 
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 %%% Flow mod functions ---------------------------------------------------------
 

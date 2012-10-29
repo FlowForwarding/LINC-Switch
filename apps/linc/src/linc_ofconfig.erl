@@ -44,7 +44,7 @@
          handle_get/2]).
 
 -include_lib("of_config/include/of_config.hrl").
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 -record(ofconfig, {
           name = running :: running | startup | candidate,
@@ -410,32 +410,36 @@ actions([], Actions) ->
     lists:reverse(Actions);
 actions([output | Rest], Actions) ->
     actions(Rest, [output | Actions]);
-%% actions([copy_ttl_out | Rest], Actions) ->
-%%     actions(Rest, ['copy-ttl-out' | Actions]);
-%% actions([copy_ttl_in | Rest], Actions) ->
-%%     actions(Rest, ['copy-ttl-in' | Actions]);
-%% actions([set_mpls_ttl | Rest], Actions) ->
-%%     actions(Rest, ['set-mpls-ttl' | Actions]);
-%% actions([dec_mpls_ttl | Rest], Actions) ->
-%%     actions(Rest, ['dec-mpls-ttl' | Actions]);
-%% actions([push_vlan | Rest], Actions) ->
-%%     actions(Rest, ['push-vlan' | Actions]);
-%% actions([pop_vlan | Rest], Actions) ->
-%%     actions(Rest, ['pop-vlan' | Actions]);
-%% actions([push_mpls | Rest], Actions) ->
-%%     actions(Rest, ['push-mpls' | Actions]);
-%% actions([pop_mpls | Rest], Actions) ->
-%%     actions(Rest, ['pop-mpls' | Actions]);
+actions([copy_ttl_out | Rest], Actions) ->
+    actions(Rest, ['copy-ttl-out' | Actions]);
+actions([copy_ttl_in | Rest], Actions) ->
+    actions(Rest, ['copy-ttl-in' | Actions]);
+actions([set_mpls_ttl | Rest], Actions) ->
+    actions(Rest, ['set-mpls-ttl' | Actions]);
+actions([dec_mpls_ttl | Rest], Actions) ->
+    actions(Rest, ['dec-mpls-ttl' | Actions]);
+actions([push_vlan | Rest], Actions) ->
+    actions(Rest, ['push-vlan' | Actions]);
+actions([pop_vlan | Rest], Actions) ->
+    actions(Rest, ['pop-vlan' | Actions]);
+actions([push_mpls | Rest], Actions) ->
+    actions(Rest, ['push-mpls' | Actions]);
+actions([pop_mpls | Rest], Actions) ->
+    actions(Rest, ['pop-mpls' | Actions]);
+actions([push_pbb | Rest], Actions) ->
+    actions(Rest, ['push-pbb' | Actions]);
+actions([pop_pbb | Rest], Actions) ->
+    actions(Rest, ['pop-pbb' | Actions]);
 actions([set_queue | Rest], Actions) ->
     actions(Rest, ['set-queue' | Actions]);
 actions([group | Rest], Actions) ->
-    actions(Rest, [group | Actions]).
-%% actions([set_nw_ttl | Rest], Actions) ->
-%%     actions(Rest, ['set-nw-ttl' | Actions]);
-%% actions([dec_nw_ttl | Rest], Actions) ->
-%%     actions(Rest, ['dec-nw-ttl' | Actions]);
-%% actions([set_field | Rest], Actions) ->
-%%     actions(Rest, ['set-field' | Actions]).
+    actions(Rest, [group | Actions]);
+actions([set_nw_ttl | Rest], Actions) ->
+    actions(Rest, ['set-nw-ttl' | Actions]);
+actions([dec_nw_ttl | Rest], Actions) ->
+    actions(Rest, ['dec-nw-ttl' | Actions]);
+actions([set_field | Rest], Actions) ->
+    actions(Rest, ['set-field' | Actions]).
 
 %% @private
 group_types(Types) ->
@@ -483,7 +487,7 @@ add_controller(Target, Controller) ->
 
     IP = Controller#controller.ip_address,
     Port = Controller#controller.port,
-    ofs_receiver_sup:open(IP, Port),
+    linc_receiver_sup:open(IP, Port),
 
     [Switch0] = Config#capable_switch.logical_switches,
     Controllers = Switch0#logical_switch.controllers,

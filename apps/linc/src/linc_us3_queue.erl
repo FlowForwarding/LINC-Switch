@@ -5,14 +5,14 @@
 %%% @end
 %%%===================================================================
 
--module(ofs_userspace_queue).
+-module(linc_us3_queue).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([start_link/6,
          send/2,
          stop/1]).
 
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 %% have history of 10 buckets and total length of one second
 -define(HIST_BUCKET_SIZE, 100).
@@ -29,7 +29,7 @@
                  ets:tid(), fun()) -> {ok, pid()}.
 start_link({_, QueueNo} = MyKey, MinRateBps, MaxRateBps, PortRateBps,
            ThrottlingEts, SendFun) ->
-    History = sliding_window:new(?HIST_BUCKET_COUNT, ?HIST_BUCKET_SIZE),
+    History = linc_us3_sliding_window:new(?HIST_BUCKET_COUNT, ?HIST_BUCKET_SIZE),
     MinRate = bps_to_bphistlen(MinRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
     PortRate = bps_to_bphistlen(PortRateBps),
@@ -58,7 +58,7 @@ stop(Pid) ->
 %%--------------------------------------------------------------------
 
 -spec loop({ofp_port_no(), ofp_queue_id()}, integer(), integer(), integer(),
-           ets:tid(), sliding_window:sliding_window(), fun()) -> no_return().
+           ets:tid(), linc_us3_sliding_window:sliding_window(), fun()) -> no_return().
 loop({_OutPort, _OutQueue} = MyKey, MinRate, MaxRate, PortRate,
      ThrottlingEts, History, SendFun) ->
     receive
@@ -81,9 +81,9 @@ sleep_and_send(_MyKey, no_qos, _MaxRate, _PortRate, _ThrottlingEts,
 sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts,
                History, SendFun, Frame) ->
     FrameSize = bit_size(Frame),
-    History1 = sliding_window:refresh(History),
-    TotalTransfer = sliding_window:total_transfer(History1),
-    HistoryLenMs = sliding_window:length_ms(History1),
+    History1 = linc_us3_sliding_window:refresh(History),
+    TotalTransfer = linc_us3_sliding_window:total_transfer(History1),
+    HistoryLenMs = linc_us3_sliding_window:length_ms(History1),
     MaxTransfer = max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts),
     OverTransfer = max(0, TotalTransfer + FrameSize - MaxTransfer),
     PauseMs = pause_len(OverTransfer, HistoryLenMs, MaxTransfer),
@@ -92,7 +92,7 @@ sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts,
         update_transfer(MyKey, ThrottlingEts, Transfer),
         timer:sleep(PauseMs),
         SendFun(Frame),
-        History2 = sliding_window:bump_transfer(History1, FrameSize),
+        History2 = linc_us3_sliding_window:bump_transfer(History1, FrameSize),
         History2
     catch
         E1:E2 ->

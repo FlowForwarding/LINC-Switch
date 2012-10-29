@@ -1,19 +1,22 @@
 %%%-----------------------------------------------------------------------------
 %%% Use is subject to License terms.
 %%% @copyright (C) 2012 FlowForwarding.org
-%%% @doc Supervisor module for the userspace switch implementation.
+%%% @doc Supervisor module for port queues.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(ofs_userspace_sup).
+-module(linc_us3_queue_sup).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         add_queue/6]).
 
 %% Supervisor callbacks
 -export([init/1]).
+
+-include("linc_us3.hrl").
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -23,17 +26,20 @@
 start_link() ->
     {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+-spec add_queue({ofp_port_no(), ofp_queue_id()},
+                integer(),
+                integer(),
+                integer(),
+                ets:tid(),
+                fun()) -> {ok, pid()}.
+add_queue(Key, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun) ->
+    supervisor:start_child(?MODULE, [Key, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun]).
+
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    UserspaceQueueSup = {ofs_userspace_queue_sup,
-                         {ofs_userspace_queue_sup, start_link, []},
-                         permanent, 5000, supervisor,
-                         [ofs_userspace_queue_sup]},
-    UserspacePortSup = {ofs_userspace_port_sup,
-                        {ofs_userspace_port_sup, start_link, []},
-                        permanent, 5000, supervisor, [ofs_userspace_port_sup]},
-    {ok, {{one_for_one, 5, 10}, [UserspaceQueueSup,
-                                 UserspacePortSup]}}.
+    ChildSpec = {key, {linc_us3_queue, start_link, []},
+                 transient, 5000, worker, [linc_us3_queue]},
+    {ok, {{simple_one_for_one, 5, 10}, [ChildSpec]}}.

@@ -1,10 +1,10 @@
--module(ofs_userspace_routing).
+-module(linc_us3_routing).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([do_route/2,
          apply_action_list/3]).
 
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
 
 %% FIXME: Hack to make OF1.3 code compile under OF1.2
@@ -65,7 +65,7 @@ apply_action_list(TableId,
 %% Nothing happens if packet had no MPLS header
 apply_action_list(TableId, [Act = #ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
     NewTTL = Act#ofp_action_set_mpls_ttl.mpls_ttl,
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, mpls_tag,
              fun(T) ->
                      [TopTag | StackTail] = T#mpls_tag.stack,
@@ -79,7 +79,7 @@ apply_action_list(TableId, [Act = #ofp_action_set_mpls_ttl{} | Rest], Pkt) ->
 %% Modifies top tag on MPLS stack to have TTL reduced by 1.
 %% Nothing happens if packet had no MPLS header. Clamps value below 0 to 0.
 apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, mpls_tag,
              fun(T) ->
                      [TopTag | StackTail] = T#mpls_tag.stack,
@@ -96,7 +96,7 @@ apply_action_list(TableId, [#ofp_action_dec_mpls_ttl{} | Rest], Pkt) ->
 %% Sets IPv4 or IPv6 packet header TTL to a defined value. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header
 apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt) ->
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, ipv4,
              fun(T) ->
                      T#ipv4{ ttl = NewTTL }
@@ -109,7 +109,7 @@ apply_action_list(TableId, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], Pkt
 %% Nothing happens if packet had no IPv4 header. Clamps values below 0 to 0.
 apply_action_list(TableId, [#ofp_action_dec_nw_ttl{} | Rest], Pkt) ->
     %% Optional action
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, ipv4,
              fun(T) ->
                      Decremented = erlang:max(0, T#ipv4.ttl - 1),
@@ -134,13 +134,13 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
     %% NOTE: the following code abuses the fact records are tuples
     case {element(1, Outermost), element(1, NextOutermost)} of
         {ipv4, ipv4} ->
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, ipv4,
                      fun(T) ->
                              T#ipv4{ ttl = NextOutermost#ipv4.ttl }
                      end);
         {mpls_tag, ipv4} ->
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, mpls_tag,
                      fun(T) ->
                              [Stack1 | StackRest] = T#mpls_tag.stack,
@@ -154,7 +154,7 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_out{} | Rest], Pkt) ->
 
         %% matches on MPLS tag/whatever and does the copy inside MPLS tag
         {mpls_tag, _} ->
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, mpls_tag,
                      fun(T) ->
                              [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
@@ -187,13 +187,13 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
     %% NOTE: the following code abuses the fact records are tuples
     case {element(1, Outermost), element(1, NextOutermost)} of
         {ipv4, ipv4} ->
-            Pkt2 = ofs_packet_edit:find_and_edit_skip(
+            Pkt2 = linc_us3_packet_edit:find_and_edit_skip(
                      Pkt, ipv4,
                      fun(T) ->
                              T#ipv4{ ttl = Outermost#ipv4.ttl }
                      end, 1);
         {mpls_tag, ipv4} ->
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, ipv4,
                      fun(T) ->
                              T#ipv4{ ttl = mpls_get_outermost_ttl(Outermost) }
@@ -202,7 +202,7 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
         {mpls_tag, _} ->
             %% Copies TTL from outermost to next-outermost tag inside the same MPLS tag
             %% TODO: can the packet contain two MPLS stacks? Then this code needs change
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, mpls_tag,
                      fun(T) ->
                              [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
@@ -225,7 +225,7 @@ apply_action_list(TableId, [#ofp_action_copy_ttl_in{} | Rest], Pkt) ->
 apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Rest], Pkt)
   when EtherType =:= 16#8100; EtherType =:= 16#88A8-> %% might be 'when' is redundant
     %% When pushing, fields are based on existing tag if there is any
-    case ofs_packet_edit:find(Pkt, ieee802_1q_tag) of
+    case linc_us3_packet_edit:find(Pkt, ieee802_1q_tag) of
         not_found ->
             InheritVid = 1,
             InheritPrio = 0;
@@ -233,7 +233,7 @@ apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Res
             InheritVid = BasedOnTag#ieee802_1q_tag.vid,
             InheritPrio = BasedOnTag#ieee802_1q_tag.pcp
     end,
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, ether,
              fun(T) -> 
                      NewTag = #ieee802_1q_tag{
@@ -253,7 +253,7 @@ apply_action_list(TableId, [#ofp_action_push_vlan{ ethertype = EtherType } | Res
 %% OF1.3 spec PDF page 32. Nothing happens if there is no VLAN tag.
 apply_action_list(TableId, [#ofp_action_pop_vlan{} | Rest], Pkt)
   when length(Pkt) > 1 ->
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, ieee802_1q_tag,
              %% returning 'delete' atom will work for first VLAN tag only
              fun(_) -> 'delete' end),
@@ -268,8 +268,8 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
   when EtherType =:= 16#8847;
        EtherType =:= 16#88A8 -> %% might be 'when' is redundant
     %% inherit IP or MPLS ttl value
-    FindOldMPLS = ofs_packet_edit:find(Pkt, mpls_tag),
-    SetTTL = case ofs_packet_edit:find(Pkt, ipv4) of
+    FindOldMPLS = linc_us3_packet_edit:find(Pkt, mpls_tag),
+    SetTTL = case linc_us3_packet_edit:find(Pkt, ipv4) of
                  not_found ->
                      case FindOldMPLS of
                          not_found -> 0;
@@ -282,11 +282,11 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
     case FindOldMPLS of
         not_found ->
             %% Must insert after ether or vlan tag, whichever is deeper in the packet
-            InsertAfter = case ofs_packet_edit:find(Pkt, vlan) of
+            InsertAfter = case linc_us3_packet_edit:find(Pkt, vlan) of
                               not_found -> ether;
                               _ -> vlan
                           end,
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, InsertAfter,
                      fun(T) -> 
                              NewEntry = #mpls_stack_entry{},
@@ -300,7 +300,7 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
                      end);
         %% found an MPLS shim header, and will push tag into it
         _ ->
-            Pkt2 = ofs_packet_edit:find_and_edit(
+            Pkt2 = linc_us3_packet_edit:find_and_edit(
                      Pkt, mpls_tag,
                      fun(T) -> 
                              %% base the newly inserted entry on a previous one
@@ -321,7 +321,7 @@ apply_action_list(TableId, [#ofp_action_push_mpls{ ethertype = EtherType } | Res
 %% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
 %% inside it is empty. Nothing happens if no MPLS header found.
 apply_action_list(TableId, [#ofp_action_pop_mpls{} | Rest], Pkt) ->
-    Pkt2 = ofs_packet_edit:find_and_edit(
+    Pkt2 = linc_us3_packet_edit:find_and_edit(
              Pkt, mpls_tag,
              fun(T) ->
                      Stk = T#mpls_tag.stack,
@@ -352,7 +352,7 @@ apply_action_list(TableId, [#ofp_action_push_pbb{} | Rest], Pkt) ->
     [OriginalEther = #ether{} | _] = Pkt,
 
     %% If there was PBB tag, copy isid from it
-    case ofs_packet_edit:find(Pkt, pbb_ether) of
+    case linc_us3_packet_edit:find(Pkt, pbb_ether) of
         not_found ->
             SetEISID = 1;
         {_, PreviousPBB} ->
@@ -360,7 +360,7 @@ apply_action_list(TableId, [#ofp_action_push_pbb{} | Rest], Pkt) ->
     end,
 
     %% If there was VLAN tag, copy PCP from it
-    case ofs_packet_edit:find(Pkt, ieee802_1q_tag) of
+    case linc_us3_packet_edit:find(Pkt, ieee802_1q_tag) of
         not_found ->
             SetVLANPCP = 0;
         {_, PreviousVLAN} ->
@@ -407,7 +407,7 @@ apply_action_list(TableId, [#ofp_action_pop_pbb{} | Rest], Pkt) ->
 %% Optional action
 %% Applies all set-field actions to the packet 
 apply_action_list(TableId, [#ofp_action_set_field{ field = F } | Rest], Pkt) ->
-    Pkt2 = ofs_packet_edit:set_field(F, Pkt),
+    Pkt2 = linc_us3_packet_edit:set_field(F, Pkt),
     apply_action_list(TableId, Rest, Pkt2);
 
 apply_action_list(TableId, [#ofp_action_experimenter{} | Rest], Pkt) ->
@@ -678,7 +678,7 @@ route_to_controller(TableId,
                                   table_id = TableId,
                                   match = Fields,
                                   data = pkt:encapsulate(Packet)},
-        ofs_logic:send(#ofp_message{xid = xid(), body = PacketIn})
+        linc_logic:send(#ofp_message{xid = xid(), body = PacketIn})
     catch
         E1:E2 ->
             ?ERROR("Encapsulate failed when routing to controller "
@@ -690,7 +690,7 @@ route_to_controller(TableId,
 -spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, all) ->
     Ports = ets:tab2list(ofs_ports),
-    [ofs_userspace_port:send(PortNum, Pkt)
+    [linc_us3_port:send(PortNum, Pkt)
      || #ofs_port{number = PortNum} <- Ports, PortNum /= InPort];
 route_to_output(TableId, Pkt, controller) ->
     route_to_controller(TableId, Pkt, action);
@@ -699,9 +699,9 @@ route_to_output(_TableId, _Pkt, table) ->
     %%        action list of a packet-out message.
     ok;
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
-    ofs_userspace_port:send(InPort, Pkt);
+    linc_us3_port:send(InPort, Pkt);
 route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
-    ofs_userspace_port:send(PortNum, Pkt#ofs_pkt.queue_id, Pkt);
+    linc_us3_port:send(PortNum, Pkt#ofs_pkt.queue_id, Pkt);
 route_to_output(_TableId, _Pkt, OtherPort) ->
     ?WARNING("unsupported port type: ~p", [OtherPort]).
 

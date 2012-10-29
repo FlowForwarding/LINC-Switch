@@ -3,9 +3,9 @@ The gen\_switch behaviour
 
 The `gen_switch` is a behaviour that defines set of callbacks that one has to
 provide in order to implement the switch. Currently there is only one
-implementation of `gen_switch` behaviour – `ofs_userspace` which is a purely
-userspace, Erlang implementation of switch. One can think of various other
-backends to implement, like:
+implementation of `gen_switch` behaviour – `linc_us3` which is a purely
+userspace, Erlang implementation of OFP 1.2 switch. One can think of various
+other backends to implement, like:
 
  * hardware based switch,
  * userspace implementation in other programming language (like C),
@@ -35,7 +35,7 @@ Callbacks
    * `ofp_group_desc_stats_request/2`
    * `ofp_group_features_stats_request/2`
 
-Specs for the callbacks are in the [gen\_switch.erl](../apps/of_switch/src/gen_switch.erl) file.
+Specs for the callbacks are in the [gen\_switch.erl](../apps/linc/src/gen_switch.erl) file.
 
 The `start` function takes a single argument of backend-specific type and
 returns `{ok, State}` tuple. The `stop` function takes State as an argument,

@@ -1,11 +1,11 @@
--module(ofs_userspace_convert).
+-module(linc_us3_convert).
 -author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([ofp_field/2,
          packet_fields/1]).
 
 -include_lib("pkt/include/pkt.hrl").
--include("ofs_userspace.hrl").
+-include("linc_us3.hrl").
 
 %%% Packet conversion functions ------------------------------------------------
 

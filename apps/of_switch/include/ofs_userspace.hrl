@@ -11,18 +11,20 @@
 
 -define(SUPPORTED_WRITE_ACTIONS, [output,
                                   group,
-                                  set_queue
-                                  %% set_mpls_ttl,
-                                  %% dec_mpls_ttl,
-                                  %% set_nw_ttl,
-                                  %% dec_nw_ttl,
-                                  %% copy_ttl_out,
-                                  %% copy_ttl_in,
-                                  %% push_vlan,
-                                  %% pop_vlan,
-                                  %% push_mpls,
-                                  %% pop_mpls,
-                                  %% set_field
+                                  set_queue,
+                                  set_mpls_ttl,
+                                  dec_mpls_ttl,
+                                  set_nw_ttl,
+                                  dec_nw_ttl,
+                                  copy_ttl_out,
+                                  copy_ttl_in,
+                                  push_vlan,
+                                  pop_vlan,
+                                  push_mpls,
+                                  pop_mpls,
+                                  push_pbb,
+                                  pop_pbb,
+                                  set_field
                                  ]).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port,

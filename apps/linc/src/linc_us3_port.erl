@@ -79,11 +79,27 @@ send(OutPort, OFSPkt) ->
 %% @doc Send OF packet to the OF port and put it in the given queue.
 -spec send(ofp_port_no(), ofp_queue_id(), #ofs_pkt{}) ->
                   ok | bad_port | bad_queue | no_fwd.
-send(PortNo, QueueId, OFSPkt) ->
+send(PortNo, QueueId, Packet) ->
+    case application:get_env(linc, queues) of
+        {ok, enabled} ->
+            do_send_with_queue(PortNo, QueueId, Packet);
+        _ ->
+            do_send(PortNo, Packet)
+    end.
+
+do_send(PortNo, Packet) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            gen_server:cast(Pid, {send, PortNo, Packet})
+    end.
+
+do_send_with_queue(PortNo, QueueId, Packet) ->
     case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
         %% XXX: move no_fwd to ETS and check it
         [#ofs_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:send(Pid, OFSPkt);
+            linc_us3_queue:send(Pid, Packet);
         [] ->
             case ets:lookup(ofs_ports, PortNo) of
                 [_] -> bad_queue;
@@ -207,21 +223,13 @@ remove(PortNo) ->
                              {ok, #state{}, timeout()} |
                              ignore |
                              {stop, Reason :: term()}.
-init({OfsPortNo, ConfigOpts}) ->
+init({OfsPortNo, PortOpts}) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
 
-    {ok, BackendOpts} = application:get_env(linc, backends),
-    {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
-    {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
-    {OfsPortNo, PortOpts} = lists:keyfind(OfsPortNo, 1, UserspacePorts),
-
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    {rate, RateDesc} = lists:keyfind(rate, 1, ConfigOpts),
-    {queues, Queues} = lists:keyfind(queues, 1, ConfigOpts),
 
-    Rate = rate_desc_to_bps(RateDesc),
     State = case re:run(Interface, "^tap.*$", [{capture, none}]) of
                 %% When switch connects to a tap interface, erlang receives file
                 %% descriptor to read/write ethernet frames directly from the
@@ -282,10 +290,6 @@ init({OfsPortNo, ConfigOpts}) ->
         {stop, shutdown} ->
             {stop, shutdown};
         _ ->
-            ThrottlingEts = ets:new(queue_throttling,
-                                    [public,
-                                     {read_concurrency, true},
-                                     {keypos, #ofs_queue_throttling.queue_no}]),
             OfsPort = #ofs_port{number = OfsPortNo,
                                 type = physical,
                                 pid = self(),
@@ -294,19 +298,40 @@ init({OfsPortNo, ConfigOpts}) ->
             ets:insert(ofs_ports, OfsPort),
             ets:insert(port_stats, #ofp_port_stats{port_no = OfsPortNo}),
             State1 = State#state{interface = Interface,
-                                 ofs_port_no = OfsPortNo,
-                                 rate_bps = Rate,
+                                 ofs_port_no = OfsPortNo},
+
+            PortState = setup_queues(State1, OfsPortNo),
+            {ok, PortState}
+    end.
+
+setup_queues(State, PortNo) ->
+    case application:get_env(linc, queues) of
+        {ok, enabled} ->
+            {ok, Ports} = application:get_env(linc, ports),
+            {PortNo, QueueOpts} = lists:keyfind(PortNo, 1, Ports),
+            {rate, RateDesc} = lists:keyfind(rate, 1, QueueOpts),
+            Rate = rate_desc_to_bps(RateDesc),
+            {queues, Queues} = lists:keyfind(queues, 1, QueueOpts),
+
+            ThrottlingEts = ets:new(queue_throttling,
+                                    [public,
+                                     {read_concurrency, true},
+                                     {keypos,
+                                      #ofs_queue_throttling.queue_no}]),
+
+            State2 = State#state{rate_bps = Rate,
                                  throttling_ets = ThrottlingEts},
 
             %% Add default queue with no min or max rate
-            do_attach_queue(State1, default, []),
+            State3 = do_attach_queue(State2, default, []),
 
-            State2 = lists:foldl(fun({QueueId, QueueOpts}, StateAcc) ->
-                                     do_attach_queue(StateAcc,
-                                                     QueueId,
-                                                     QueueOpts)
-                                 end, State1, Queues),
-            {ok, State2}
+            lists:foldl(fun({QueueId, QueueProps}, StateAcc) ->
+                                do_attach_queue(StateAcc,
+                                                QueueId,
+                                                QueueProps)
+                       end, State3, Queues);
+        _ ->
+            State
     end.
 
 %% @private
@@ -333,6 +358,17 @@ handle_call({detach_queue, QueueId}, _From, State) ->
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
+handle_cast({send, Packet}, #state{socket = Socket,
+                                   port = Port,
+                                   ifindex = Ifindex} = State) ->
+    Frame = pkt:encapsulate(Packet),
+    case {Port, Ifindex} of
+        {undefined, _} ->
+            send_to_wire(Socket, Ifindex, Frame);
+        {_, undefined} ->
+            port_command(Port, Frame)
+    end,
+    {noreply, State};
 handle_cast({change_config, #ofp_port_mod{}}, State) ->
     %% FIXME: implement
     {noreply, State}.
@@ -522,11 +558,11 @@ do_attach_queue(#state{socket = Socket,
     MinRateBps = get_min_rate_bps(QueueProps, PortRateBps),
     MaxRateBps = get_max_rate_bps(QueueProps, PortRateBps),
     {ok, Pid} = linc_us3_queue_sup:add_queue(Key,
-                                                  MinRateBps,
-                                                  MaxRateBps,
-                                                  PortRateBps,
-                                                  ThrottlingEts,
-                                                  SendFun),
+                                             MinRateBps,
+                                             MaxRateBps,
+                                             PortRateBps,
+                                             ThrottlingEts,
+                                             SendFun),
     ets:insert(ofs_port_queue, #ofs_port_queue{key = Key,
                                                properties = QueueProps,
                                                queue_pid = Pid}),

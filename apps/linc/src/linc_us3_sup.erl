@@ -28,12 +28,16 @@ start_link() ->
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    UserspaceQueueSup = {linc_us3_queue_sup,
-                         {linc_us3_queue_sup, start_link, []},
-                         permanent, 5000, supervisor,
-                         [linc_us3_queue_sup]},
-    UserspacePortSup = {linc_us3_port_sup,
-                        {linc_us3_port_sup, start_link, []},
-                        permanent, 5000, supervisor, [linc_us3_port_sup]},
-    {ok, {{one_for_one, 5, 10}, [UserspaceQueueSup,
-                                 UserspacePortSup]}}.
+    PortSup = {linc_us3_port_sup, {linc_us3_port_sup, start_link, []},
+               permanent, 5000, supervisor, [linc_us3_port_sup]},
+    Sups = case application:get_env(linc, queues) of
+               {ok, enabled} ->
+                   QueueSup = {linc_us3_queue_sup,
+                               {linc_us3_queue_sup, start_link, []},
+                               permanent, 5000, supervisor,
+                               [linc_us3_queue_sup]},
+                   [QueueSup, PortSup];
+               _ ->
+                   [PortSup]
+           end,
+    {ok, {{one_for_one, 5, 10}, Sups}}.

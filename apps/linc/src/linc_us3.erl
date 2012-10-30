@@ -139,10 +139,17 @@ start(_Opts) ->
                          [named_table, public,
                           {keypos, #ofp_port_stats.port_no},
                           {read_concurrency, true}]),
-    ofs_port_queue = ets:new(ofs_port_queue,
-                             [named_table, public,
-                              {keypos, #ofs_port_queue.key},
-                              {read_concurrency, true}]),
+
+    case application:get_env(linc, queues) of
+        {ok, enabled} ->
+            ofs_port_queue = ets:new(ofs_port_queue,
+                                     [named_table, public,
+                                      {keypos, #ofs_port_queue.key},
+                                      {read_concurrency, true}]);
+        _ ->
+            no_queues
+    end,
+
     %% Groups
     group_table = ets:new(group_table, [named_table, public,
                                         {keypos, #group.id},
@@ -152,8 +159,12 @@ start(_Opts) ->
                                         {keypos, #ofp_group_stats.group_id},
                                         {read_concurrency, true},
                                         {write_concurrency, true}]),
-    {ok, Ports} = application:get_env(linc, ports),
-    [add_port(physical, PortOpts) || PortOpts <- Ports],
+
+    {ok, BackendOpts} = application:get_env(linc, backends),
+    {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
+    {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
+    [add_port(physical, Port) || Port <- UserspacePorts],
+
     {ok, #state{}}.
 
 %% @doc Stop the switch.
@@ -168,7 +179,12 @@ stop(_State) ->
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
-    ets:delete(ofs_port_queue),
+    case application:get_env(linc, queues) of
+        {ok, enabled} ->
+            ets:delete(ofs_port_queue);
+        _ ->
+            ok
+    end,
     %% Groups
     ets:delete(group_table),
     ets:delete(group_stats),

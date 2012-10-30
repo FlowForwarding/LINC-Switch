@@ -10,6 +10,8 @@
   {env, [{supported_versions, [1, 2, 3]},
          {controllers, []},
          {ports, []},
+         {of_config, disabled},
+         {queues, disabled},
          {manufacturer_desc, <<"Dummy">>},
          {hardware_desc, <<"Dummy">>},
          {software_desc, <<"Dummy">>},

@@ -186,28 +186,16 @@ handle_message(State, Message) ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Modify flow entry in the flow table.
-ofp_flow_mod(State, #ofp_flow_mod{command = add,
-                          table_id = TableId,
-                          priority = Priority,
-                          flags = Flags} = FlowMod) ->
-    AddFlowEntry =
-        fun(#linc_flow_table{entries = Entries} = Table) ->
-                NewEntry = linc_us3_flow:create_flow_entry(FlowMod,
-                                                                TableId),
-                NewEntries = ordsets:add_element(NewEntry, Entries),
-                NewTable = Table#linc_flow_table{entries = NewEntries},
-                ets:insert(flow_tables, NewTable)
-        end,
-    Tables = linc_us3_flow:get_flow_tables(TableId),
-    case linc_us3_flow:has_priority_overlap(Flags, Priority, Tables) of
-        true ->
+ofp_flow_mod(State, #ofp_flow_mod{command = add} = FlowMod) ->
+    case linc_us3_flow:add_flow(FlowMod) of
+        ok ->
+            {ok,State};
+        {error,overlap} ->
             OverlapError = #ofp_error_msg{type = flow_mod_failed,
-                                          code = overlap},
-            {error, OverlapError, State};
-        false ->
-            lists:foreach(AddFlowEntry, Tables),
-            {ok, State}
+                                      code = overlap},
+            {error, OverlapError, State}
     end;
+                    
 ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
     linc_us3_flow:apply_flow_mod(State, FlowMod,
                                       fun linc_us3_flow:modify_entries/2,

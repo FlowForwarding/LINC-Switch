@@ -3,11 +3,11 @@
 
 -export([get_flow_tables/1,
          get_flow_stats/3,
+         add_flow/1,
          apply_flow_mod/4,
          modify_entries/2,
          delete_entries/2,
          create_flow_entry/2,
-         has_priority_overlap/3,
          fm_strict_match/2,
          fm_non_strict_match/2,
          non_strict_match/2,
@@ -50,6 +50,32 @@ get_flow_stats(TID, Entries, #ofp_flow_stats_request{out_port = OutPort,
                          timer:now_diff(now(), Entry#flow_entry.install_time)
                         ]].
 
+add_flow(#ofp_flow_mod{table_id = TableId,
+                       flags = Flags}=FlowMod) ->
+    %% For add there can only be one table
+    [Table] = ofs_userspace_flow:get_flow_tables(TableId),
+    case lists:member(check_overlap,Flags) of
+        true ->
+            %% Check that there are no overlapping flows.
+            case check_overlap(FlowMod, Table) of
+                true ->
+                    {error, overlap};
+                false ->
+                    add_flow(TableId, Table, FlowMod),
+                    ok
+            end;
+        false ->
+            %% Check if there is any entry with the exact same priority 
+            %% and match
+            case find_exact_match(FlowMod,Table) of
+                #flow_entry{}=Matching ->
+                    mod_flow(TableId, Table, FlowMod, Matching, Flags);
+                no_match ->
+                    add_flow(TableId, Table, FlowMod)
+            end,
+            ok
+    end.
+
 apply_flow_mod(State, FlowMod, ModFun, MatchFun) ->
     ModFun(FlowMod, MatchFun),
     {ok, State}.
@@ -90,14 +116,6 @@ create_flow_entry(#ofp_flow_mod{priority = Priority,
                #flow_entry_counter{key = {FlowTableId, FlowEntry}}),
     FlowEntry.
 
-has_priority_overlap(Flags, Priority, Tables) ->
-    lists:member(check_overlap, Flags)
-        andalso
-        lists:any(fun(Table) ->
-                          lists:keymember(Priority, #flow_entry.priority,
-                                          Table#linc_flow_table.entries)
-                  end, Tables).
-
 %% strict match: use all match fields (including the masks) and the priority
 fm_strict_match(#flow_entry{priority = Priority, match = Match} = Entry,
                 #ofp_flow_mod{priority = Priority, match = Match} = FlowMod) ->
@@ -129,9 +147,105 @@ non_strict_match(_FlowEntry, _Match) ->
 cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
     mask_match(Cookie1, Cookie2, CookieMask).
 
+find_exact_match(Flow, #linc_flow_table{entries=Entries}) ->
+    find_exact_match1(Flow, Entries).
+
+find_exact_match1(#ofp_flow_mod{priority = Priority, match = Match},
+                 [#flow_entry{priority = Priority, match = Match}=Entry|_Entries]) ->
+    Entry;
+find_exact_match1(FlowMod, [_Entry|Entries]) ->
+    find_exact_match1(FlowMod, Entries);
+find_exact_match1(_FlowMod,[]) ->
+    no_match.
+
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+%% Check if FlowMod overlaps with any existing flow with the same Priority.
+check_overlap(#ofp_flow_mod{match=#ofp_match{fields=MF}, priority=Priority},
+              #linc_flow_table{entries=Fs}) ->
+    Flows = [F||#flow_entry{priority=Prio}=F <- Fs, Prio==Priority],
+    MF1 = lists:sort(MF),
+    lists:any(fun (#flow_entry{match=#ofp_match{fields=MF2}}) ->
+                      overlaps(MF1, lists:sort(MF2))
+              end, Flows).
+
+overlaps([#ofp_field{class=C,name=F,has_mask=false,value=V1}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2])
+  when V1=/=V2 ->
+    false;
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=MaskBin}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2]) ->
+    Bits = bit_size(MaskBin),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask:Bits>> = MaskBin,
+    Val1 band Mask == Val2 band Mask;
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2,mask=MaskBin}|_Fields2]) ->
+    Bits = bit_size(MaskBin),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask:Bits>> = MaskBin,
+    Val1 band Mask == Val2 band Mask;
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=M1}|Ms1],
+         [#ofp_field{class=C,name=F,has_mask=true,value=V2,mask=M2}|Ms2]) ->
+    Bits = bit_size(M1),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask1:Bits>> = M1,
+    <<Mask2:Bits>> = M2,
+    CommonBits = Mask1 band Mask2,
+    %% Is this correct?
+    case (Val1 band CommonBits)==(Val2 band CommonBits) of
+        false ->
+            false;
+        true ->
+            overlaps(Ms1,Ms2)
+    end;
+overlaps([#ofp_field{class=C,name=F}|Ms1],
+         [#ofp_field{class=C,name=F}|Ms2]) ->
+    overlaps(Ms1,Ms2);
+overlaps([#ofp_field{class=C,name=F1}|Ms1],
+         [#ofp_field{class=C,name=F2}|_]=Ms2) when F1<F2 ->
+    overlaps(Ms1,Ms2);
+overlaps([#ofp_field{class=C,name=F1}|_]=Ms1,
+         [#ofp_field{class=C,name=F2}|Ms2]) when F1>F2 ->
+    overlaps(Ms1,Ms2);
+overlaps(_,_) ->
+    true.
+
+%% Add a new flow entry
+add_flow(TableId, #linc_flow_table{entries = Entries}=Table, FlowMod) ->
+    NewEntry = create_flow_entry(FlowMod, TableId),
+    NewEntries = ordsets:add_element(NewEntry, Entries),
+    NewTable = Table#linc_flow_table{entries = NewEntries},
+    ets:insert(flow_tables, NewTable).
+
+%% Update existing flow_entry with new instructions
+%% Maybe reset counters
+mod_flow(TableId, #linc_flow_table{entries = Entries}=Table, FlowMod, Matching, Flags) ->
+    ModEntries = ordsets:del_element(Matching,Entries),
+    NewEntry = create_flow_entry(FlowMod, TableId),
+    NewEntries = ordsets:add_element(NewEntry, ModEntries),
+    NewTable = Table#linc_flow_table{entries = NewEntries},
+    ets:insert(flow_tables, NewTable),
+    case lists:member(reset_counts, Flags) of
+        true ->
+            %% TODO: Reset counters
+            true = ets:insert(flow_entry_counters,
+                              #flow_entry_counter{key = {TableId, NewEntry}}),
+            true = ets:delete(flow_entry_counters, {TableId,Matching});
+        false ->
+            %% FIXME: This is not atomic. A better way would be to use only
+            %% {TableId,Prio,Match} as key so it is not necessary to modify the
+            %% Key when modifying the flow.
+            [Counters] = ets:lookup(flow_entry_counters,{TableId,Matching}),
+            true = ets:insert(flow_entry_counters,
+                              Counters#flow_entry_counter{key = {TableId, NewEntry}}),
+            true = ets:delete(flow_entry_counters, Counters#flow_entry_counter.key)
+    end.
 
 modify_flow_entry(#flow_entry{} = Entry,
                   #ofp_flow_mod{match = NewMatch,

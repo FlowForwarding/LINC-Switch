@@ -1,5 +1,5 @@
 #!/bin/bash
 
 if [[ `uname` == Linux ]]; then
-    sudo -n setcap cap_net_admin=ep ./rel/openflow/erts-*/bin/beam.smp
+    sudo -n setcap cap_net_admin=ep ./rel/linc/erts-*/bin/beam.smp
 fi

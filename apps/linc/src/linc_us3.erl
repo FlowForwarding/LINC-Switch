@@ -191,7 +191,7 @@ ofp_flow_mod(State, #ofp_flow_mod{command = add} = FlowMod) ->
         ok ->
             {ok,State};
         {error,overlap} ->
-            OverlapError = #ofp_error{type = flow_mod_failed,
+            OverlapError = #ofp_error_msg{type = flow_mod_failed,
                                       code = overlap},
             {error, OverlapError, State}
     end;

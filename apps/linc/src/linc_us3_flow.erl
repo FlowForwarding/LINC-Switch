@@ -147,7 +147,7 @@ non_strict_match(_FlowEntry, _Match) ->
 cookie_match(#flow_entry{cookie = Cookie1}, Cookie2, CookieMask) ->
     mask_match(Cookie1, Cookie2, CookieMask).
 
-find_exact_match(Flow, #flow_table{entries=Entries}) ->
+find_exact_match(Flow, #linc_flow_table{entries=Entries}) ->
     find_exact_match1(Flow, Entries).
 
 find_exact_match1(#ofp_flow_mod{priority = Priority, match = Match},
@@ -163,53 +163,73 @@ find_exact_match1(_FlowMod,[]) ->
 %%%-----------------------------------------------------------------------------
 
 %% Check if FlowMod overlaps with any existing flow with the same Priority.
-check_overlap(#ofp_flow_mod{match=#ofp_match{oxm_fields=MF}, priority=Priority},
-              #flow_table{entries=Fs}) ->
+check_overlap(#ofp_flow_mod{match=#ofp_match{fields=MF}, priority=Priority},
+              #linc_flow_table{entries=Fs}) ->
     Flows = [F||#flow_entry{priority=Prio}=F <- Fs, Prio==Priority],
     MF1 = lists:sort(MF),
-    lists:any(fun (#flow_entry{match=#ofp_match{oxm_fields=MF2}}) ->
+    lists:any(fun (#flow_entry{match=#ofp_match{fields=MF2}}) ->
                       overlaps(MF1, lists:sort(MF2))
               end, Flows).
 
-overlaps([#ofp_field{class=C,field=F,has_mask=false,value=V1}|_Fields1],
-         [#ofp_field{class=C,field=F,has_mask=false,value=V2}|_Fields2])
+overlaps([#ofp_field{class=C,name=F,has_mask=false,value=V1}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2])
   when V1=/=V2 ->
     false;
-overlaps([#ofp_field{class=C,field=F,has_mask=true,value=V1,mask=M1}|Ms1],
-         [#ofp_field{class=C,field=F,has_mask=true,value=V2,mask=M2}|Ms2]) ->
-    CommonBits = M1 band M2,
-    case (V1 band CommonBits)==(V2 band CommonBits) of
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=MaskBin}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2]) ->
+    Bits = bit_size(MaskBin),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask:Bits>> = MaskBin,
+    Val1 band Mask == Val2 band Mask;
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1}|_Fields1],
+         [#ofp_field{class=C,name=F,has_mask=false,value=V2,mask=MaskBin}|_Fields2]) ->
+    Bits = bit_size(MaskBin),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask:Bits>> = MaskBin,
+    Val1 band Mask == Val2 band Mask;
+overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=M1}|Ms1],
+         [#ofp_field{class=C,name=F,has_mask=true,value=V2,mask=M2}|Ms2]) ->
+    Bits = bit_size(M1),
+    <<Val1:Bits>> = V1,
+    <<Val2:Bits>> = V2,
+    <<Mask1:Bits>> = M1,
+    <<Mask2:Bits>> = M2,
+    CommonBits = Mask1 band Mask2,
+    %% Is this correct?
+    case (Val1 band CommonBits)==(Val2 band CommonBits) of
         false ->
             false;
         true ->
             overlaps(Ms1,Ms2)
     end;
-overlaps([#ofp_field{class=C,field=F}|Ms1],
-         [#ofp_field{class=C,field=F}|Ms2]) ->
+overlaps([#ofp_field{class=C,name=F}|Ms1],
+         [#ofp_field{class=C,name=F}|Ms2]) ->
     overlaps(Ms1,Ms2);
-overlaps([#ofp_field{class=C,field=F1}|Ms1],
-         [#ofp_field{class=C,field=F2}|_]=Ms2) when F1<F2 ->
+overlaps([#ofp_field{class=C,name=F1}|Ms1],
+         [#ofp_field{class=C,name=F2}|_]=Ms2) when F1<F2 ->
     overlaps(Ms1,Ms2);
-overlaps([#ofp_field{class=C,field=F1}|_]=Ms1,
-         [#ofp_field{class=C,field=F2}|Ms2]) when F1>F2 ->
+overlaps([#ofp_field{class=C,name=F1}|_]=Ms1,
+         [#ofp_field{class=C,name=F2}|Ms2]) when F1>F2 ->
     overlaps(Ms1,Ms2);
 overlaps(_,_) ->
     true.
 
 %% Add a new flow entry
-add_flow(TableId, #flow_table{entries = Entries}=Table, FlowMod) ->
+add_flow(TableId, #linc_flow_table{entries = Entries}=Table, FlowMod) ->
     NewEntry = create_flow_entry(FlowMod, TableId),
     NewEntries = ordsets:add_element(NewEntry, Entries),
-    NewTable = Table#flow_table{entries = NewEntries},
+    NewTable = Table#linc_flow_table{entries = NewEntries},
     ets:insert(flow_tables, NewTable).
 
 %% Update existing flow_entry with new instructions
 %% Maybe reset counters
-mod_flow(TableId, #flow_table{entries = Entries}=Table, FlowMod, Matching, Flags) ->
+mod_flow(TableId, #linc_flow_table{entries = Entries}=Table, FlowMod, Matching, Flags) ->
     ModEntries = ordsets:del_element(Matching,Entries),
     NewEntry = create_flow_entry(FlowMod, TableId),
     NewEntries = ordsets:add_element(NewEntry, ModEntries),
-    NewTable = Table#flow_table{entries = NewEntries},
+    NewTable = Table#linc_flow_table{entries = NewEntries},
     ets:insert(flow_tables, NewTable),
     case lists:member(reset_counts, Flags) of
         true ->

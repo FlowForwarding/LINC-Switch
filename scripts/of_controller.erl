@@ -26,6 +26,7 @@
          table_config/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("pkt/include/pkt.hrl").
 
 -record(cstate, {
@@ -143,7 +144,7 @@ handle(#cstate{parent = Parent, socket = Socket,
         {tcp_error, Socket, Reason} ->
             lager:error("Error on socket ~p: ~p", [Socket, Reason]);
         {msg, Socket, #ofp_message{
-                body = #ofp_error{type = hello_failed,
+                body = #ofp_error_msg{type = hello_failed,
                                   code = incompatible}} = Message} ->
             lager:error("Received hello_failed from ~p: ~p",
                         [Socket, Message]),
@@ -158,9 +159,9 @@ handle(#cstate{parent = Parent, socket = Socket,
                 [EthHeader | _] = pkt:decapsulate(Data),
                 EthSrc = EthHeader#ether.shost,
                 EthDst = EthHeader#ether.dhost,
-                #ofp_field{value = <<InPort:32>>} = lists:keyfind(in_port, #ofp_field.field,
-                                                                  Match#ofp_match.oxm_fields),
-                NewMatch = #ofp_match{oxm_fields = [#ofp_field{field = eth_dst,
+                #ofp_field{value = <<InPort:32>>} = lists:keyfind(in_port, #ofp_field.name,
+                                                                  Match#ofp_match.fields),
+                NewMatch = #ofp_match{fields = [#ofp_field{name = eth_dst,
                                                                value = EthSrc}]},
                 %% ApplyActions = #ofp_instruction_apply_actions{
                 %%   actions = [#ofp_action_output{port = controller}]},

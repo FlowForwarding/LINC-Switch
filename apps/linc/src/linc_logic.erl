@@ -359,7 +359,9 @@ send_reply(Socket, Request, ReplyBody) ->
 
 get_datapath_mac() ->
     {ok,Ifs}=inet:getifaddrs(),
-    [MAC|_] = [hw_addr(Ps)||{_IF,Ps}<-Ifs, lists:keymember(hwaddr,1,Ps)],
+    MACs =  [hw_addr(Ps)||{_IF,Ps}<-Ifs, lists:keymember(hwaddr,1,Ps)],
+    %% Make sure MAC/=0
+    [MAC|_] = [M||M <- MACs, M/=[0,0,0,0,0,0]],
     list_to_binary(MAC).
     
 hw_addr(Ps) ->

@@ -92,7 +92,7 @@ do_send(PortNo, Packet) ->
         bad_port ->
             bad_port;
         Pid ->
-            gen_server:cast(Pid, {send, PortNo, Packet})
+            gen_server:cast(Pid, {send, Packet})
     end.
 
 do_send_with_queue(PortNo, QueueId, Packet) ->

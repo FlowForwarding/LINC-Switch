@@ -141,13 +141,13 @@ start(_Opts) ->
                           {read_concurrency, true}]),
 
     case application:get_env(linc, queues) of
-        {ok, enabled} ->
+        undefined ->
+            no_queues;
+        {ok, _} ->
             ofs_port_queue = ets:new(ofs_port_queue,
                                      [named_table, public,
                                       {keypos, #ofs_port_queue.key},
-                                      {read_concurrency, true}]);
-        _ ->
-            no_queues
+                                      {read_concurrency, true}])
     end,
 
     %% Groups
@@ -180,10 +180,10 @@ stop(_State) ->
     ets:delete(ofs_ports),
     ets:delete(port_stats),
     case application:get_env(linc, queues) of
-        {ok, enabled} ->
-            ets:delete(ofs_port_queue);
-        _ ->
-            ok
+        undefined ->
+            ok;
+        {ok, _} ->
+            ets:delete(ofs_port_queue)
     end,
     %% Groups
     ets:delete(group_table),

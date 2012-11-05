@@ -81,10 +81,10 @@ send(OutPort, OFSPkt) ->
                   ok | bad_port | bad_queue | no_fwd.
 send(PortNo, QueueId, Packet) ->
     case application:get_env(linc, queues) of
-        {ok, enabled} ->
-            do_send_with_queue(PortNo, QueueId, Packet);
-        _ ->
-            do_send(PortNo, Packet)
+        undefined ->
+            do_send(PortNo, Packet);
+        {ok, _} ->
+            do_send_with_queue(PortNo, QueueId, Packet)
     end.
 
 do_send(PortNo, Packet) ->
@@ -306,8 +306,9 @@ init({OfsPortNo, PortOpts}) ->
 
 setup_queues(State, PortNo) ->
     case application:get_env(linc, queues) of
-        {ok, enabled} ->
-            {ok, Ports} = application:get_env(linc, ports),
+        undefined ->
+            State;
+        {ok, Ports} ->
             {PortNo, QueueOpts} = lists:keyfind(PortNo, 1, Ports),
             {rate, RateDesc} = lists:keyfind(rate, 1, QueueOpts),
             Rate = rate_desc_to_bps(RateDesc),
@@ -329,9 +330,7 @@ setup_queues(State, PortNo) ->
                                 do_attach_queue(StateAcc,
                                                 QueueId,
                                                 QueueProps)
-                       end, State3, Queues);
-        _ ->
-            State
+                       end, State3, Queues)
     end.
 
 %% @private

@@ -18,23 +18,49 @@ ofp_field(Field, Value) ->
 
 -spec packet_fields([pkt:packet()]) -> [ofp_field()].
 packet_fields(Packet) ->
-    lists:flatmap(fun header_fields/1, Packet).
+    special_header_fields(Packet)
+        ++ lists:flatmap(fun header_fields/1, Packet).
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
+%% @doc Does special handling for unique fields and fields that originate from
+%% more than one header (like eth_type)
+-spec special_header_fields(pkt:packet()) -> [ofp_field()].
+
+special_header_fields(P) ->
+    %% Assume there is ALWAYS ether header, sometimes not at start (due to PBB)
+    %% the next line will crash if the packet doesn't have #ether header
+    {_, Ether} = linc_us3_packet_edit:find(P, ether),
+    VLANFind = linc_us3_packet_edit:find(P, ieee802_1q_tag),
+
+    %% Ether Type, take either VLAN or ether header ether_type
+    case VLANFind of
+        %% no VLAN header - we take eth_type from ether header
+        not_found ->
+            [ofp_field(eth_type, <<(Ether#ether.type):16>>)];
+        %% found VLAN header - take eth_type from it, also set other fields
+        {_, VLAN} ->
+            [ofp_field(eth_type, <<(VLAN#ieee802_1q_tag.ether_type):16>>),
+             ofp_field(vlan_vid, VLAN#ieee802_1q_tag.vid),
+             ofp_field(vlan_pcp, <<(VLAN#ieee802_1q_tag.pcp):3>>)]
+    end.
+
+%% @doc Extracts known fields from different packet header types
 -spec header_fields(pkt:packet()) -> [ofp_field()].
 header_fields(#ether{type = Type,
                      dhost = DHost,
                      shost = SHost}) ->
-    [ofp_field(eth_type, <<Type:16>>),
-     ofp_field(eth_dst, DHost),
+    %% calculate eth_type separately in special_packet_fields()
+    %% ofp_field(eth_type, <<Type:16>>),
+    [ofp_field(eth_dst, DHost),
      ofp_field(eth_src, SHost)];
-header_fields(#ieee802_1q_tag{vid = VID,
-                              pcp = PCP}) ->
-    [ofp_field(vlan_vid, VID),
-     ofp_field(vlan_pcp, <<PCP:3>>)];
+%% calculate VLAN separately in special_packet_fields()
+%% header_fields(#ieee802_1q_tag{vid = VID,
+%%                               pcp = PCP}) ->
+%%     [ofp_field(vlan_vid, VID),
+%%      ofp_field(vlan_pcp, <<PCP:3>>)];
 header_fields(#arp{op = Op,
                    sip = SPA,
                    tip = TPA,

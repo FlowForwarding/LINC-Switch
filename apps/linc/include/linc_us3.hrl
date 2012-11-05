@@ -151,7 +151,7 @@
                            tuple(ip, string()).
 
 %% We use '_' as a part of the type to avoid dialyzer warnings when using
-%% match specs in ets:match_object in ofs_userspace_port:get_queue_stats/1
+%% match specs in ets:match_object in linc_us3_port:get_queue_stats/1
 %% For detailed explanation behind this please read:
 %% http://erlang.org/pipermail/erlang-questions/2009-September/046532.html
 -record(ofs_port_queue, {
@@ -184,3 +184,9 @@
 -type route_result() :: tuple(match | nomatch,
                               FlowId :: integer(),
                               drop | controller | output).
+
+-type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
+                 tuple(match, goto, integer(), #ofs_pkt{}).
+
+-type miss() :: tuple(table_miss, drop | controller) |
+                tuple(table_miss, continue, integer()).

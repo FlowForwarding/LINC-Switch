@@ -41,7 +41,6 @@
          ofp_group_desc_stats_request/2,
          ofp_group_features_stats_request/2]).
 
--include_lib("pkt/include/pkt.hrl").
 -include("linc_us3.hrl").
 
 -record(state, {}).
@@ -309,8 +308,8 @@ ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    linc_us3_routing:apply_action_list(0, Actions,
-                                            parse_ofs_pkt(Data, InPort)),
+    linc_us3_actions:apply_list(0, Actions,
+                                parse_ofs_pkt(Data, InPort)),
     {ok, State}.
 
 %% @doc Reply to echo request.

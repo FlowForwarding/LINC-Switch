@@ -1,32 +1,32 @@
-%%%-----------------------------------------------------------------------------
-%%% Use is subject to License terms.
-%%% @copyright (C) 2012 FlowForwarding.org
-%%% @doc OpenFlow Switch behaviour.
-%%% Specifies set of callback functions that must be implemented by the switch
-%%% backend:
-%%%
-%%% start/1 - Start the switch.<br/>
-%%% stop/1 - Stop the switch.<br/>
-%%% ofp_flow_mod/2 - Modify flow entry in the flow table.<br/>
-%%% ofp_table_mod/2 - Modify flow table configuration.<br/>
-%%% ofp_port_mod/2 - Modify port configuration.<br/>
-%%% ofp_group_mod/2 - Modify group entry in the group table.<br/>
-%%% ofp_packet_out/2 - Send packet to controller<br/>
-%%% ofp_echo_request/2 - Reply to echo request.<br/>
-%%% ofp_barrier_request/2 - Reply to barrier request.<br/>
-%%% ofp_desc_stats_request/2 - Get switch description statistics.<br/>
-%%% ofp_flow_stats_request/2 - Get flow entry statistics.<br/>
-%%% ofp_aggregate_stats_request/2 - Get aggregated flow statistics.<br/>
-%%% ofp_table_stats_request/2 - Get flow table statistics.<br/>
-%%% ofp_port_stats_request - Get port statistics.<br/>
-%%% ofp_queue_stats_request/2 - Get queue statistics.<br/>
-%%% ofp_group_stats_request/2 -  Get group statistics.<br/>
-%%% ofp_group_desc_stats_request/2 - Get group description statistics.<br/>
-%%% ofp_group_features_stats_request/2 -  Get group features statistics.<br/>
-%%% @end
-%%%-----------------------------------------------------------------------------
+%%------------------------------------------------------------------------------
+%% Copyright 2012 FlowForwarding.org
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%-----------------------------------------------------------------------------
+
+%% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
+%% @copyright 2012 FlowForwarding.org
+%% @doc OpenFlow Switch behaviour.
+%% Specifies set of callback functions that must be implemented by the switch
+%% backend:
+%%
+%% start/1 - Start the switch.<br/>
+%% stop/1 - Stop the switch.<br/>
+%% handle_message/1 - Handle all message types supported by the given OFP
+%% version.<br/>
+%% @end
+
 -module(gen_switch).
--author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 

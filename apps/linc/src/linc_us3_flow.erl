@@ -53,7 +53,7 @@ get_flow_stats(TID, Entries, #ofp_flow_stats_request{out_port = OutPort,
 add_flow(#ofp_flow_mod{table_id = TableId,
                        flags = Flags}=FlowMod) ->
     %% For add there can only be one table
-    [Table] = ofs_userspace_flow:get_flow_tables(TableId),
+    [Table] = linc_us3_flow:get_flow_tables(TableId),
     case lists:member(check_overlap,Flags) of
         true ->
             %% Check that there are no overlapping flows.

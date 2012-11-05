@@ -8,7 +8,7 @@
 /doc/
 /log/
 /deps/
-/scripts/
+/scripts/log
 *.beam
 *.app
 *.o

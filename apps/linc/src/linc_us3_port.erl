@@ -362,9 +362,10 @@ handle_call({detach_queue, QueueId}, _From, State) ->
                   #state{}) -> {noreply, #state{}} |
                                {noreply, #state{}, timeout()} |
                                {stop, Reason :: term(), #state{}}.
-handle_cast({send, Packet}, #state{socket = Socket,
-                                   port = Port,
-                                   ifindex = Ifindex} = State) ->
+handle_cast({send, #ofs_pkt{packet = Packet}},
+            #state{socket = Socket,
+                   port = Port,
+                   ifindex = Ifindex} = State) ->
     Frame = pkt:encapsulate(Packet),
     case {Port, Ifindex} of
         {undefined, _} ->

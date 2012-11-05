@@ -159,8 +159,13 @@ get_queue_stats() ->
               end, ets:tab2list(ofs_port_queue)).
 
 get_queues(PortNo) ->
-    MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
-    ets:match_object(ofs_port_queue, MatchSpec).
+    case application:get_env(linc, queues) of
+        undefined ->
+            [];
+        {ok, _} ->
+            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
+            ets:match_object(ofs_port_queue, MatchSpec)
+    end.
 
 %% @doc Return queue stats for all queues connected to the given OF port.
 -spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].

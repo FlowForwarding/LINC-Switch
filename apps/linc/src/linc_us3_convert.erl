@@ -1,5 +1,23 @@
+%%------------------------------------------------------------------------------
+%% Copyright 2012 FlowForwarding.org
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%-----------------------------------------------------------------------------
+
+%% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
+%% @copyright 2012 FlowForwarding.org
+%% @doc Module with helpers for converting packets.
 -module(linc_us3_convert).
--author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([ofp_field/2,
          packet_fields/1]).
@@ -49,7 +67,7 @@ special_header_fields(P) ->
 
 %% @doc Extracts known fields from different packet header types
 -spec header_fields(pkt:packet()) -> [ofp_field()].
-header_fields(#ether{type = Type,
+header_fields(#ether{type = _Type,
                      dhost = DHost,
                      shost = SHost}) ->
     %% calculate eth_type separately in special_packet_fields()

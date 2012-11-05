@@ -1,11 +1,24 @@
-%%%===================================================================
-%%% Use is subject to License terms.
-%%% @copyright (C) 2012 FlowForwarding.org
-%%% @doc Implementation of sliding window for calculating average
-%%% transfer over a period of time
-%%% @end
-%%%===================================================================
+%%------------------------------------------------------------------------------
+%% Copyright 2012 FlowForwarding.org
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%-----------------------------------------------------------------------------
 
+%% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
+%% @copyright 2012 FlowForwarding.org
+%% @doc Implementation of sliding window for calculating average transfer over
+%% a period of time.
+%%
 %% Implementation note: sliding window is implemented as a queue
 %% using two lists (stacks). It's implementation is simpler,
 %% because we always have the same number of entries in the queues.
@@ -17,9 +30,7 @@
 %% is always succeeded by stepping, a nice property holds - tail list
 %% is never empty, thus queue's youngest element - hd(Tail) is
 %% always available in O(1) time.
-
 -module(linc_us3_sliding_window).
--author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -export([new/2,
          refresh/1,

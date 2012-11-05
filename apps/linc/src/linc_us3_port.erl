@@ -1,41 +1,46 @@
-%%%-----------------------------------------------------------------------------
-%%% Use is subject to License terms.
-%%% @copyright (C) 2012 FlowForwarding.org
-%%% @doc Module to repsent Open FLow port.
-%%% It abstracts out underlying logic of either hardware network stack or
-%%% virtual TAP stack. It provides Open Flow ports represented as gen_server
-%%% processes with port configuration and statistics according to
-%%% OF specification. It allows to create and attach queues to given ports and
-%%% supports queue statistics as well.
-%%% OF ports can be programatically started and stopped by utilizing API
-%%% provided by this module.
-%%% @end
-%%%-----------------------------------------------------------------------------
+%%------------------------------------------------------------------------------
+%% Copyright 2012 FlowForwarding.org
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%-----------------------------------------------------------------------------
+
+%% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
+%% @copyright 2012 FlowForwarding.org
+%% @doc Module to represent OpenFlow port.
+%% It abstracts out underlying logic of either hardware network stack or virtual
+%% TAP stack. It provides Open Flow ports represented as gen_server processes
+%% with port configuration and statistics according to OpenFlow specification.
+%% It allows to create and attach queues to given ports and supports queue
+%% statistics as well. OpenFlow ports can be programatically started and
+%% stopped by utilizing API provided by this module.
 -module(linc_us3_port).
--author("Erlang Solutions Ltd. <openflow@erlang-solutions.com>").
 
 -behaviour(gen_server).
 
 %% API
 -export([start_link/1,
-
          send/3,
          send/2,
-
          change_config/2,
          list_ports/0,
          list_queues/1,
-
          get_port_stats/0,
          get_port_stats/1,
-
          get_queue_stats/0,
          get_queue_stats/1,
          get_queue_stats/2,
-
          attach_queue/3,
          detach_queue/2,
-
          remove/1]).
 
 %% gen_server callbacks

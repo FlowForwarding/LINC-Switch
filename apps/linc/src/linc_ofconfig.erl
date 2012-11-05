@@ -15,7 +15,6 @@
 %%-----------------------------------------------------------------------------
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
-%% @author Krzysztof Rutka <krzysztof.rutka@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc OF-Config configuration module.
 -module(linc_ofconfig).

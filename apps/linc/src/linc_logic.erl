@@ -22,18 +22,20 @@
 -behaviour(gen_server).
 
 %% API
--export([
-         start_link/2,
+-export([start_link/2,
          message/2,
          send/1,
          register_receiver/2,
          unregister_receiver/1,
-         get_connection/1
-        ]).
+         get_connection/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
@@ -89,11 +91,11 @@ init([BackendMod, BackendOpts]) ->
     %% We trap exit signals here to handle shutdown initiated by the supervisor
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
-    {ok, Controllers} = application:get_env(linc, controllers),
-    [linc_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
-    {ok, BackendState} = BackendMod:start(BackendOpts),
+
+    %% Note: Timeout 0 will send a timeout message to the gen_server
+    %%       to handle backend initialization before any other message.
     {ok, #state{backend_mod = BackendMod,
-                backend_state = BackendState}}.
+                backend_state = BackendOpts}, 0}.
 
 handle_call({get_connection, Pid}, _From,
             #state{connections = Connections} = State) ->
@@ -132,6 +134,16 @@ handle_cast({send, #ofp_message{body = Body} = Message},
     [do_send(Socket, Message) || #connection{socket = Socket} <- Target],
     {noreply, State}.
 
+handle_info(timeout, #state{backend_mod = BackendMod,
+                            backend_state = BackendOpts} = State) ->
+    %% Note: Starting the backend and opening connections to the controllers
+    %%       as a first thing after the logic and the main supervisor started.
+    {ok, BackendState} = BackendMod:start(BackendOpts),
+
+    {ok, Controllers} = application:get_env(linc, controllers),
+    [linc_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
+
+    {noreply, State#state{backend_state = BackendState}};
 handle_info(_Info, State) ->
     {noreply, State}.
 

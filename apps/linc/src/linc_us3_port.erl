@@ -587,7 +587,7 @@ do_detach_queue(#state{ofs_port_no = OfsPortNo,
                 QueueId) ->
     case ets:lookup(ofs_port_queue, {OfsPortNo, QueueId}) of
         [#ofs_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:stop(Pid);
+            linc_us3_queue:detach(Pid);
         [] ->
             ok
     end,

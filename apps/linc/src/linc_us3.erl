@@ -124,7 +124,10 @@ get_group_stats(GroupId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    linc_us3_sup:start_link(),
+    UserspaceSup = {linc_us3_sup, {linc_us3_sup, start_link, []},
+                    permanent, 5000, supervisor, [linc_us3_sup]},
+    supervisor:start_child(linc_sup, UserspaceSup),
+
     %% Flows
     flow_tables = ets:new(flow_tables, [named_table, public,
                                         {keypos, #linc_flow_table.id},
@@ -154,10 +157,7 @@ start(_Opts) ->
         undefined ->
             no_queues;
         {ok, _} ->
-            ofs_port_queue = ets:new(ofs_port_queue,
-                                     [named_table, public,
-                                      {keypos, #ofs_port_queue.key},
-                                      {read_concurrency, true}])
+            linc_us3_queue:start()
     end,
 
     %% Groups
@@ -193,7 +193,7 @@ stop(_State) ->
         undefined ->
             ok;
         {ok, _} ->
-            ets:delete(ofs_port_queue)
+            linc_us3_queue:stop()
     end,
     %% Groups
     ets:delete(group_table),

@@ -33,7 +33,7 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
@@ -42,14 +42,4 @@ start_link() ->
 init([]) ->
     PortSup = {linc_us3_port_sup, {linc_us3_port_sup, start_link, []},
                permanent, 5000, supervisor, [linc_us3_port_sup]},
-    Sups = case application:get_env(linc, queues) of
-               undefined ->
-                   [PortSup];
-               {ok, _} ->
-                   QueueSup = {linc_us3_queue_sup,
-                               {linc_us3_queue_sup, start_link, []},
-                               permanent, 5000, supervisor,
-                               [linc_us3_queue_sup]},
-                   [QueueSup, PortSup]
-           end,
-    {ok, {{one_for_one, 5, 10}, Sups}}.
+    {ok, {{one_for_one, 5, 10}, [PortSup]}}.

@@ -23,7 +23,9 @@
 -behaviour(gen_netconf).
 
 %% Internal API
--export([start_link/0]).
+-export([start/0,
+         start_link/0,
+         stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -55,6 +57,18 @@
 %%------------------------------------------------------------------------------
 %% Internal API functions
 %%------------------------------------------------------------------------------
+
+start() ->
+    ok = application:start(ssh),
+    ok = application:start(enetconf),
+
+    OFConfig = {linc_ofconfig, {linc_ofconfig, start_link, []},
+                permanent, 5000, worker, [linc_ofconfig]},
+    supervisor:start_child(linc_sup, OFConfig).
+
+stop() ->
+    ok = application:stop(enetconf),
+    ok = application:stop(ssh).
 
 %% @private
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.

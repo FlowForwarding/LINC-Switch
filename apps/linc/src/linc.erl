@@ -31,22 +31,22 @@
 %% @doc Start the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
+    {ok, Pid} = linc_sup:start_link(),
+
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
-            ok = application:start(ssh),
-            ok = application:start(enetconf);
+            linc_ofconfig:start();
         _ ->
             ok
     end,
-    linc_sup:start_link().
+    {ok, Pid}.
 
-%% @doc Stop the application
+%% @doc Stop the application.
 -spec stop(any()) -> ok.
 stop(_State) ->
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
-            ok = application:stop(enetconf),
-            ok = application:stop(ssh);
+            linc_ofconfig:stop();
         _ ->
             ok
     end.

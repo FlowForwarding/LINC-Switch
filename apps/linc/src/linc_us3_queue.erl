@@ -19,9 +19,11 @@
 %% @doc Module implementing port's queues in userspace switch
 -module(linc_us3_queue).
 
+-export([start/0,
+         stop/0]).
 -export([start_link/6,
          send/2,
-         stop/1]).
+         detach/1]).
 
 -include("linc_us3.hrl").
 
@@ -34,6 +36,19 @@
 %%------------------------------------------------------------------------------
 %% Public API
 %%------------------------------------------------------------------------------
+
+start() ->
+    ofs_port_queue = ets:new(ofs_port_queue,
+                             [named_table, public,
+                              {keypos, #ofs_port_queue.key},
+                              {read_concurrency, true}]),
+
+    QueueSup = {linc_us3_queue_sup, {linc_us3_queue_sup, start_link, []},
+                permanent, 5000, supervisor, [linc_us3_queue_sup]},
+    supervisor:start_child(linc_us3_sup, QueueSup).
+
+stop() ->
+    ets:delete(ofs_port_queue).
 
 -spec start_link({ofp_port_no(), ofp_queue_id()},
                  integer(), integer(), integer(),
@@ -60,9 +75,9 @@ send(Pid, Packet) ->
     Pid ! {send, Packet},
     ok.
 
--spec stop(pid()) -> ok.
-stop(Pid) ->
-    gen:call(Pid, cmd, stop).
+-spec detach(pid()) -> ok.
+detach(Pid) ->
+    gen:call(Pid, cmd, detach).
 
 %%--------------------------------------------------------------------
 %% Main loop
@@ -81,7 +96,7 @@ loop({_OutPort, _OutQueue} = MyKey, MinRate, MaxRate, PortRate,
             update_port_transmitted_counters(MyKey, byte_size(Frame)),
             loop(MyKey, MinRate, MaxRate, PortRate,
                  ThrottlingEts, NewHistory, SendFun);
-        {cmd, From, stop} ->
+        {cmd, From, detach} ->
             gen:reply(From, ok)
     end.
 

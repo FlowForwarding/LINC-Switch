@@ -282,6 +282,10 @@ init({OfsPortNo, PortOpts}) ->
                     {ok, Pid} = epcap:start([{no_register, true},
                                              {promiscuous, true},
                                              {interface, Interface},
+                                             %% to work on ipv4-less interfaces
+                                             {no_lookupnet, true},
+                                             %% for ethernet-only (without taps and bridges)
+                                             {filter_incoming, true},
                                              {filter, ""}]),
                     {S, I} = case os:type() of
                                  {unix, darwin} ->

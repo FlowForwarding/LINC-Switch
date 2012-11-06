@@ -92,6 +92,8 @@ init([BackendMod, BackendOpts]) ->
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
 
+    %% Note: Timeout 0 will send a timeout message to the gen_server
+    %%       to handle backend initialization before any other message.
     {ok, #state{backend_mod = BackendMod,
                 backend_state = BackendOpts}, 0}.
 
@@ -134,6 +136,8 @@ handle_cast({send, #ofp_message{body = Body} = Message},
 
 handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendOpts} = State) ->
+    %% Note: Starting the backend and opening connections to the controllers
+    %%       as a first thing after the logic and the main supervisor started.
     {ok, BackendState} = BackendMod:start(BackendOpts),
 
     {ok, Controllers} = application:get_env(linc, controllers),

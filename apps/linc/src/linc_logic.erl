@@ -92,9 +92,6 @@ init([BackendMod, BackendOpts]) ->
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
 
-    {ok, Controllers} = application:get_env(linc, controllers),
-    [linc_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
-
     {ok, #state{backend_mod = BackendMod,
                 backend_state = BackendOpts}, 0}.
 
@@ -138,6 +135,10 @@ handle_cast({send, #ofp_message{body = Body} = Message},
 handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendOpts} = State) ->
     {ok, BackendState} = BackendMod:start(BackendOpts),
+
+    {ok, Controllers} = application:get_env(linc, controllers),
+    [linc_receiver_sup:open(Host, Port) || {Host, Port} <- Controllers],
+
     {noreply, State#state{backend_state = BackendState}};
 handle_info(_Info, State) ->
     {noreply, State}.

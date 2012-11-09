@@ -139,13 +139,13 @@
          }).
 
 -record(ofs_pkt, {
-          fields                :: ofp_match(),
-          actions  = []         :: ordsets:ordset(ofp_action()),
-          metadata = << 0:64 >> :: binary(),
-          size     = 0          :: integer(),
-          in_port               :: ofp_port_no(),
-          queue_id = 0          :: integer(),
-          packet   = []         :: pkt:packet()
+          in_port             :: ofp_port_no(),
+          fields              :: ofp_match(),
+          actions = []        :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>> :: binary(),
+          packet              :: pkt:packet(),
+          size                :: integer(),
+          queue_id = default  :: integer() | default
          }).
 -type ofs_pkt() :: #ofs_pkt{}.
 

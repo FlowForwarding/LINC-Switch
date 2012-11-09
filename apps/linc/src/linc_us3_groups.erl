@@ -20,7 +20,13 @@
 
 -module(linc_us3_groups).
 
+%% Group routing
 -export([apply/2]).
+
+%% Group Mod
+%% -export([add/1,
+%%          modify/1,
+%%          delete/1]).
 
 -include("linc_us3.hrl").
 

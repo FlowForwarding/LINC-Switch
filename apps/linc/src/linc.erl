@@ -28,7 +28,7 @@
 %% Application callbacks
 %%------------------------------------------------------------------------------
 
-%% @doc Start the application.
+%% @doc Starts the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
     {ok, Pid} = linc_sup:start_link(),
@@ -41,7 +41,7 @@ start(_StartType, _StartArgs) ->
     end,
     {ok, Pid}.
 
-%% @doc Stop the application.
+%% @doc Stops the application.
 -spec stop(any()) -> ok.
 stop(_State) ->
     case application:get_env(linc, of_config) of

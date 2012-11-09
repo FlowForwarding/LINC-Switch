@@ -21,8 +21,7 @@
 -import(linc_test_utils, [check_if_called/1]).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc_us3.hrl").
 
 %% Tests -----------------------------------------------------------------------
 
@@ -38,23 +37,37 @@ instruction_test_() ->
       {"Empty instruction list", fun empty/0}]}.
 
 apply_actions() ->
-    ApplyActionsInstruction = create_apply_actions(),
-    linc_us3_instructions:apply(pkt, [ApplyActionsInstruction]),
+    ApplyActions = #ofp_instruction_apply_actions{actions = []},
+    linc_us3_instructions:apply(pkt, [ApplyActions]),
     ?assert(check_if_called({linc_us3_actions, apply_list, 2})).
 
 clear_actions() ->
-    ?assert(unimplemented).
+    SomeAction = #ofp_action_output{port = 0},
+    AnotherAction = #ofp_action_copy_ttl_out{},
+    SomePacket = #ofs_pkt{actions = [SomeAction, AnotherAction]},
+    ClearActions = #ofp_instruction_clear_actions{},
+    {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [ClearActions]),
+    ?assertEqual([], NewPacket#ofs_pkt.actions).
 
 write_actions() ->
-    ?assert(unimplemented).
+    SomePacket = #ofs_pkt{actions = []},
+    SomeAction = #ofp_action_output{port = 0},
+    WriteActions = #ofp_instruction_write_actions{actions = [SomeAction]},
+    {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [WriteActions]),
+    ?assertEqual([SomeAction], NewPacket#ofs_pkt.actions).
 
 write_metadata() ->
-    ?assert(unimplemented).
+    SomePacket = #ofs_pkt{metadata = <<111:64>>},
+    WriteMetadata = #ofp_instruction_write_metadata{metadata = <<333:64>>,
+                                                    metadata_mask = <<222:64>>},
+    {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [WriteMetadata]),
+    NewValue = 111 + (333 band 222),
+    ?assertEqual(<<NewValue:64>>, NewPacket#ofs_pkt.metadata).
 
 goto_table() ->
-    GotoInstruction = create_goto_table(5),
+    GotoTable = #ofp_instruction_goto_table{table_id = 5},
     ?assertEqual({{goto, 5}, pkt},
-                 linc_us3_instructions:apply(pkt, [GotoInstruction])).
+                 linc_us3_instructions:apply(pkt, [GotoTable])).
 
 empty() ->
     ?assertEqual({stop, pkt}, linc_us3_instructions:apply(pkt, [])).
@@ -66,11 +79,3 @@ setup() ->
 
 teardown(ok) ->
     ok.
-
-%% Helpers ---------------------------------------------------------------------
-
-create_apply_actions() ->
-    #ofp_instruction_apply_actions{actions = []}.
-
-create_goto_table(TableId) ->
-    #ofp_instruction_goto_table{table_id = TableId}.

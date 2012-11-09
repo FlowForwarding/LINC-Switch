@@ -18,15 +18,19 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us3_instructions_tests).
 
--import(linc_test_utils, [check_if_called/1]).
+-import(linc_test_utils, [mock/1,
+                          unmock/1,
+                          check_if_called/1]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("linc/include/linc_us3.hrl").
 
+-define(MOCKED, [actions]).
+
 %% Tests -----------------------------------------------------------------------
 
 instruction_test_() ->
-    {foreach,
+    {setup,
      fun setup/0,
      fun teardown/1,
      [{"Apply-Actions", fun apply_actions/0},
@@ -75,7 +79,9 @@ empty() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
+    mock(?MOCKED),
     ok.
 
 teardown(ok) ->
+    unmock(?MOCKED),
     ok.

@@ -65,7 +65,9 @@ write_metadata() ->
     WriteMetadata = #ofp_instruction_write_metadata{metadata = <<333:64>>,
                                                     metadata_mask = <<222:64>>},
     {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [WriteMetadata]),
-    NewValue = 111 + (333 band 222),
+    %% From OpenFlow 1.2 spec, page 14:
+    %% new metadata = (old metadata & ~mask) | (value & mask)
+    NewValue = (111 band (bnot 222)) bor (333 band 222),
     ?assertEqual(<<NewValue:64>>, NewPacket#ofs_pkt.metadata).
 
 goto_table() ->

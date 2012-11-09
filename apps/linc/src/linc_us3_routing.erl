@@ -19,7 +19,8 @@
 %% @doc Main module responsible for routing packets.
 -module(linc_us3_routing).
 
--export([do_route/2,
+-export([do_route/1,
+         do_route/2,
          route_to_controller/3,
          route_to_output/3]).
 
@@ -30,29 +31,31 @@
 %%% Routing functions ----------------------------------------------------------
 %%%
 
-%% @doc Applies flow instructions to a packet
-%% @end
--spec do_route(#ofs_pkt{}, integer()) -> route_result().
+-type route_result() :: match | {table_miss, drop | controller}.
 
-do_route(Pkt, FlowId) ->
-    case apply_flow(Pkt, FlowId) of
-        {match, goto, NextFlowId, NewPkt} ->
-            do_route(NewPkt, NextFlowId);
-        {match, output, NewPkt} ->
-            linc_us3_actions:apply_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
-            {match, FlowId, output};
-        {match, group, NewPkt} ->
-            linc_us3_actions:apply_set(FlowId, NewPkt#ofs_pkt.actions, NewPkt),
-            {match, FlowId, output};
-        {match, drop, _NewPkt} ->
-            {match, FlowId, drop};
-        {table_miss, controller} ->
-            route_to_controller(FlowId, Pkt, no_match),
-            {nomatch, FlowId, controller};
-        {table_miss, drop} ->
-            {nomatch, FlowId, drop};
-        {table_miss, continue, NextFlowId} ->
-            do_route(Pkt, NextFlowId)
+%% @doc Applies flow instructions from the first flow table to a packet.
+-spec do_route(#ofs_pkt{}) -> route_result().
+do_route(Pkt) ->
+    do_route(Pkt, 1).
+
+%% @doc Applies flow instructions from the given table to a packet.
+-spec do_route(#ofs_pkt{}, integer()) -> route_result().
+do_route(Pkt, TableId) ->
+    [FlowTable] = ets:lookup(flow_tables, TableId),
+    case match_flow_entries(Pkt, TableId, FlowTable#linc_flow_table.entries) of
+        match ->
+            match;
+        table_miss when FlowTable#linc_flow_table.config == drop ->
+            update_flow_table_miss_counters(TableId),
+            {table_miss, drop};
+        table_miss when FlowTable#linc_flow_table.config == controller ->
+            update_flow_table_miss_counters(TableId),
+            route_to_controller(TableId, Pkt, no_match),
+            {table_miss, controller};
+        table_miss when FlowTable#linc_flow_table.config == continue ->
+            update_flow_table_miss_counters(TableId),
+            %% TODO: Return error when reached last flow table
+            do_route(Pkt, TableId + 1)
     end.
 
 -spec route_to_controller(integer(), #ofs_pkt{}, atom()) -> ok.
@@ -97,28 +100,43 @@ route_to_output(_TableId, _Pkt, OtherPort) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
--spec apply_flow(#ofs_pkt{}, integer()) -> match() | miss().
-apply_flow(Pkt, FlowId) ->
-    [FlowTable] = ets:lookup(flow_tables, FlowId),
-    FlowTableId = FlowTable#linc_flow_table.id,
-    case match_flow_entries(Pkt, FlowTableId,
-                            FlowTable#linc_flow_table.entries) of
-        {match, goto, NextFlowId, NewPkt} ->
-            update_flow_table_match_counters(FlowTableId),
-            {match, goto, NextFlowId, NewPkt};
-        {match, Action, NewPkt} ->
-            update_flow_table_match_counters(FlowTableId),
-            {match, Action, NewPkt};
-        table_miss when FlowTable#linc_flow_table.config == drop ->
-            update_flow_table_miss_counters(FlowTableId),
-            {table_miss, drop};
-        table_miss when FlowTable#linc_flow_table.config == controller ->
-            update_flow_table_miss_counters(FlowTableId),
-            {table_miss, controller};
-        table_miss when FlowTable#linc_flow_table.config == continue ->
-            update_flow_table_miss_counters(FlowTableId),
-            {table_miss, continue, FlowId + 1}
+-spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
+                        -> match | table_miss.
+match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
+    case match_flow_entry(Pkt, TableId, FlowEntry) of
+        match ->
+            match;
+        nomatch ->
+            match_flow_entries(Pkt, TableId, Rest)
+    end;
+match_flow_entries(_Pkt, _TableId, []) ->
+    table_miss.
+
+-spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+match_flow_entry(Pkt, TableId, FlowEntry) ->
+    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
+                      FlowEntry#flow_entry.match#ofp_match.fields) of
+        false ->
+            nomatch;
+        true ->
+            update_flow_table_match_counters(TableId),
+            update_flow_entry_counters(TableId, FlowEntry, Pkt#ofs_pkt.size),
+            case linc_us3_instructions:apply(Pkt, FlowEntry#flow_entry.instructions) of
+                {stop, NewPkt} ->
+                    linc_us3_actions:apply_set(NewPkt),
+                    match;
+                {{goto, NextTableId}, NewPkt} ->
+                    linc_us3_routing:do_route(NewPkt, NextTableId)
+            end
     end.
+
+-spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
+fields_match(PktFields, FlowFields) ->
+    lists:all(fun(FlowField) ->
+                      lists:any(fun(PktField) ->
+                                        two_fields_match(PktField, FlowField)
+                                end, PktFields)
+              end, FlowFields).
 
 -spec update_flow_table_match_counters(integer()) -> [integer()].
 update_flow_table_match_counters(FlowTableId) ->
@@ -138,48 +156,6 @@ update_flow_entry_counters(FlowTableId, FlowEntry, PktSize) ->
                        {FlowTableId, FlowEntry},
                        [{#flow_entry_counter.received_packets, 1},
                         {#flow_entry_counter.received_bytes, PktSize}]).
-
--spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
-                        -> match() | table_miss.
-match_flow_entries(Pkt, FlowTableId, [FlowEntry | Rest]) ->
-    case match_flow_entry(Pkt, FlowTableId, FlowEntry) of
-        {match, goto, NextFlowId, NewPkt} ->
-            update_flow_entry_counters(FlowTableId,
-                                       FlowEntry,
-                                       Pkt#ofs_pkt.size),
-            {match, goto, NextFlowId, NewPkt};
-        {match, Action, NewPkt} ->
-            update_flow_entry_counters(FlowTableId,
-                                       FlowEntry,
-                                       Pkt#ofs_pkt.size),
-            {match, Action, NewPkt};
-        nomatch ->
-            match_flow_entries(Pkt, FlowTableId, Rest)
-    end;
-match_flow_entries(_Pkt, _FlowTableId, []) ->
-    table_miss.
-
--spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{})
-                      -> match() | nomatch.
-match_flow_entry(Pkt, FlowTableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
-                      FlowEntry#flow_entry.match#ofp_match.fields) of
-        true ->
-            linc_us3_instructions:apply(FlowTableId,
-                                        FlowEntry#flow_entry.instructions,
-                                        Pkt,
-                                        output_or_group);
-        false ->
-            nomatch
-    end.
-
--spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
-fields_match(PktFields, FlowFields) ->
-    lists:all(fun(FlowField) ->
-                      lists:any(fun(PktField) ->
-                                        two_fields_match(PktField, FlowField)
-                                end, PktFields)
-              end, FlowFields).
 
 %% TODO: check for different types and classes
 two_fields_match(#ofp_field{name = F1},

@@ -16,7 +16,7 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
-%% @doc Module for handling all actions related tasks.
+%% @doc Module for handling all group related tasks.
 
 -module(linc_us3_groups).
 

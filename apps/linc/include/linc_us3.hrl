@@ -147,6 +147,7 @@
           queue_id = 0          :: integer(),
           packet   = []         :: pkt:packet()
          }).
+-type ofs_pkt() :: #ofs_pkt{}.
 
 -type ofs_port_type() :: physical | logical | reserved.
 
@@ -193,10 +194,6 @@
           type    = all :: ofp_group_type(),
           buckets = []  :: [#ofs_bucket{}]
          }).
-
--type route_result() :: tuple(match | nomatch,
-                              FlowId :: integer(),
-                              drop | controller | output).
 
 -type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
                  tuple(match, goto, integer(), #ofs_pkt{}).

@@ -21,8 +21,7 @@
 
 -export([do_route/1,
          do_route/2,
-         route_to_controller/3,
-         route_to_output/3]).
+         route_to_controller/3]).
 
 -include("linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
@@ -77,24 +76,6 @@ route_to_controller(TableId,
                    [OFSPkt, E1, E2]),
             io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()])
     end.
-
--spec route_to_output(integer(), #ofs_pkt{}, integer() | atom()) -> any().
-route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, all) ->
-    Ports = ets:tab2list(ofs_ports),
-    [linc_us3_port:send(PortNum, Pkt)
-     || #ofs_port{number = PortNum} <- Ports, PortNum /= InPort];
-route_to_output(TableId, Pkt, controller) ->
-    route_to_controller(TableId, Pkt, action);
-route_to_output(_TableId, _Pkt, table) ->
-    %% FIXME: Only valid in an output action in the
-    %%        action list of a packet-out message.
-    ok;
-route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
-    linc_us3_port:send(InPort, Pkt);
-route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
-    linc_us3_port:send(PortNum, Pkt);
-route_to_output(_TableId, _Pkt, OtherPort) ->
-    ?WARNING("unsupported port type: ~p", [OtherPort]).
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

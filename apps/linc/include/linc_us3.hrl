@@ -144,7 +144,7 @@
           metadata = << 0:64 >> :: binary(),
           size     = 0          :: integer(),
           in_port               :: ofp_port_no(),
-          queue_id = 0          :: integer(),
+          queue_id = default    :: integer(),
           packet   = []         :: pkt:packet()
          }).
 

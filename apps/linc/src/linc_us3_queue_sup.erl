@@ -45,7 +45,8 @@ start_link() ->
                 ets:tid(),
                 fun()) -> {ok, pid()}.
 add_queue(Key, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun) ->
-    supervisor:start_child(?MODULE, [Key, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun]).
+    supervisor:start_child(?MODULE, [Key, MinRateBps, MaxRateBps, PortRateBps,
+                                     ThrottlingEts, SendFun]).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks

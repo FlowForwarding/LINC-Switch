@@ -29,7 +29,6 @@
 
 %% API
 -export([start_link/1,
-         send/3,
          send/2,
          change_config/2,
          list_ports/0,
@@ -76,35 +75,29 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
-%% @doc Send OF packet to the OF port with no queue specified.
+%% @doc Send OF packet to the OF port.
 -spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
-send(OutPort, OFSPkt) ->
-    send(OutPort, ?DEFAULT_QUEUE, OFSPkt).
-
-%% @doc Send OF packet to the OF port and put it in the given queue.
--spec send(ofp_port_no(), ofp_queue_id(), #ofs_pkt{}) ->
-                  ok | bad_port | bad_queue | no_fwd.
-send(PortNo, QueueId, Packet) ->
+send(PortNo, Pkt) ->
     case application:get_env(linc, queues) of
         undefined ->
-            do_send(PortNo, Packet);
+            do_send(PortNo, Pkt);
         {ok, _} ->
-            do_send_with_queue(PortNo, QueueId, Packet)
+            do_send_with_queue(PortNo, Pkt)
     end.
 
-do_send(PortNo, Packet) ->
+do_send(PortNo, Pkt) ->
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
         Pid ->
-            gen_server:cast(Pid, {send, Packet})
+            gen_server:cast(Pid, {send, Pkt})
     end.
 
-do_send_with_queue(PortNo, QueueId, Packet) ->
-    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
+do_send_with_queue(PortNo, Pkt) ->
+    case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
         %% XXX: move no_fwd to ETS and check it
         [#ofs_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:send(Pid, Packet);
+            linc_us3_queue:send(Pid, Pkt);
         [] ->
             case ets:lookup(ofs_ports, PortNo) of
                 [_] -> bad_queue;

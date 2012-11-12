@@ -92,7 +92,7 @@ route_to_output(_TableId, _Pkt, table) ->
 route_to_output(_TableId, Pkt = #ofs_pkt{in_port = InPort}, in_port) ->
     linc_us3_port:send(InPort, Pkt);
 route_to_output(_TableId, Pkt, PortNum) when is_integer(PortNum) ->
-    linc_us3_port:send(PortNum, Pkt#ofs_pkt.queue_id, Pkt);
+    linc_us3_port:send(PortNum, Pkt);
 route_to_output(_TableId, _Pkt, OtherPort) ->
     ?WARNING("unsupported port type: ~p", [OtherPort]).
 

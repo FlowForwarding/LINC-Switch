@@ -76,14 +76,24 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 %% @doc Send OF packet to the OF port.
--spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
-send(PortNo, Pkt) ->
+-spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
+send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
+    Ports = ets:tab2list(ofs_ports),
+    [send(PortNo, Pkt)
+     || #ofs_port{number = PortNo} <- Ports, PortNo /= InPort];
+send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
+    send(InPort, Pkt);
+send(Pkt, controller) ->
+    linc_logic:send_to_controller(Pkt, action);
+send(Pkt, PortNo) when is_integer(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
             do_send(PortNo, Pkt);
         {ok, _} ->
             do_send_with_queue(PortNo, Pkt)
-    end.
+    end;
+send(UnsupportedPort, _Pkt) ->
+    ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
 do_send(PortNo, Pkt) ->
     case get_port_pid(PortNo) of

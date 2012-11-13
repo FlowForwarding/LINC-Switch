@@ -189,13 +189,6 @@
           counter :: ofp_bucket_counter()
          }).
 
-%% TODO: hide this inside linc_us3_groups module
--record(linc_group, {
-          id            :: ofp_group_id(),
-          type    = all :: ofp_group_type(),
-          buckets = []  :: [#ofs_bucket{}]
-         }).
-
 -type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
                  tuple(match, goto, integer(), #ofs_pkt{}).
 

@@ -160,17 +160,6 @@ start(_Opts) ->
             linc_us3_queue:start()
     end,
 
-    %% Groups
-    %% TODO: move this inside linc_us3_groups module
-    group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #linc_group.id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-    group_stats = ets:new(group_stats, [named_table, public,
-                                        {keypos, #ofp_group_stats.group_id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-
     {ok, BackendOpts} = application:get_env(linc, backends),
     {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
     {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
@@ -196,10 +185,6 @@ stop(_State) ->
         {ok, _} ->
             linc_us3_queue:stop()
     end,
-    %% Groups
-    %% TODO: move this inside linc_us3_groups module
-    ets:delete(group_table),
-    ets:delete(group_stats),
     ok.
 
 -spec handle_message(state(), ofp_message_body()) ->
@@ -267,57 +252,12 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
+ofp_group_mod(State, Mod = #ofp_group_mod{}) ->
     %% TODO: move specific logic inside linc_us3_groups module
-
-    %% Add new entry to the group table, if entry with given group id is already
-    %% present, then return error.
-    OFSBuckets = lists:map(fun(B) ->
-                                   #ofs_bucket{value = B,
-                                               counter = #ofp_bucket_counter{}}
-                           end, Buckets),
-    Entry = #linc_group{id = Id, type = Type, buckets = OFSBuckets},
-    case ets:insert_new(group_table, Entry) of
-        true ->
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = group_exists}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
-    %% TODO: move specific logic inside linc_us3_groups module
-
-    %% Modify existing entry in the group table, if entry with given group id
-    %% is not in the table, then return error.
-    Entry = #linc_group{id = Id, type = Type, buckets = Buckets},
-    case ets:member(group_table, Id) of
-        true ->
-            ets:insert(group_table, Entry),
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = unknown_group}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
-    %% Deletes existing entry in the group table, if entry with given group id
-    %% is not in the table, no error is recorded. Flows containing given
-    %% group id are removed along with it.
-    %% If one wishes to effectively delete a group yet leave in flow entries
-    %% using it, that group can be cleared by sending a modify with no buckets
-    %% specified.
-    case Id of
-        all ->
-            ets:delete_all_objects(group_table);
-        any ->
-            %% TODO: Should we support this case at all?
-            ok;
-        Id ->
-            ets:delete(group_table, Id)
-    end,
-    %% TODO: Remove flows containing given group along with it
-    {ok, State}.
+    case linc_us3_groups:modify(Mod) of
+        ok -> {ok, State};
+        {error, What} -> {error, What, State}
+    end.
 
 %% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->

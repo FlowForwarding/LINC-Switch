@@ -40,14 +40,35 @@
 -include("linc_us3.hrl").
 %% already included from linc_us3.hrl -include_lib("of_protocol/include/ofp_v3.hrl").
 
-%%%
+-record(linc_group, {
+          id            :: ofp_group_id(),
+          type    = all :: ofp_group_type(),
+          buckets = []  :: [#ofs_bucket{}]
+         }).
+
+-record(linc_bucket, {
+          bucket :: ofp_bucket(),
+          unique_id :: integer()
+         }).
+
+%%%==============================================================
 %%% API implementation
-%%%
+%%%==============================================================
 
 create() ->
+    group_table = ets:new(group_table, [named_table, public,
+                                        {keypos, #linc_group.id},
+                                        {read_concurrency, true},
+                                        {write_concurrency, true}]),
+    group_stats = ets:new(group_stats, [named_table, public,
+                                        {keypos, #ofp_group_stats.group_id},
+                                        {read_concurrency, true},
+                                        {write_concurrency, true}]),
     ok.
 
 destroy() ->
+    ets:delete(group_table),
+    ets:delete(group_stats),
     ok.
 
 %% @doc Applies group GroupId to packet Pkt, result should be list of
@@ -64,7 +85,55 @@ apply(GroupId, Pkt) ->
     end.
 
 -spec modify(#ofp_group_mod{}) -> ok | {error, Type :: atom(), Code :: atom()}.
-modify(_M) ->
+modify(#ofp_group_mod{ command = add,
+                       group_id = Id,
+                       type = Type,
+                       buckets = Buckets }) ->
+    %% Add new entry to the group table, if entry with given group id is already
+    %% present, then return error.
+    OFSBuckets = lists:map(fun(B) ->
+                                   #ofs_bucket{value = B,
+                                               counter = #ofp_bucket_counter{}}
+                           end, Buckets),
+    Entry = #linc_group{id = Id, type = Type, buckets = OFSBuckets},
+    case ets:insert_new(group_table, Entry) of
+        true -> ok;
+        false -> {error, #ofp_error_msg{type = group_mod_failed,
+                                        code = group_exists}}
+    end;
+modify(#ofp_group_mod{ command = modify,
+                       group_id = Id,
+                       type = Type,
+                       buckets = Buckets }) ->
+    %% Modify existing entry in the group table, if entry with given group id
+    %% is not in the table, then return error.
+    Entry = #linc_group{id = Id, type = Type, buckets = Buckets},
+    case ets:member(group_table, Id) of
+        true ->
+            ets:insert(group_table, Entry),
+            ok;
+        false ->
+            {error, #ofp_error_msg{type = group_mod_failed,
+                                   code = unknown_group}}
+    end;
+modify(#ofp_group_mod{ command = delete,
+                       group_id = Id }) ->
+    %% Deletes existing entry in the group table, if entry with given group id
+    %% is not in the table, no error is recorded. Flows containing given
+    %% group id are removed along with it.
+    %% If one wishes to effectively delete a group yet leave in flow entries
+    %% using it, that group can be cleared by sending a modify with no buckets
+    %% specified.
+    case Id of
+        all ->
+            ets:delete_all_objects(group_table);
+        any ->
+            %% TODO: Should we support this case at all?
+            ok;
+        Id ->
+            ets:delete(group_table, Id)
+    end,
+    %% TODO: Remove flows containing given group along with it
     ok.
 
 -spec get_stats(#ofp_group_stats_request{}) ->
@@ -82,9 +151,9 @@ get_desc(_R) ->
 get_features(_R) ->
     #ofp_group_features_stats_reply{}.
 
-%%%
+%%%==============================================================
 %%% Tool Functions
-%%%
+%%%==============================================================
 
 %% @doc Chooses a bucket of actions from list of buckets according to the
 %% group type. Executes actions. Returns [{packet, portnum|'drop'}]
@@ -92,7 +161,7 @@ get_features(_R) ->
 -spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) -> ok.
                               % [{#ofs_pkt{}, Port :: integer() | drop}].
 
-apply_group_type(all, Buckets, Pkt = #ofs_pkt{ in_port = InPort }) ->
+apply_group_type(all, Buckets, Pkt = #ofs_pkt{}) ->
     %% Required: all: Execute all buckets in the group. This group is used for
     %% multicast or broadcast forwarding. The packet is effectively cloned for
     %% each bucket; one packet is processed for each bucket of the group. If a
@@ -164,3 +233,8 @@ apply_bucket(#ofs_bucket{value = #ofp_bucket{actions = Actions}}, Pkt) ->
             drop
     end,
     ok.
+
+%%%==============================================================
+%%% Stats counters and support
+%%%==============================================================
+

@@ -53,16 +53,14 @@ destroy() ->
 %% @doc Applies group GroupId to packet Pkt, result should be list of
 %% packets and ports where they are destined or 'drop' atom. Packet is
 %% cloned if multiple ports are the destination.
--spec apply(GroupId :: integer(), Pkt :: #ofs_pkt{}) ->
-                   [{NewPkt :: #ofs_pkt{}, Port :: ofp_port_no() | drop}].
+-spec apply(GroupId :: integer(), Pkt :: #ofs_pkt{}) -> ok.
+                   %% [{NewPkt :: #ofs_pkt{}, Port :: ofp_port_no() | drop}].
 
 apply(GroupId, Pkt) ->
     case ets:lookup(group_table, GroupId) of
-        [] ->
-            [{Pkt, drop}];
-        [Group] ->
-            apply_group_type(Group#linc_group.type,
-                             Group#linc_group.buckets, Pkt)
+        [] -> ok;
+        [Group] -> apply_group_type(Group#linc_group.type,
+                                    Group#linc_group.buckets, Pkt)
     end.
 
 -spec modify(#ofp_group_mod{}) -> ok | {error, Type :: atom(), Code :: atom()}.
@@ -91,8 +89,8 @@ get_features(_R) ->
 %% @doc Chooses a bucket of actions from list of buckets according to the
 %% group type. Executes actions. Returns [{packet, portnum|'drop'}]
 %% (see 5.4.1 of OF1.2 spec)
--spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) ->
-                              [{#ofs_pkt{}, Port :: integer() | drop}].
+-spec apply_group_type(ofp_group_type(), [#ofs_bucket{}], #ofs_pkt{}) -> ok.
+                              % [{#ofs_pkt{}, Port :: integer() | drop}].
 
 apply_group_type(all, Buckets, Pkt = #ofs_pkt{ in_port = InPort }) ->
     %% Required: all: Execute all buckets in the group. This group is used for
@@ -102,14 +100,10 @@ apply_group_type(all, Buckets, Pkt = #ofs_pkt{ in_port = InPort }) ->
     %% clone is dropped. If the controller writer wants to forward out of the
     %% ingress port, the group should include an extra bucket which includes an
     %% output action to the OFPP_IN_PORT reseved port.
-    Reply = lists:map(fun(Bucket) ->
-                              apply_bucket(Bucket, Pkt)
-                      end, Buckets),
-    Reply;
-
-    %% Throw away packets going to inport by number (allow packets using special
-    %% value OFPP_IN_PORT)
-    %% [{Pkt, OutPort} || {Pkt, OutPort} <- Reply, OutPort =/= InPort];
+    lists:map(fun(Bucket) ->
+                      apply_bucket(Bucket, Pkt)
+              end, Buckets),
+    ok;
 
 apply_group_type(select, Buckets, Pkt) ->
     %% Optional: select: Execute one bucket in the group. Packets are processed
@@ -123,7 +117,8 @@ apply_group_type(select, Buckets, Pkt) ->
     %% instead of dropping packets destined to that port.
 
     [Bucket | _Whatever] = Buckets, % TODO: add weights and round-robin logic
-    [apply_bucket(Bucket, Pkt)];
+    ok = apply_bucket(Bucket, Pkt),
+    ok;
 
 apply_group_type(indirect, [Bucket], Pkt) ->
     %% Required: indirect: Execute the one defined bucket in this group. This
@@ -131,7 +126,8 @@ apply_group_type(indirect, [Bucket], Pkt) ->
     %% point to a common group identifier, supporting faster, more efficient
     %% convergence (e.g. next hops for IP forwarding). This group type is
     %% effectively identical to an 'all' group with one bucket.
-    apply_bucket(Bucket, Pkt);
+    ok = apply_bucket(Bucket, Pkt),
+    ok;
 
 apply_group_type(ff, Buckets, Pkt) ->
     %% Optional: fast failover: Execute the first live bucket. Each action bucket
@@ -143,9 +139,10 @@ apply_group_type(ff, Buckets, Pkt) ->
     %% group type must implement a liveness mechanism (see 6.9 of OF1.2 spec)
     case pick_live_bucket(Buckets) of
         false ->
-            [{Pkt, drop}];
+            ok;
         Bucket ->
-            [apply_bucket(Bucket, Pkt)]
+            ok = apply_bucket(Bucket, Pkt),
+            ok      
     end.
 
 %% @doc Select bucket based on port liveness logic
@@ -155,7 +152,15 @@ pick_live_bucket([]) -> false;
 pick_live_bucket([Bucket | _]) -> Bucket.
 
 %% @doc Applies set of commands
--spec apply_bucket(#ofs_bucket{}, #ofs_pkt{}) -> #ofs_pkt{}.
+-spec apply_bucket(#ofs_bucket{}, #ofs_pkt{}) -> ok.
 
 apply_bucket(#ofs_bucket{value = #ofp_bucket{actions = Actions}}, Pkt) ->
-    linc_us3_actions:apply_set(Actions, Pkt).
+    case linc_us3_actions:apply_set(Actions, Pkt) of
+        {output, NewPkt, PortNo} ->
+            linc_us3_port:send(NewPkt, PortNo);
+        {group, NewPkt, GroupId} ->
+            ?MODULE:apply(NewPkt, GroupId);
+        drop ->
+            drop
+    end,
+    ok.

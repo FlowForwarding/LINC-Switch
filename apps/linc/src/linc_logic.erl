@@ -382,11 +382,9 @@ send_reply(Socket, Request, ReplyBody) ->
     do_send(Socket, Request#ofp_message{body = ReplyBody}).
 
 get_datapath_mac() ->
-    {ok,Ifs}=inet:getifaddrs(),
-    MACs =  [hw_addr(Ps)||{_IF,Ps}<-Ifs, lists:keymember(hwaddr,1,Ps)],
+    {ok, Ifs} = inet:getifaddrs(),
+    MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
+             || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
     %% Make sure MAC/=0
-    [MAC|_] = [M||M <- MACs, M/=[0,0,0,0,0,0]],
+    [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
     list_to_binary(MAC).
-    
-hw_addr(Ps) ->
-    element(2,lists:keyfind(hwaddr,1,Ps)).

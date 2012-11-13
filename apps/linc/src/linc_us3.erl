@@ -161,8 +161,9 @@ start(_Opts) ->
     end,
 
     %% Groups
+    %% TODO: move this inside linc_us3_groups module
     group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #group.id},
+                                        {keypos, #linc_group.id},
                                         {read_concurrency, true},
                                         {write_concurrency, true}]),
     group_stats = ets:new(group_stats, [named_table, public,
@@ -196,6 +197,7 @@ stop(_State) ->
             linc_us3_queue:stop()
     end,
     %% Groups
+    %% TODO: move this inside linc_us3_groups module
     ets:delete(group_table),
     ets:delete(group_stats),
     ok.
@@ -267,13 +269,15 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
 ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
+    %% TODO: move specific logic inside linc_us3_groups module
+
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = lists:map(fun(B) ->
                                    #ofs_bucket{value = B,
                                                counter = #ofp_bucket_counter{}}
                            end, Buckets),
-    Entry = #group{id = Id, type = Type, buckets = OFSBuckets},
+    Entry = #linc_group{id = Id, type = Type, buckets = OFSBuckets},
     case ets:insert_new(group_table, Entry) of
         true ->
             {ok, State};
@@ -283,9 +287,11 @@ ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
     end;
 ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
                                     buckets = Buckets}) ->
+    %% TODO: move specific logic inside linc_us3_groups module
+
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
-    Entry = #group{id = Id, type = Type, buckets = Buckets},
+    Entry = #linc_group{id = Id, type = Type, buckets = Buckets},
     case ets:member(group_table, Id) of
         true ->
             ets:insert(group_table, Entry),

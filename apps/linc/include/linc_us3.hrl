@@ -139,14 +139,15 @@
          }).
 
 -record(ofs_pkt, {
-          fields                :: ofp_match(),
-          actions  = []         :: ordsets:ordset(ofp_action()),
-          metadata = << 0:64 >> :: binary(),
-          size     = 0          :: integer(),
-          in_port               :: ofp_port_no(),
-          queue_id = default    :: integer(),
-          packet   = []         :: pkt:packet()
+          in_port             :: ofp_port_no(),
+          fields              :: ofp_match(),
+          actions = []        :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>> :: binary(),
+          packet              :: pkt:packet(),
+          size                :: integer(),
+          queue_id = default  :: integer() | default
          }).
+-type ofs_pkt() :: #ofs_pkt{}.
 
 -type ofs_port_type() :: physical | logical | reserved.
 
@@ -188,15 +189,12 @@
           counter :: ofp_bucket_counter()
          }).
 
--record(group, {
+%% TODO: hide this inside linc_us3_groups module
+-record(linc_group, {
           id            :: ofp_group_id(),
           type    = all :: ofp_group_type(),
           buckets = []  :: [#ofs_bucket{}]
          }).
-
--type route_result() :: tuple(match | nomatch,
-                              FlowId :: integer(),
-                              drop | controller | output).
 
 -type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
                  tuple(match, goto, integer(), #ofs_pkt{}).

@@ -184,10 +184,11 @@
           rate = 0               :: integer()
          }).
 
--record(ofs_bucket, {
-          value   :: ofp_bucket(),
-          counter :: ofp_bucket_counter()
-         }).
+%% This is removed from linc_us3 as internal to linc_us3_groups module
+%% -record(ofs_bucket, {
+%%           value   :: ofp_bucket(),
+%%           counter :: ofp_bucket_counter()
+%%          }).
 
 -type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
                  tuple(match, goto, integer(), #ofs_pkt{}).

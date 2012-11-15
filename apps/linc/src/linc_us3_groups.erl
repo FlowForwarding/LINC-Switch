@@ -189,8 +189,13 @@ modify(#ofp_group_mod{ command = delete,
 %%--------------------------------------------------------------------
 -spec get_stats(#ofp_group_stats_request{}) ->
                        #ofp_group_stats_reply{}.
-get_stats(_R) ->
-    #ofp_group_stats_reply{}.
+get_stats(R) ->
+    case R#ofp_group_stats_request.group_id of
+        all -> IdList = [];
+        Id -> IdList = [Id]
+    end,
+    Stats = [group_get_stats(Id) || Id <- IdList],
+    #ofp_group_stats_reply{ stats = lists:flatten(Stats) }.
 
 %%--------------------------------------------------------------------
 -spec get_desc(#ofp_group_desc_stats_request{}) ->
@@ -369,6 +374,50 @@ group_update_stats(GroupId, Stat, Increment) ->
                                       })
     end,
     ok.
+
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Requests full group stats
+-spec group_get_stats(integer()) -> #ofp_group_stats{} | not_found.
+group_get_stats(GroupId) ->
+    case group_get(GroupId) of
+        not_found ->
+            [];
+        G ->
+            BStats = [#ofp_bucket_counter{
+                         packet_count = group_get_bucket_stat(Bucket#linc_bucket.unique_id,
+                                                              packet_count),
+                         byte_count = group_get_bucket_stat(Bucket#linc_bucket.unique_id,
+                                                            byte_count)
+                        } || Bucket <- G#linc_group.buckets],
+            [#ofp_group_stats{
+                group_id = GroupId,
+                ref_count = group_get_stat(GroupId, reference_count),
+                packet_count = group_get_stat(GroupId, packet_count),
+                byte_count = group_get_stat(GroupId, byte_count),
+                bucket_stats = BStats
+               }]
+    end.
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Retrieves one stat for group, zero if stat or group doesn't exist
+group_get_stat(GroupId, Stat) ->
+    case ets:lookup(group_stats, {group, GroupId, Stat}) of
+        []      -> 0;
+        [Value] -> Value
+    end.
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Retrieves one stat for bucket (group id is part of bucket id),
+%% returns zero if stat or group or bucket doesn't exist
+group_get_bucket_stat(BucketId, Stat) ->
+    case ets:lookup(group_stats, {bucket, BucketId, Stat}) of
+        []      -> 0;
+        [Value] -> Value
+    end.
 
 %%--------------------------------------------------------------------
 %% @internal

@@ -37,7 +37,23 @@ group_test_() ->
       {"Delete group", fun delete_group/0}]}.
 
 add_group() ->
-    ?assert(unimplemented).
+    %%?assert(unimplemented)
+    linc_us3_groups:modify(#ofp_group_mod{
+                              command = add,
+                              group_id = 1,
+                              type = all,
+                              buckets = []
+                             }),
+    G1Stats = linc_us3_groups:get_stats(
+                 #ofp_group_stats_request{ group_id = 1 }
+                ),
+    io:format(user, "~n~p~n", [G1Stats]),
+    #ofp_group_stats_reply{stats = G1Stats1} = G1Stats,
+    [G1Stats11 | _] = G1Stats1,
+    ?assert(G1Stats11#ofp_group_stats.group_id =:= 1),
+    ?assert(G1Stats11#ofp_group_stats.ref_count =:= 0),
+    ?assert(G1Stats11#ofp_group_stats.packet_count =:= 0),
+    ?assert(G1Stats11#ofp_group_stats.byte_count =:= 0).
 
 modify_group() ->
     ?assert(unimplemented).
@@ -48,11 +64,11 @@ delete_group() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    mock(?MOCKED),
-    %% linc_us3_groups:create(),
+    %%mock(?MOCKED),
+    linc_us3_groups:create(),
     ok.
 
 teardown(ok) ->
-    unmock(?MOCKED),
-    %% linc_us3_groups:destroy(),
+    %%unmock(?MOCKED),
+    linc_us3_groups:destroy(),
     ok.

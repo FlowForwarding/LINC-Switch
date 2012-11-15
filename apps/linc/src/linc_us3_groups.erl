@@ -289,6 +289,7 @@ apply_bucket(#linc_bucket{
     group_update_bucket_stats(BucketId, packet_count, 1),
     group_update_bucket_stats(BucketId, byte_count, Pkt#ofs_pkt.size),
 
+    %%ActionsSet = ordsets:from_list(Actions),
     case linc_us3_actions:apply_set(Actions, Pkt) of
         {output, NewPkt, PortNo} ->
             linc_us3_port:send(NewPkt, PortNo);
@@ -321,7 +322,7 @@ wrap_buckets_into_linc_buckets(GroupId, Buckets) ->
 -spec create_unique_id_for_bucket(#ofp_bucket{}) -> term().
 
 create_unique_id_for_bucket(B) ->
-    EncodedBucket = ofp_v3_encode:encode_struct(B),
+    EncodedBucket = ofp_v3_encode:do(#ofp_message{version = 0, xid = 0, body = B}),
 
     %% Add a timestamp in case of identical buckets
     {MegaS, S, MicroS} = os:timestamp(),
@@ -417,14 +418,14 @@ group_get(GroupId) ->
 %% @doc Returns bit width of counter fields for group
 group_stat_bitsize(reference_count) -> 32;
 group_stat_bitsize(packet_count)    -> 64;
-group_stat_bitsize(byte_count)      -> 64;
-group_stat_bitsize(X) ->
-    erlang:raise(exit, {badarg, X}).
+group_stat_bitsize(byte_count)      -> 64.
+%group_stat_bitsize(X) ->
+%    erlang:raise(exit, {badarg, X}).
     
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Returns bit width of counter fields for bucket
 group_bucket_stat_bitsize(packet_count) -> 64;
-group_bucket_stat_bitsize(byte_count)   -> 64;
-group_bucket_stat_bitsize(X) ->
-    erlang:raise(exit, {badarg, X}).
+group_bucket_stat_bitsize(byte_count)   -> 64.
+%group_bucket_stat_bitsize(X) ->
+%    erlang:raise(exit, {badarg, X}).

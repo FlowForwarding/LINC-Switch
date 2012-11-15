@@ -184,26 +184,31 @@ set_field(#ofp_field{ name = ip_proto, value = Value }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
         not_found ->
             Pkt;
-        ipv4 ->
+        {_, #ipv4{}} ->
             find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{p = Value} end);
-        ipv6 ->
+        {_, #ipv6{}} ->
             find_and_edit(Pkt, ipv6, fun(H) -> H#ipv6{next = Value} end)
     end;
 set_field(#ofp_field{ name = ip_dscp, value = Value }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
-        not_found -> Pkt;
-        ipv4 -> find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{dscp = Value} end);
-        ipv6 -> find_and_edit(
-                  Pkt, ipv6, fun(H) ->
-                                     <<_:6/bits, ECN:2/bits>> = H#ipv6.class,
-                                     H#ipv6{class = <<Value:6/bits, ECN:2/bits>>}
-                             end )
+        not_found ->
+            Pkt;
+        {_, #ipv4{}} ->
+            find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{dscp = Value} end);
+        {_, #ipv6{}} ->
+            find_and_edit(
+              Pkt, ipv6, fun(H) ->
+                                 <<_:6/bits, ECN:2/bits>> = H#ipv6.class,
+                                 H#ipv6{class = <<Value:6/bits, ECN:2/bits>>}
+                         end )
     end;
 set_field(#ofp_field{ name = ip_ecn, value = Value }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
         not_found -> Pkt;
-        ipv4 -> find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{ecn = Value} end);
-        ipv6 -> find_and_edit(
+        {_, #ipv4{}} ->
+            find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{ecn = Value} end);
+        {_, #ipv6{}} ->
+            find_and_edit(
                   Pkt, ipv6, fun(H) ->
                                      <<DSCP:6/bits, _:2/bits>> = H#ipv6.class,
                                      H#ipv6{class = <<DSCP:6/bits, Value:2/bits>>}
@@ -235,16 +240,20 @@ set_field(#ofp_field{ name = icmpv6_code, value = Value }, Pkt) ->
 set_field(#ofp_field{ name = ipv6_nd_target, value = Value }, Pkt) ->
     case find_outermost_header(Pkt, [ndp_ns, ndp_na]) of
         not_found -> Pkt;
-        ndp_ns -> find_and_edit(Pkt, ndp_ns, fun(H) -> H#ndp_ns{tgt_addr = Value} end);
-        ndp_na -> find_and_edit(Pkt, ndp_na, fun(H) -> H#ndp_na{src_addr = Value} end)
+        {_, #ndp_ns{}} ->
+            find_and_edit(Pkt, ndp_ns, fun(H) -> H#ndp_ns{tgt_addr = Value} end);
+        {_, #ndp_na{}} ->
+            find_and_edit(Pkt, ndp_na, fun(H) -> H#ndp_na{src_addr = Value} end)
     end;
 
 set_field(#ofp_field{ name = ipv6_nd_sll, value = Value }, Pkt) ->
     %% TODO: a special value for SLL and TLL is 'undefined', how do we set it?
     case find_outermost_header(Pkt, [ndp_ns, ndp_na]) of
         not_found -> Pkt;
-        ndp_ns -> find_and_edit(Pkt, ndp_ns, fun(H) -> H#ndp_ns{sll = Value} end);
-        ndp_na -> find_and_edit(Pkt, ndp_na, fun(H) -> H#ndp_na{tll = Value} end)
+        {_, #ndp_ns{}} ->
+            find_and_edit(Pkt, ndp_ns, fun(H) -> H#ndp_ns{sll = Value} end);
+        {_, #ndp_na{}} ->
+            find_and_edit(Pkt, ndp_na, fun(H) -> H#ndp_na{tll = Value} end)
     end;
 
 set_field(#ofp_field{ name = tcp_src, value = Value }, Pkt) ->

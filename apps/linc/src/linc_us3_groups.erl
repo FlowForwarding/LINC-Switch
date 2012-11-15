@@ -41,10 +41,12 @@
 -include("linc_us3.hrl").
 %% already included from linc_us3.hrl -include_lib("of_protocol/include/ofp_v3.hrl").
 
+-type linc_bucket_id() :: {integer(), binary()}.
+
 %% @doc Bucket wrapper adding unique_id field to the original OFP bucket
 -record(linc_bucket, {
           bucket    :: ofp_bucket(),
-          unique_id :: binary()
+          unique_id :: linc_bucket_id()
          }).
 
 %% @doc Group object
@@ -92,6 +94,8 @@ destroy() ->
 
 %%--------------------------------------------------------------------
 %% @doc Modifies group reference count by Increment
+%% NOTE: will not wrap to 0xFFFFFFFF if accidentaly went below zero, the
+%% counter will remain negative, but will wrap if overflows 32bit
 update_reference_count(GroupId, Increment) ->
     group_update_stats(GroupId, reference_count, Increment).
 
@@ -105,8 +109,13 @@ update_reference_count(GroupId, Increment) ->
 apply(GroupId, Pkt) ->
     case group_get(GroupId) of
         not_found -> ok;
-        Group     -> apply_group_type(Group#linc_group.type,
-                                      Group#linc_group.buckets, Pkt)
+        Group     ->
+            %% update group stats
+            group_update_stats(GroupId, packet_count, 1),
+            group_update_stats(GroupId, byte_count, Pkt#ofs_pkt.size),
+
+            apply_group_type(Group#linc_group.type,
+                             Group#linc_group.buckets, Pkt)
     end.
 
 %%--------------------------------------------------------------------
@@ -117,13 +126,17 @@ modify(#ofp_group_mod{ command = add,
                        buckets = Buckets }) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
-    OFSBuckets = wrap_buckets_into_linc_buckets(Buckets),
+    OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
     Entry = #linc_group{id = Id, type = Type, buckets = OFSBuckets},
     case ets:insert_new(group_table, Entry) of
-        true -> ok;
-        false -> {error, #ofp_error_msg{type = group_mod_failed,
+        true ->
+            %% just in case, zero stats
+            group_reset_stats(Id);
+        false ->
+            {error, #ofp_error_msg{type = group_mod_failed,
                                         code = group_exists}}
     end;
+
 modify(#ofp_group_mod{ command = modify,
                        group_id = Id,
                        type = Type,
@@ -137,7 +150,7 @@ modify(#ofp_group_mod{ command = modify,
     case group_get(Id) of
         not_found -> ok;
         Group ->
-            [group_reset_bucket_stats(Id, B#linc_bucket.unique_id)
+            [group_reset_bucket_stats(B#linc_bucket.unique_id)
              || B <- Group#linc_group.buckets]
     end,
 
@@ -195,6 +208,7 @@ get_features(_R) ->
 %%% Tool Functions
 %%%==============================================================
 
+%% @internal
 %% @doc Chooses a bucket of actions from list of buckets according to the
 %% group type. Executes actions. Returns [{packet, portnum|'drop'}]
 %% (see 5.4.1 of OF1.2 spec)
@@ -254,16 +268,27 @@ apply_group_type(ff, Buckets, Pkt) ->
             ok      
     end.
 
+%%--------------------------------------------------------------------
+%% @internal
 %% @doc Select bucket based on port liveness logic
 -spec pick_live_bucket([#linc_bucket{}]) -> #linc_bucket{} | false.
 
 pick_live_bucket([]) -> false;
 pick_live_bucket([Bucket | _]) -> Bucket.
 
+%%--------------------------------------------------------------------
+%% @internal
 %% @doc Applies set of commands
 -spec apply_bucket(#linc_bucket{}, #ofs_pkt{}) -> ok.
 
-apply_bucket(#linc_bucket{bucket = #ofp_bucket{actions = Actions}}, Pkt) ->
+apply_bucket(#linc_bucket{
+                unique_id = BucketId,
+                bucket = #ofp_bucket{actions = Actions}
+               }, Pkt) ->
+    %% update bucket stats no matter where packet goes
+    group_update_bucket_stats(BucketId, packet_count, 1),
+    group_update_bucket_stats(BucketId, byte_count, Pkt#ofs_pkt.size),
+
     case linc_us3_actions:apply_set(Actions, Pkt) of
         {output, NewPkt, PortNo} ->
             linc_us3_port:send(NewPkt, PortNo);
@@ -274,18 +299,22 @@ apply_bucket(#linc_bucket{bucket = #ofp_bucket{actions = Actions}}, Pkt) ->
     end,
     ok.
 
+%%--------------------------------------------------------------------
+%% @internal
 %% @doc Called from modify() to wrap incoming buckets into #linc_bucket{}, with
 %% counters added, which is wrapped into #linc_bucket{} with unique id added
--spec wrap_buckets_into_linc_buckets([#ofp_bucket{}]) -> [#linc_bucket{}].
+-spec wrap_buckets_into_linc_buckets(GroupId :: integer(),
+                                     [#ofp_bucket{}]) -> [#linc_bucket{}].
 
-wrap_buckets_into_linc_buckets(Buckets) ->
+wrap_buckets_into_linc_buckets(GroupId, Buckets) ->
     lists:map(fun(B) ->
                       #linc_bucket{
                          bucket = B,
-                         unique_id = create_unique_id_for_bucket(B)
+                         unique_id = {GroupId, create_unique_id_for_bucket(B)}
                         }
               end, Buckets).
 
+%%--------------------------------------------------------------------
 %% @internal
 %% @doc Creates an unique ID based on contents of the bucket. If contents changes,
 %% the unique ID will be recalculated and changes as well.
@@ -309,7 +338,8 @@ create_unique_id_for_bucket(B) ->
 %%%==============================================================
 
 %%--------------------------------------------------------------------
-%% @doc Deletes all stats for group and its buckets
+%% @internal
+%% @doc Deletes all stats for group but not the buckets!
 group_reset_stats(GroupId) ->
     %% Delete stats for group
     ets:delete(group_stats, {group, GroupId, reference_count}),
@@ -318,6 +348,7 @@ group_reset_stats(GroupId) ->
     ok.
 
 %%--------------------------------------------------------------------
+%% @internal
 %% @doc Updates stat counter in ETS for group
 -spec group_update_stats(GroupId :: integer(),
                          Stat :: atom(),
@@ -339,37 +370,39 @@ group_update_stats(GroupId, Stat, Increment) ->
     ok.
 
 %%--------------------------------------------------------------------
+%% @internal
 %% @doc Deletes bucket stats for groupid and bucketid
--spec group_reset_bucket_stats(integer(), binary()) -> ok.
+-spec group_reset_bucket_stats(linc_bucket_id()) -> ok.
 
-group_reset_bucket_stats(GroupId, BucketId) ->
-    ets:delete(group_stats, {bucket, GroupId, BucketId, packet_count}),
-    ets:delete(group_stats, {bucket, GroupId, BucketId, byte_count}),
+group_reset_bucket_stats(BucketId) ->
+    ets:delete(group_stats, {bucket, BucketId, packet_count}),
+    ets:delete(group_stats, {bucket, BucketId, byte_count}),
     ok.
 
 %%--------------------------------------------------------------------
+%% @internal
 %% @doc Updates stat counter in ETS for bucket in group
--spec group_update_bucket_stats(GroupId :: integer(),
-                                BucketId :: binary(),
+-spec group_update_bucket_stats(BucketId :: linc_bucket_id(),
                                 Stat :: atom(),
                                 Increment :: integer()) -> ok.
 
-group_update_bucket_stats(GroupId, BucketId, Stat, Increment) ->
+group_update_bucket_stats(BucketId, Stat, Increment) ->
     Threshold = (1 bsl group_bucket_stat_bitsize(Stat)) - 1,
     try
         ets:update_counter(group_stats,
-                           {bucket, GroupId, BucketId, Stat},
+                           {bucket, BucketId, Stat},
                            {#linc_group_stats.value, Increment, Threshold, 0})
     catch
         error:badarg ->
             ets:insert(group_stats, #linc_group_stats{
-                                       key = {bucket, GroupId, BucketId, Stat},
+                                       key = {bucket, BucketId, Stat},
                                        value = Increment
                                       })
     end,
     ok.
 
 %%--------------------------------------------------------------------
+%% @internal
 %% @doc Reads group from ETS or returns not_found
 -spec group_get(integer()) -> not_found | #linc_group{}.
 
@@ -380,6 +413,8 @@ group_get(GroupId) ->
     end.
 
 %%--------------------------------------------------------------------
+%% @internal
+%% @doc Returns bit width of counter fields for group
 group_stat_bitsize(reference_count) -> 32;
 group_stat_bitsize(packet_count)    -> 64;
 group_stat_bitsize(byte_count)      -> 64;
@@ -387,6 +422,8 @@ group_stat_bitsize(X) ->
     erlang:raise(exit, {badarg, X}).
     
 %%--------------------------------------------------------------------
+%% @internal
+%% @doc Returns bit width of counter fields for bucket
 group_bucket_stat_bitsize(packet_count) -> 64;
 group_bucket_stat_bitsize(byte_count)   -> 64;
 group_bucket_stat_bitsize(X) ->

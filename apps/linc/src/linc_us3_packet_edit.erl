@@ -59,7 +59,7 @@ find_and_edit(Pkt, Tag, F) ->
 %%------------------------------------------------------------------------------
 %% @doc Scans the packet Pkt until first element of type Tag found, runs
 %% fun() F on it, returns modified packet with the return value of fun() F.
-%% Different actions are taken if F() returns list of atom 'delete'.
+%% Different actions are taken if F() returns list or atom 'delete'.
 -spec find_and_edit_skip(Pkt :: pkt:packet(),
                          Tag :: atom(),
                          F :: fun(),

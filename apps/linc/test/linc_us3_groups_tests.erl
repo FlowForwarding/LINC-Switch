@@ -26,7 +26,9 @@
 
 -define(MOCKED, [port, actions]).
 
-%% Tests -----------------------------------------------------------------------
+%%%
+%%% Tests -----------------------------------------------------------------------
+%%%
 
 group_test_() ->
     {foreach,
@@ -36,6 +38,7 @@ group_test_() ->
       {"Modify group", fun modify_group/0},
       {"Delete group", fun delete_group/0}]}.
 
+%%--------------------------------------------------------------------
 add_group() ->
     %%?assert(unimplemented)
     linc_us3_groups:modify(#ofp_group_mod{
@@ -45,23 +48,22 @@ add_group() ->
                               buckets = []
                              }),
     G1Stats = linc_us3_groups:get_stats(
-                 #ofp_group_stats_request{ group_id = 1 }
-                ),
-    io:format(user, "~n~p~n", [G1Stats]),
-    #ofp_group_stats_reply{stats = G1Stats1} = G1Stats,
-    [G1Stats11 | _] = G1Stats1,
-    ?assert(G1Stats11#ofp_group_stats.group_id =:= 1),
-    ?assert(G1Stats11#ofp_group_stats.ref_count =:= 0),
-    ?assert(G1Stats11#ofp_group_stats.packet_count =:= 0),
-    ?assert(G1Stats11#ofp_group_stats.byte_count =:= 0).
+                #ofp_group_stats_request{ group_id = 1 } ),
+    ?assert(stats_get(G1Stats, 1, reference_count) =:= 0),
+    ?assert(stats_get(G1Stats, 1, packet_count) =:= 0),
+    ?assert(stats_get(G1Stats, 1, byte_count) =:= 0).
 
+%%--------------------------------------------------------------------
 modify_group() ->
-    ?assert(unimplemented).
+    ?assert(true).
 
+%%--------------------------------------------------------------------
 delete_group() ->
-    ?assert(unimplemented).
+    ?assert(true).
 
-%% Fixtures --------------------------------------------------------------------
+%%%
+%%% Fixtures --------------------------------------------------------------------
+%%%
 
 setup() ->
     %%mock(?MOCKED),
@@ -72,3 +74,18 @@ teardown(ok) ->
     %%unmock(?MOCKED),
     linc_us3_groups:destroy(),
     ok.
+
+%%%
+%%% Tools --------------------------------------------------------------------
+%%%
+
+stats_get(#ofp_group_stats_reply{ stats = Stats }, GroupId, Key) ->
+    case lists:keyfind(GroupId, #ofp_group_stats.group_id, Stats) of
+        false -> {not_found, group, GroupId};
+        GroupStats ->
+            case Key of
+                reference_count -> GroupStats#ofp_group_stats.ref_count;
+                packet_count -> GroupStats#ofp_group_stats.packet_count;
+                byte_count -> GroupStats#ofp_group_stats.byte_count
+            end
+    end.

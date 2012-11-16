@@ -67,7 +67,7 @@ terminate() ->
     ets:delete(flow_entry_counters).
 
 %% @doc Handle ofp_table_mod request
-table_mod(#ofp_table_mod{table_id = TableId, config = Config}) ->
+table_mod(#ofp_table_mod{table_id = _TableId, config = _Config}) ->
     %% TODO
     ok.
 
@@ -130,27 +130,32 @@ get_flow_table(TableId) ->
 
 %% @doc Delete all flow entries that are using a specific group.
 -spec delete_where_group(GroupId :: integer()) -> ok.
-delete_where_group(GroupId) ->
+delete_where_group(_GroupId) ->
+    %%TODO
     ok.
 
 %% @doc Get flow statistics.
 -spec get_stats(#ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
 get_stats(#ofp_flow_stats_request{}) ->
+    %%TODO
     #ofp_flow_stats_reply{}.
 
 %% @doc Get aggregate statistics.
 -spec get_aggregate_stats(#ofp_aggregate_stats_request{}) -> #ofp_aggregate_stats_reply{}.
 get_aggregate_stats(#ofp_aggregate_stats_request{}) ->
+    %%TODO
     #ofp_aggregate_stats_reply{}.
 
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
+    %%TODO
     #ofp_table_stats_reply{}.
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
-update_lookup_counter(TableId) ->
+update_lookup_counter(_TableId) ->
+    %% TODO
     ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
@@ -168,7 +173,8 @@ update_match_counters(FlowId, PktByteSize) ->
 
 %% @doc Reset the idle timeout timer for a specific flow.
 -spec reset_idle_timeout(TableId :: integer(), FlowId :: integer()) -> ok.
-reset_idle_timeout(TableId, FlowId) ->
+reset_idle_timeout(_TableId, _FlowId) ->
+    %%TODO
     ok.
 
 %%=============================================================================
@@ -328,7 +334,7 @@ check_duplicate_fields(Name, Previous) ->
     lists:keymember(Name, #ofp_field.name, Previous).
 
 %% Check that all prerequisite fields are present and have apropiate values
-check_prerequisites(#ofp_field{name=Name,value=Value}=Field,Previous) ->
+check_prerequisites(#ofp_field{name=Name}=Field,Previous) ->
     case prerequisite_for(Name) of
         [] ->
             true;
@@ -454,13 +460,13 @@ validate_instruction(_TableId, #ofp_instruction_goto_table{}, _Match) ->
 
 validate_instruction(_TableId, #ofp_instruction_write_metadata{}, _Match) ->
     ok;
-validate_instruction(TableId, #ofp_instruction_write_actions{actions=Actions}, Match) ->
+validate_instruction(_TableId, #ofp_instruction_write_actions{actions=Actions}, Match) ->
     validate_actions(Actions, Match);
-validate_instruction(TableId, #ofp_instruction_apply_actions{actions=Actions}, Match) ->
+validate_instruction(_TableId, #ofp_instruction_apply_actions{actions=Actions}, Match) ->
     validate_actions(Actions, Match);
-validate_instruction(TableId, #ofp_instruction_clear_actions{}, Match) ->
+validate_instruction(_TableId, #ofp_instruction_clear_actions{}, _Match) ->
     ok;
-validate_instruction(TableId, #ofp_instruction_experimenter{}, Match) ->
+validate_instruction(_TableId, #ofp_instruction_experimenter{}, _Match) ->
     ok;
 validate_instruction(_TableId, _Unknown, _Match) ->
     %% unknown instruction
@@ -492,9 +498,9 @@ validate_action(#ofp_action_group{group_id=GroupId}, _Match) ->
         false ->
             {error,{bad_action,bad_out_group}}
     end;
-validate_action(#ofp_action_set_queue{queue_id=QueueId}, _Match) ->
+validate_action(#ofp_action_set_queue{}, _Match) ->
     ok;
-validate_action(#ofp_action_set_mpls_ttl{mpls_ttl=TTL}, _Match) ->
+validate_action(#ofp_action_set_mpls_ttl{}, _Match) ->
     ok;
 validate_action(#ofp_action_dec_mpls_ttl{}, _Match) ->
     ok;
@@ -526,7 +532,7 @@ validate_action(#ofp_action_experimenter{}, _Match) ->
 
 %% Check that field value is in the allowed domain
 %% TODO
-validate_value(#ofp_field{name=Name,value=Value}) ->
+validate_value(#ofp_field{name=_Name,value=_Value}) ->
     true.
 
 

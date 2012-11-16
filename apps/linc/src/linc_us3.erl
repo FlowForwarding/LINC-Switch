@@ -128,22 +128,8 @@ start(_Opts) ->
                     permanent, 5000, supervisor, [linc_us3_sup]},
     supervisor:start_child(linc_sup, UserspaceSup),
 
-    %% Flows
-    flow_tables = ets:new(flow_tables, [named_table, public,
-                                        {keypos, #linc_flow_table.id},
-                                        {read_concurrency, true}]),
-    ets:insert(flow_tables, [#linc_flow_table{id = Id}
-                             || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_table_counters = ets:new(flow_table_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_table_counter.id},
-                                   {read_concurrency, true}]),
-    ets:insert(flow_table_counters, [#flow_table_counter{id = Id}
-                                     || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_entry_counters = ets:new(flow_entry_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_entry_counter.key},
-                                   {read_concurrency, true}]),
+    linc_us3_flow:initialize(),
+
     %% Ports
     ofs_ports = ets:new(ofs_ports, [named_table, public,
                                     {keypos, #ofs_port.number},
@@ -160,16 +146,6 @@ start(_Opts) ->
             linc_us3_queue:start()
     end,
 
-    %% Groups
-    group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #group.id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-    group_stats = ets:new(group_stats, [named_table, public,
-                                        {keypos, #ofp_group_stats.group_id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-
     {ok, BackendOpts} = application:get_env(linc, backends),
     {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
     {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
@@ -183,9 +159,7 @@ stop(_State) ->
     [linc_us3_port:remove(PortNo) ||
         #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
-    ets:delete(flow_tables),
-    ets:delete(flow_table_counters),
-    ets:delete(flow_entry_counters),
+    linc_us3_flow:terminate(),
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
@@ -195,9 +169,6 @@ stop(_State) ->
         {ok, _} ->
             linc_us3_queue:stop()
     end,
-    %% Groups
-    ets:delete(group_table),
-    ets:delete(group_stats),
     ok.
 
 -spec handle_message(state(), ofp_message_body()) ->
@@ -213,13 +184,13 @@ handle_message(State, Message) ->
 
 %% @doc Modify flow entry in the flow table.
 ofp_flow_mod(State, #ofp_flow_mod{command = add} = FlowMod) ->
-    case linc_us3_flow:add_flow(FlowMod) of
+    case linc_us3_flow:modify(FlowMod) of
         ok ->
             {ok,State};
-        {error,overlap} ->
-            OverlapError = #ofp_error_msg{type = flow_mod_failed,
-                                      code = overlap},
-            {error, OverlapError, State}
+        {error,{Type,Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {error, ErrorMsg, State}
     end;
                     
 ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
@@ -242,11 +213,8 @@ ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
 %% @doc Modify flow table configuration.
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
-    lists:foreach(fun(FlowTable) ->
-                          ets:insert(flow_tables,
-                                     FlowTable#linc_flow_table{config = Config})
-                  end, linc_us3_flow:get_flow_tables(TableId)),
+ofp_table_mod(State, #ofp_table_mod{}=TableMod) ->
+    linc_us3_flow:table_mod(TableMod),
     {ok, State}.
 
 %% @doc Modify port configuration.
@@ -265,53 +233,12 @@ ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
-    %% Add new entry to the group table, if entry with given group id is already
-    %% present, then return error.
-    OFSBuckets = lists:map(fun(B) ->
-                                   #ofs_bucket{value = B,
-                                               counter = #ofp_bucket_counter{}}
-                           end, Buckets),
-    Entry = #group{id = Id, type = Type, buckets = OFSBuckets},
-    case ets:insert_new(group_table, Entry) of
-        true ->
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = group_exists}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
-    %% Modify existing entry in the group table, if entry with given group id
-    %% is not in the table, then return error.
-    Entry = #group{id = Id, type = Type, buckets = Buckets},
-    case ets:member(group_table, Id) of
-        true ->
-            ets:insert(group_table, Entry),
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = unknown_group}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
-    %% Deletes existing entry in the group table, if entry with given group id
-    %% is not in the table, no error is recorded. Flows containing given
-    %% group id are removed along with it.
-    %% If one wishes to effectively delete a group yet leave in flow entries
-    %% using it, that group can be cleared by sending a modify with no buckets
-    %% specified.
-    case Id of
-        all ->
-            ets:delete_all_objects(group_table);
-        any ->
-            %% TODO: Should we support this case at all?
-            ok;
-        Id ->
-            ets:delete(group_table, Id)
-    end,
-    %% TODO: Remove flows containing given group along with it
-    {ok, State}.
+ofp_group_mod(State, Mod = #ofp_group_mod{}) ->
+    %% TODO: move specific logic inside linc_us3_groups module
+    case linc_us3_groups:modify(Mod) of
+        ok -> {ok, State};
+        {error, What} -> {error, What, State}
+    end.
 
 %% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->

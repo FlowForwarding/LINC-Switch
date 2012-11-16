@@ -110,16 +110,27 @@
 -define(MAX_GROUP_ENTRIES, {?MAX, 0, 0, 0}).
 -define(MAX_BUFFERED_PACKETS, 0).
 
+-type priority() :: non_neg_integer().
+-type flow_id() :: {priority(),reference()}.
+
+-record(flow_table_config, {
+          id                 :: non_neg_integer(),
+          config = controller:: ofp_table_config()
+         }).
+
 -record(flow_entry, {
-          priority          :: integer(),
-          match             :: ofp_match(),
-          cookie            :: binary(),
-          install_time      :: erlang:timestamp(),
-          instructions = [] :: ordsets:ordset(ofp_instruction())
+          id                       :: flow_id(),
+          priority                 :: priority(),
+          match                    :: ofp_match(),
+          cookie                   :: binary(),
+          install_time             :: erlang:timestamp(),
+          expires = {infinity,0,0} :: erlang:timestamp(),
+          idle = {infinity,0,0}    :: erlang:timestamp(),
+          instructions = []        :: ordsets:ordset(ofp_instruction())
          }).
 
 -record(flow_entry_counter, {
-          key                  :: {FlowTableId :: integer(), #flow_entry{}},
+          id                   :: {FlowTableId :: integer(), #flow_entry{}},
           received_packets = 0 :: integer(),
           received_bytes   = 0 :: integer()
          }).

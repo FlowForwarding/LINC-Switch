@@ -65,75 +65,72 @@ apply_set(Pkt, []) ->
 %% @doc Does the routing decisions for the packet according to the action list
 -spec apply_list(Pkt :: ofs_pkt(),
                  Actions :: list(ofp_action())) -> [side_effect()].
-apply_list(Pkt, [#ofp_action_output{port = PortNum} | _Rest]) ->
-    %% Required action
-    %% linc_us3_port:send(Pkt, Port),
-    %% linc_us3_routing:route_to_output(TableId, Pkt, PortNum),
-    Pkt;
+apply_list(Pkt, [#ofp_action_output{port = Port} | _Rest]) ->
+    linc_us3_port:send(Pkt, Port),
+    {output, Port, Pkt};
 apply_list(Pkt, [#ofp_action_group{group_id = GroupId} | _Rest]) ->
-    %% Required action
-    linc_us3_groups:apply(GroupId, Pkt);
+    linc_us3_groups:apply(GroupId, Pkt),
+    {group, GroupId, Pkt};
 apply_list(Pkt, [#ofp_action_set_queue{queue_id = QueueId} | Rest]) ->
-    %% Optional action
     apply_list(Pkt#ofs_pkt{queue_id = QueueId}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Modifies top tag on MPLS stack to set ttl field to a value
 %% Nothing happens if packet had no MPLS header
-apply_list(Pkt, [Act = #ofp_action_set_mpls_ttl{} | Rest]) ->
-    NewTTL = Act#ofp_action_set_mpls_ttl.mpls_ttl,
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, mpls_tag,
-             fun(T) ->
-                     [TopTag | StackTail] = T#mpls_tag.stack,
-                     NewTag = TopTag#mpls_stack_entry{ ttl = NewTTL },
-                     T#mpls_tag{ stack = [NewTag | StackTail] }
-             end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt,
+           [#ofp_action_set_mpls_ttl{mpls_ttl = NewTTL} | Rest]) ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, mpls_tag,
+           fun(T) ->
+                   [TopTag | StackTail] = T#mpls_tag.stack,
+                   NewTag = TopTag#mpls_stack_entry{ ttl = NewTTL },
+                   T#mpls_tag{ stack = [NewTag | StackTail] }
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Modifies top tag on MPLS stack to have TTL reduced by 1.
 %% Nothing happens if packet had no MPLS header. Clamps value below 0 to 0.
-apply_list(Pkt, [#ofp_action_dec_mpls_ttl{} | Rest]) ->
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, mpls_tag,
-             fun(T) ->
-                     [TopTag | StackTail] = T#mpls_tag.stack,
-                     Decremented = erlang:max(0, TopTag#mpls_stack_entry.ttl - 1),
-                     NewTag = TopTag#mpls_stack_entry{
-                                ttl = Decremented
-                               },
-                     T#mpls_tag{ stack = [NewTag | StackTail] }
-             end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest]) ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, mpls_tag,
+           fun(T) ->
+                   [TopTag | StackTail] = T#mpls_tag.stack,
+                   Decremented = erlang:max(0, TopTag#mpls_stack_entry.ttl - 1),
+                   NewTag = TopTag#mpls_stack_entry{
+                              ttl = Decremented
+                             },
+                   T#mpls_tag{ stack = [NewTag | StackTail] }
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Sets IPv4 or IPv6 packet header TTL to a defined value. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header
-apply_list(Pkt, [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest]) ->
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, ipv4,
-             fun(T) ->
-                     T#ipv4{ ttl = NewTTL }
-             end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt,
+           [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest]) ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, ipv4,
+           fun(T) ->
+                   T#ipv4{ ttl = NewTTL }
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Decrements IPv4 or IPv6 packet header TTL by 1. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header. Clamps values below 0 to 0.
-apply_list(Pkt, [#ofp_action_dec_nw_ttl{} | Rest]) ->
-    %% Optional action
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, ipv4,
-             fun(T) ->
-                     Decremented = erlang:max(0, T#ipv4.ttl - 1),
-                     T#ipv4{ ttl = Decremented }
-             end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest]) ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, ipv4,
+           fun(T) ->
+                   Decremented = erlang:max(0, T#ipv4.ttl - 1),
+                   T#ipv4{ ttl = Decremented }
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
@@ -180,7 +177,8 @@ apply_list(Pkt, [#ofp_action_copy_ttl_out{} | Rest]) ->
                                          ttl = Stack2#mpls_stack_entry.ttl
                                         },
                              T#mpls_tag{
-                               stack = [Stack1b, Stack2 | StackRest] %% reconstruct the stack
+                               %% reconstruct the stack
+                               stack = [Stack1b, Stack2 | StackRest] 
                               }
                      end);
         {_, _} ->
@@ -240,10 +238,11 @@ apply_list(Pkt, [#ofp_action_copy_ttl_in{} | Rest]) ->
 %% Optional action
 %% Push a new VLAN header onto the packet.
 %% Only Ethertype 0x8100 and 0x88A8 should be used (this is not checked)
-apply_list(Pkt, [#ofp_action_push_vlan{ ethertype = EtherType } | Rest])
-  when EtherType =:= 16#8100; EtherType =:= 16#88A8-> %% might be 'when' is redundant
+apply_list(#ofs_pkt{packet = P} = Pkt,
+           [#ofp_action_push_vlan{ ethertype = EtherType } | Rest])
+  when EtherType =:= 16#8100; EtherType =:= 16#88A8 ->
     %% When pushing, fields are based on existing tag if there is any
-    case linc_us3_packet_edit:find(Pkt, ieee802_1q_tag) of
+    case linc_us3_packet_edit:find(P, ieee802_1q_tag) of
         not_found ->
             InheritVid = 1,
             InheritPrio = 0;
@@ -251,18 +250,18 @@ apply_list(Pkt, [#ofp_action_push_vlan{ ethertype = EtherType } | Rest])
             InheritVid = BasedOnTag#ieee802_1q_tag.vid,
             InheritPrio = BasedOnTag#ieee802_1q_tag.pcp
     end,
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, ether,
-             fun(T) -> 
-                     NewTag = #ieee802_1q_tag{
-                       pcp = InheritPrio,
-                       vid = InheritVid,
-                       ether_type = EtherType
-                      },
-                     %% found ether element, return it plus VLAN tag for insertion
-                     [T, NewTag]
-             end),
-    apply_list(Pkt2, Rest);
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, ether,
+           fun(T) -> 
+                   NewTag = #ieee802_1q_tag{
+                     pcp = InheritPrio,
+                     vid = InheritVid,
+                     ether_type = EtherType
+                    },
+                   %% found ether element, return it plus VLAN tag for insertion
+                   [T, NewTag]
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
@@ -356,12 +355,12 @@ apply_list(Pkt, [#ofp_action_pop_mpls{} | Rest]) ->
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Applies all set-field actions to the packet 
-apply_list(Pkt, [#ofp_action_set_field{ field = F } | Rest]) ->
-    Pkt2 = linc_us3_packet_edit:set_field(F, Pkt),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = Packet} = Pkt,
+           [#ofp_action_set_field{field = F} | Rest]) ->
+    Packet2 = linc_us3_packet_edit:set_field(F, Packet),
+    apply_list(Pkt#ofs_pkt{packet = Packet2}, Rest);
 
 apply_list(Pkt, [#ofp_action_experimenter{} | Rest]) ->
-    %% Optional action
     apply_list(Pkt, Rest);
 apply_list(Pkt, []) ->
     Pkt.

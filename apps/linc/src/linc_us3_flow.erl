@@ -479,15 +479,14 @@ validate_actions([], _Match) ->
     ok.
 
 validate_action(#ofp_action_output{port=Port}, _Match) ->
-%%    case linc_us3_port:is_valid(Port) of
-    case true of
+    case linc_us3_port:is_valid(Port) of
         true ->
             ok;
         false ->
             {error,{bad_action,bad_out_port}}
     end;
 validate_action(#ofp_action_group{group_id=GroupId}, _Match) ->
-    case linc_us3_group:is_valid(GroupId) of
+    case linc_us3_groups:is_valid(GroupId) of
         true ->
             ok;
         false ->

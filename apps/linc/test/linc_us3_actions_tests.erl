@@ -140,10 +140,69 @@ action_pop_tag_vlan() ->
     check_action(Action, Packet2, NewPacket2).
 
 action_push_tag_mpls() ->
-    ok.
+    MPLS1 = 16#8847,
+    Action = #ofp_action_push_mpls{ethertype = MPLS1},
+
+    %% Single MPLS tag without VLAN and IP headers 
+    Packet1 = [#ether{}],
+    NewPacket1 = [#ether{},
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}],
+                            ether_type = MPLS1}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% Multiple MPLS tags without VLAN and IP headers
+    Packet2 = [#ether{},
+               #mpls_tag{stack = [#mpls_stack_entry{}], ether_type = MPLS1}],
+    NewPacket2 = [#ether{},
+                  #mpls_tag{stack = [#mpls_stack_entry{},
+                                     #mpls_stack_entry{}],
+                            ether_type = MPLS1}],
+    check_action(Action, Packet2, NewPacket2),
+
+    %% Single MPLS tag with VLAN but whithout IP headers.
+    %% Should insert MPLS after VLAN.
+    VLAN1 = 16#8100,
+    Packet3 = [#ether{},
+               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    NewPacket3 = [#ether{},
+                  #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1},
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}],
+                            ether_type = MPLS1}],
+    check_action(Action, Packet3, NewPacket3),
+
+    %% Single MPLS with IP header.
+    %% Copy TTL from IP to MPLS.
+    Packet4 = [#ether{},
+               #ipv4{ttl = 500}],
+    NewPacket4 = [#ether{},
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 500}],
+                            ether_type = MPLS1},
+                  #ipv4{ttl = 500}],
+    check_action(Action, Packet4, NewPacket4).
 
 action_pop_tag_mpls() ->
-    ok.
+    MPLS1 = 16#8847,
+    Action = #ofp_action_pop_mpls{},
+
+    %% One MPLS label - delete whole header
+    Packet1 = [#ether{},
+               #mpls_tag{stack = [#mpls_stack_entry{}],
+                         ether_type = MPLS1},
+               #ipv4{}],
+    NewPacket1 = [#ether{}, #ipv4{}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% Two MPLS labels - delete only the outermost one
+    Packet2 = [#ether{},
+               #mpls_tag{stack = [#mpls_stack_entry{label = label1},
+                                  #mpls_stack_entry{label = label2}],
+                         ether_type = MPLS1},
+               #ipv4{}],
+    NewPacket2 = [#ether{},
+                  #mpls_tag{stack = [#mpls_stack_entry{label = label2}],
+                            ether_type = MPLS1},
+                  #ipv4{}],
+    check_action(Action, Packet2, NewPacket2).
 
 action_set_mpls_ttl() ->
     Packet = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?INIT_VAL}]}],

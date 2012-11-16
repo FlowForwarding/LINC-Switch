@@ -197,12 +197,10 @@ ip_v6() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    mock(?MOCKED),
-    ok.
+    mock(?MOCKED).
 
-teardown(ok) ->
-    unmock(?MOCKED),
-    ok.
+teardown(_) ->
+    unmock(?MOCKED).
 
 set_field(TestData) ->
     [begin

@@ -34,10 +34,6 @@ mock([port | Rest]) ->
                      fun(_, _) ->
                              ok
                      end),
-    ok = meck:expect(linc_us3_port, send,
-                     fun(_, _, _) ->
-                             ok
-                     end),
     mock(Rest);
 mock([group | Rest]) ->
     ok = meck:new(linc_us3_groups),

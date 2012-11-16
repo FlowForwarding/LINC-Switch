@@ -84,7 +84,6 @@ action_group() ->
     ?assert(check_if_called({linc_us3_groups, apply, 2})).
 
 action_set_field() ->
-    %% Ethernet packet headers
     EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL}, [#ether{type = ?NEW_VAL}]},
     EthDst = {[#ether{dhost = ?INIT_VAL}], {eth_dst, ?NEW_VAL}, [#ether{dhost = ?NEW_VAL}]},
     EthSrc = {[#ether{shost = ?INIT_VAL}], {eth_src, ?NEW_VAL}, [#ether{shost = ?NEW_VAL}]},
@@ -103,10 +102,6 @@ action_set_queue() ->
     ?assertEqual(?INIT_VAL, Pkt2#ofs_pkt.queue_id).
 
 action_push_tag_vlan() ->
-    %% dbg:tracer(),
-    %% dbg:p(all,c),
-    %% dbg:tpl(linc_us3_actions, x),
-    %% dbg:tpl(linc_us3_packet_edit, x),
     VLAN1 = 16#8100,
     Action1 = #ofp_action_push_vlan{ethertype = VLAN1},
 
@@ -168,16 +163,13 @@ action_copy_ttl_inwards() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    mock(?MOCKED),
-    ok.
+    mock(?MOCKED).
 
-teardown(ok) ->
-    unmock(?MOCKED),
-    ok.
+teardown(_) ->
+    unmock(?MOCKED).
 
 check_action(Action, Packet, NewPacket) ->
     Pkt = #ofs_pkt{packet = Packet},
     NewPkt = #ofs_pkt{packet = NewPacket},
     Pkt2 = linc_us3_actions:apply_list(Pkt, [Action]),
-    %% io:format(user, "~n@@@@@@@@~n~p~n~p~n", [NewPkt, Pkt2]),
     ?assertEqual(NewPkt, Pkt2).

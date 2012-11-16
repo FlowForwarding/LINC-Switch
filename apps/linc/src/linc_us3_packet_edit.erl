@@ -178,9 +178,9 @@ set_field(#ofp_field{ name = ip_proto, value = Value }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
         not_found ->
             Pkt;
-        {_, #ipv4{}} ->
+        ipv4 ->
             find_and_edit(Pkt, ipv4, fun(H) -> H#ipv4{p = Value} end);
-        {_, #ipv6{}} ->
+        ipv6 ->
             find_and_edit(Pkt, ipv6, fun(H) -> H#ipv6{next = Value} end)
     end;
 set_field(#ofp_field{ name = ip_dscp, value = Value }, Pkt) ->

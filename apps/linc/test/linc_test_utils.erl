@@ -34,12 +34,24 @@ mock([port | Rest]) ->
                      fun(_, _) ->
                              ok
                      end),
+    ok = meck:expect(linc_us3_port, is_valid,
+                     fun (X) when X>32 ->
+                             false;
+                         (_) ->
+                             true
+                     end),
     mock(Rest);
 mock([group | Rest]) ->
     ok = meck:new(linc_us3_groups),
     ok = meck:expect(linc_us3_groups, apply,
                      fun(_GroupId, _Pkt) ->
                              ok
+                     end),
+    ok = meck:expect(linc_us3_groups, is_valid,
+                     fun (X) when X>32 ->
+                             false;
+                         (_) ->
+                             true
                      end),
     mock(Rest);
 mock([instructions | Rest]) ->

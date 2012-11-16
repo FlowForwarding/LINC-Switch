@@ -23,17 +23,23 @@
 %% -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
+-define(MOCKED, [group,port]).
+
 %% Tests -----------------------------------------------------------------------
 
 flow_mod_test_() ->
     {foreach,
      fun setup/0,
      fun teardown/1,
-     [ {"Duplicate fields", fun duplicate_field/0}
+     [{"Duplicate fields", fun duplicate_field/0}
       ,{"Prerequisite field present", fun prerequisite_field_present/0}
       ,{"Prerequisite field present bad val", fun prerequisite_field_present_bad_val/0}
       ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
       ,{"Goto table with smaller table_id", fun goto_backwards/0}
+      ,{"Valid out port", fun valid_out_port/0}
+      ,{"Invalid out port", fun invalid_out_port/0}
+      ,{"Valid out group", fun valid_out_group/0}
+      ,{"Invalid out group", fun invalid_out_group/0}
       ,{"Set field incompatible with match", fun incompatible_set_field/0}
       ,{"Add 1 flow, no check_overlap", fun () -> add_flow(0, []) end}
       ,{"Add 1 flow, check_overlap", fun () -> add_flow(1, [check_overlap]) end}
@@ -134,6 +140,49 @@ goto_backwards() ->
                    [{in_port,6}],
                    [{goto_table,2}]),
     ?assertEqual({error,{bad_action,bad_table_id}}, linc_us3_flow:modify(FlowModAdd)).
+
+valid_out_port() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v3_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{write_actions,[{output,15,1400}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd)).
+
+invalid_out_port() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v3_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{write_actions,[{output,33,1400}]}]),
+    ?assertEqual({error,{bad_action,bad_out_port}},
+                 linc_us3_flow:modify(FlowModAdd)).
+
+valid_out_group() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v3_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{write_actions,[{group,1}]}]),
+    ?assertEqual(ok,
+                 linc_us3_flow:modify(FlowModAdd)).
+
+invalid_out_group() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v3_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{write_actions,[{group,33}]}]),
+    ?assertEqual({error,{bad_action,bad_out_group}},
+                 linc_us3_flow:modify(FlowModAdd)).
 
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
@@ -346,9 +395,11 @@ add_exact_flow(Flags) ->
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
+    linc_test_utils:mock(?MOCKED),
     ok=linc_us3_flow:initialize().
 
 teardown(ok) ->
+    linc_test_utils:unmock(?MOCKED),
     linc_us3_flow:terminate().
 
 %% Helpers ---------------------------------------------------------------------

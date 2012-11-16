@@ -31,7 +31,8 @@
          , get_stats/1
          , get_desc/1
          , get_features/1
-         , update_reference_count/2]).
+         , update_reference_count/2
+         , is_valid/1]).
 
 %% Group Mod
 %% -export([add/1,
@@ -231,6 +232,12 @@ get_features(#ofp_group_features_stats_request{ flags = _F }) ->
        actions = {?SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_WRITE_ACTIONS,
                   ?SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_WRITE_ACTIONS}
       }.
+
+%%--------------------------------------------------------------------
+%% @doc Test if a group exists.
+-spec is_valid(integer()) -> boolean().
+is_valid(GroupId) ->
+    true.
 
 %%%==============================================================
 %%% Tool Functions

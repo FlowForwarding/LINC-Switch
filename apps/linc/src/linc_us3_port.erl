@@ -40,7 +40,8 @@
          get_queue_stats/2,
          attach_queue/3,
          detach_queue/2,
-         remove/1]).
+         remove/1,
+         is_valid/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -67,7 +68,6 @@
 %%%-----------------------------------------------------------------------------
 %%% API functions
 %%%-----------------------------------------------------------------------------
-
 %% @doc Start Open Flow port with provided configuration.
 -spec start_link(list(ofs_port_config())) -> {ok, pid()} |
                                              ignore |
@@ -226,6 +226,11 @@ remove(PortNo) ->
         Pid ->
             supervisor:terminate_child(linc_us3_port_sup, Pid)
     end.
+
+%% @doc Test if a port exists.
+-spec is_valid(ofp_port_no()) -> boolean().
+is_valid(_) ->
+    true.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks

@@ -128,22 +128,8 @@ start(_Opts) ->
                     permanent, 5000, supervisor, [linc_us3_sup]},
     supervisor:start_child(linc_sup, UserspaceSup),
 
-    %% Flows
-    flow_tables = ets:new(flow_tables, [named_table, public,
-                                        {keypos, #linc_flow_table.id},
-                                        {read_concurrency, true}]),
-    ets:insert(flow_tables, [#linc_flow_table{id = Id}
-                             || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_table_counters = ets:new(flow_table_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_table_counter.id},
-                                   {read_concurrency, true}]),
-    ets:insert(flow_table_counters, [#flow_table_counter{id = Id}
-                                     || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_entry_counters = ets:new(flow_entry_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_entry_counter.key},
-                                   {read_concurrency, true}]),
+    linc_us3_flow:initialize(),
+
     %% Ports
     ofs_ports = ets:new(ofs_ports, [named_table, public,
                                     {keypos, #ofs_port.number},
@@ -173,9 +159,7 @@ stop(_State) ->
     [linc_us3_port:remove(PortNo) ||
         #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
-    ets:delete(flow_tables),
-    ets:delete(flow_table_counters),
-    ets:delete(flow_entry_counters),
+    linc_us3_flow:terminate(),
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
@@ -200,13 +184,13 @@ handle_message(State, Message) ->
 
 %% @doc Modify flow entry in the flow table.
 ofp_flow_mod(State, #ofp_flow_mod{command = add} = FlowMod) ->
-    case linc_us3_flow:add_flow(FlowMod) of
+    case linc_us3_flow:modify(FlowMod) of
         ok ->
             {ok,State};
-        {error,overlap} ->
-            OverlapError = #ofp_error_msg{type = flow_mod_failed,
-                                      code = overlap},
-            {error, OverlapError, State}
+        {error,{Type,Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {error, ErrorMsg, State}
     end;
                     
 ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
@@ -229,11 +213,8 @@ ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
 %% @doc Modify flow table configuration.
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
-    lists:foreach(fun(FlowTable) ->
-                          ets:insert(flow_tables,
-                                     FlowTable#linc_flow_table{config = Config})
-                  end, linc_us3_flow:get_flow_tables(TableId)),
+ofp_table_mod(State, #ofp_table_mod{}=TableMod) ->
+    linc_us3_flow:table_mod(TableMod),
     {ok, State}.
 
 %% @doc Modify port configuration.

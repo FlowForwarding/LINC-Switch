@@ -29,8 +29,7 @@ flow_mod_test_() ->
     {foreach,
      fun setup/0,
      fun teardown/1,
-     [ {"Unsupported field", fun unsupported_field/0}
-      ,{"Duplicate fields", fun duplicate_field/0}
+     [ {"Duplicate fields", fun duplicate_field/0}
       ,{"Prerequisite field present", fun prerequisite_field_present/0}
       ,{"Prerequisite field present bad val", fun prerequisite_field_present_bad_val/0}
       ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
@@ -44,35 +43,8 @@ flow_mod_test_() ->
       ,{"Add 2 with overlapping flow, check_overlap", fun add_overlapping_flow_check_overlap/0}
       ,{"Add 2 with exact match, no reset_counters", fun () -> add_exact_flow([reset_counts]) end}
       ,{"Add 2 with exact match, reset_counters", fun () -> add_exact_flow([]) end}
-      %% ,{"", fun /0}
-      %% ,{"", fun /0}
-      %% ,{"", fun /0}
-      %% ,{"", fun /0}
-      %% ,{"Modify some flow", fun modify_flow/0}
      ]}.
 
-unsupported_field() ->
-    %% Create flow_mod record
-    FlowModAdd = #ofp_flow_mod{
-                    cookie = <<0,0,0,0,0,0,0,0>>,
-                    cookie_mask = <<0,0,0,0,0,0,0,0>>,
-                    table_id = 0,command = add,idle_timeout = 0,
-                    hard_timeout = 0,priority = 5,buffer_id = no_buffer,
-                    out_port = any,out_group = any,flags = [],
-                    match = 
-                        #ofp_match{
-                           fields = 
-                               [#ofp_field{
-                                   name = what_is_this,
-                                   value = <<0,0,0,6>>}]},
-                    instructions = 
-                        [#ofp_instruction_write_actions{
-                            actions = 
-                                [#ofp_action_output{port = 15,
-                                                    max_len = 1400}]}]},
-    %% Add flow
-     {error,{bad_match,bad_field}} = linc_us3_flow:modify(FlowModAdd).
-    
 duplicate_field() ->
     %% Create flow_mod record
     FlowModAdd = ofp_v3_utils:flow_add(
@@ -82,7 +54,7 @@ duplicate_field() ->
                    [{in_port,6},{in_port,6}],
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flow
-    {error,{bad_match,dup_field}} = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual({error,{bad_match,dup_field}}, linc_us3_flow:modify(FlowModAdd)).
  
 prerequisite_field_present() ->
     FlowModAdd = #ofp_flow_mod{
@@ -107,7 +79,7 @@ prerequisite_field_present() ->
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     %% Add flow
-    ok = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd)).
 
 prerequisite_field_present_bad_val() ->
     FlowModAdd = #ofp_flow_mod{
@@ -131,8 +103,7 @@ prerequisite_field_present_bad_val() ->
                             actions = 
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
-    %% Add flow
-    {error,{bad_match,bad_prereq}} = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual({error,{bad_match,bad_prereq}}, linc_us3_flow:modify(FlowModAdd)).
 
 prerequisite_field_missing() ->
     FlowModAdd = #ofp_flow_mod{
@@ -152,8 +123,7 @@ prerequisite_field_missing() ->
                             actions = 
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
-    %% Add flow
-    {error,{bad_match,bad_prereq}} = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual({error,{bad_match,bad_prereq}}, linc_us3_flow:modify(FlowModAdd)).
 
 %% Goto a table with smaller table_id
 goto_backwards() ->
@@ -163,8 +133,7 @@ goto_backwards() ->
                     {flags,[]}],
                    [{in_port,6}],
                    [{goto_table,2}]),
-    %% Add flow
-    {error,{bad_action,bad_table_id}} = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual({error,{bad_action,bad_table_id}}, linc_us3_flow:modify(FlowModAdd)).
 
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
@@ -174,8 +143,7 @@ incompatible_set_field() ->
                     {flags,[]}],
                    [{in_port,6},{eth_type,<<8,0>>},{udp_src,<<8,0>>}],
                    [{write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
-    %% Add flow
-    {error,{bad_action,bad_argument}} = linc_us3_flow:modify(FlowModAdd).
+    ?assertEqual({error,{bad_action,bad_argument}}, linc_us3_flow:modify(FlowModAdd)).
 
 %% Add one flow, in an empty table, this should always succeed.
 add_flow(TableId, Flags) ->
@@ -187,18 +155,21 @@ add_flow(TableId, Flags) ->
                     {flags,Flags}],
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>,<<0,0,0,0,0,15>>}],
                    [{write_actions,[{output,15,1400}]}]),
-    %% Add flow
-    ok = linc_us3_flow:modify(FlowModAdd),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd)),
  
    %% Check if the flow was added correctly...
     #ofp_flow_mod{match=Match,
                   instructions=Instructions} = FlowModAdd,
 
     [#flow_entry{id=Id,
-                 match=Match,
-                 instructions=Instructions}=_F] = linc_us3_flow:get_flow_table(TableId),
+                 match=Match1,
+                 instructions=Instructions1}] = linc_us3_flow:get_flow_table(TableId),
+
+    ?assertEqual(Match, Match1),
+    ?assertEqual(Instructions, Instructions1),
+
     %% Check that counters entry has been created
-    [#flow_entry_counter{}] = ets:lookup(flow_entry_counters,Id).
+    ?assertMatch([#flow_entry_counter{}], ets:lookup(flow_entry_counters,Id)).
 
 %% Add two non overlapping flows, this should always succeed, independent of
 %% if the check_overlap flag is set
@@ -220,8 +191,8 @@ add_non_overlapping_flows(Flags) ->
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ok = linc_us3_flow:modify(FlowModAdd1),
-    ok = linc_us3_flow:modify(FlowModAdd2),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
  
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
@@ -229,10 +200,11 @@ add_non_overlapping_flows(Flags) ->
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
-    [#flow_entry{match=Match1,
-                 instructions=Instructions1},
-     #flow_entry{match=Match2,
-                 instructions=Instructions2}] = linc_us3_flow:get_flow_table(TableId).
+    ?assertMatch([#flow_entry{match=Match1,
+                              instructions=Instructions1},
+                  #flow_entry{match=Match2,
+                              instructions=Instructions2}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
 %% Add two overlapping, but not exact, flows, without the check_overlap flag set,
 %% this should succeed.
@@ -255,8 +227,8 @@ add_overlapping_flows() ->
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>,<<0,0,0,0,0,31>>}],
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ok = linc_us3_flow:modify(FlowModAdd1),
-    ok = linc_us3_flow:modify(FlowModAdd2),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
  
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
@@ -264,10 +236,11 @@ add_overlapping_flows() ->
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
-    [#flow_entry{match=Match1,
-                 instructions=Instructions1},
-     #flow_entry{match=Match2,
-                 instructions=Instructions2}] = linc_us3_flow:get_flow_table(TableId).
+    ?assertMatch([#flow_entry{match=Match1,
+                              instructions=Instructions1},
+                  #flow_entry{match=Match2,
+                              instructions=Instructions2}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
 %% Add two overlapping, but not exact, flows, with the check_overlap flag set,
 %% this should fail.
@@ -290,15 +263,17 @@ add_overlapping_flow_check_overlap() ->
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#17>>,<<0,0,0,0,0,16#1F>>}],
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ok = linc_us3_flow:modify(FlowModAdd1),
-    {error,{flow_mod_failed,overlap}} = linc_us3_flow:modify(FlowModAdd2),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    ?assertEqual({error,{flow_mod_failed,overlap}},
+                 linc_us3_flow:modify(FlowModAdd2)),
  
     %% Check that the the overlapping flow was not added
     #ofp_flow_mod{match=Match1,
                   instructions=Instructions1} = FlowModAdd1,
 
-    [#flow_entry{match=Match1,
-                 instructions=Instructions1}] = linc_us3_flow:get_flow_table(TableId).
+    ?assertMatch([#flow_entry{match=Match1,
+                              instructions=Instructions1}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
 add_exact_flow(Flags) ->    
     TableId = 4,
@@ -324,7 +299,7 @@ add_exact_flow(Flags) ->
                     Instructions2),
 
     %% Add first flow
-    ok = linc_us3_flow:modify(FlowModAdd1),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
     [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
 
@@ -333,29 +308,37 @@ add_exact_flow(Flags) ->
     linc_us3_flow:update_match_counters(FlowId1,PacketSize),
 
     %% Check that counters are updated
-    [#flow_entry_counter{id=FlowId1,
-                         received_packets=1,
-                         received_bytes=PacketSize}] = ets:lookup(flow_entry_counters,FlowId1),
+    [#flow_entry_counter{
+        id=FlowId1,
+        received_packets=1,
+        received_bytes=PacketSize}] = ets:lookup(flow_entry_counters,FlowId1),
 
     %% Add second flow
-    ok = linc_us3_flow:modify(FlowModAdd2),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
  
     %% Check that the the new flow has replaced the previous one
-    #ofp_flow_mod{match=M,
-                  instructions=I} = FlowModAdd2,
+    #ofp_flow_mod{match=M1,
+                  instructions=I1} = FlowModAdd2,
 
     [#flow_entry{id = FlowId2,
-                 match = M,
-                 instructions = I}] = linc_us3_flow:get_flow_table(TableId),
+                 match = M2,
+                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
+
+    ?assertEqual(M1,M2),
+    ?assertEqual(I1,I2),
 
     %% Check that counters entry is correct
     case Flags of
         [reset_counts] ->
             [Stats] = ets:lookup(flow_entry_counters,FlowId2),
-            #flow_entry_counter{received_packets=0,received_bytes=0} = Stats;
+            ?assertMatch(#flow_entry_counter{received_packets=0,
+                                             received_bytes=0},
+                         Stats);
         [] ->
             [Stats] = ets:lookup(flow_entry_counters,FlowId1),
-            #flow_entry_counter{received_packets=1,received_bytes=PacketSize} = Stats
+            ?assertMatch(#flow_entry_counter{received_packets=1,
+                                             received_bytes=PacketSize},
+                         Stats)
     end.
     
 %% modify_flow() ->

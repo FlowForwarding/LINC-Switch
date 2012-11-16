@@ -102,27 +102,42 @@ action_set_queue() ->
     ?assertEqual(?INIT_VAL, Pkt2#ofs_pkt.queue_id).
 
 action_push_tag_vlan() ->
+    %% No initial VLAN
     VLAN1 = 16#8100,
     Action1 = #ofp_action_push_vlan{ethertype = VLAN1},
-
-    %% No initial VLAN
     Packet1 = [#ether{}],
     NewPacket1 = [#ether{},
                   #ieee802_1q_tag{pcp = 0, vid = 1, ether_type = VLAN1}],
-    check_action(Action1, Packet1, NewPacket1).
+    check_action(Action1, Packet1, NewPacket1),
 
     %% %% Initial VLAN present
-    %% VLAN2 = 16#88a8,
-    %% Action2 = #ofp_action_push_vlan{ethertype = VLAN1},
-    %% Packet2 = [#ether{},
-    %%            #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
-    %% NewPacket2 = [#ether{},
-    %%               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN2}
-    %%               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
-    %% check_action(Action2, Packet2, NewPacket2).
+    VLAN2 = 16#88a8,
+    Action2 = #ofp_action_push_vlan{ethertype = VLAN2},
+    Packet2 = [#ether{},
+               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    NewPacket2 = [#ether{},
+                  #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN2},
+                  #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    check_action(Action2, Packet2, NewPacket2).
 
 action_pop_tag_vlan() ->
-    ok.
+    Action = #ofp_action_pop_vlan{},
+
+    %% Pop with only one VLAN
+    VLAN1 = 16#8100,
+    Packet1 = [#ether{},
+               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    NewPacket1 = [#ether{}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% Pop with two VLANs
+    VLAN2 = 16#88a8,
+    Packet2 = [#ether{},
+               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN2},
+               #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    NewPacket2 = [#ether{},
+                  #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
+    check_action(Action, Packet2, NewPacket2).
 
 action_push_tag_mpls() ->
     ok.

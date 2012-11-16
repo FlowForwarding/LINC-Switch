@@ -268,13 +268,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 %% pops the outermost VLAN header from the packet.
 %% "The effect of any inconsistent actions on matched packet is undefined"
 %% OF1.3 spec PDF page 32. Nothing happens if there is no VLAN tag.
-apply_list(Pkt, [#ofp_action_pop_vlan{} | Rest])
-  when length(Pkt) > 1 ->
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, ieee802_1q_tag,
-             %% returning 'delete' atom will work for first VLAN tag only
-             fun(_) -> 'delete' end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_vlan{} | Rest])
+  when length(P) > 1 ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, ieee802_1q_tag,
+           %% returning 'delete' atom will work for first VLAN tag only
+           fun(_) -> 'delete' end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action

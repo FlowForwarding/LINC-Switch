@@ -136,103 +136,78 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest]) ->
 %% Optional action
 %% Copy the TTL from next-to-outermost to outermost header with TTL.
 %% Copy can be IPv4-IPv4, MPLS-MPLS, IPv4-MPLS
-apply_list(Pkt, [#ofp_action_copy_ttl_out{} | Rest]) ->
-    Tags = lists:filter(Pkt,
-                        fun(T) when is_tuple(T) ->
-                                element(1,T) =:= mpls_tag orelse
-                                    element(1,T) =:= ipv4
-                        end),
-
-    %% this will crash if less than 2 ipv4/mpls tags found
-    [Outermost, NextOutermost | _] = Tags,
-
-    %% NOTE: the following code abuses the fact records are tuples
-    case {element(1, Outermost), element(1, NextOutermost)} of
-        {ipv4, ipv4} ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, ipv4,
-                     fun(T) ->
-                             T#ipv4{ ttl = NextOutermost#ipv4.ttl }
-                     end);
-        {mpls_tag, ipv4} ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, mpls_tag,
-                     fun(T) ->
-                             [Stack1 | StackRest] = T#mpls_tag.stack,
-                             Stack1b = Stack1#mpls_stack_entry{
-                                         ttl = NextOutermost#ipv4.ttl
-                                        },
-                             T#mpls_tag{
-                               stack = [Stack1b | StackRest]
-                              }
-                     end);
-
-        %% matches on MPLS tag/whatever and does the copy inside MPLS tag
-        {mpls_tag, _} ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, mpls_tag,
-                     fun(T) ->
-                             [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
-                             Stack1b = Stack1#mpls_stack_entry{
-                                         ttl = Stack2#mpls_stack_entry.ttl
-                                        },
-                             T#mpls_tag{
-                               %% reconstruct the stack
-                               stack = [Stack1b, Stack2 | StackRest] 
-                              }
-                     end);
-        {_, _} ->
-            Pkt2 = Pkt
-    end,
-    apply_list(Pkt2, Rest);
-
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest]) ->
+    Tags = filter_copy_fields(P),
+    P2 = case Tags of
+             [#mpls_tag{stack = S}, #ipv4{ttl = NextOutermostTTL} | _]
+               when length(S) == 1 ->
+                 linc_us3_packet_edit:find_and_edit(
+                   P, mpls_tag,
+                   fun(T) ->
+                           [Stack1 | StackRest] = T#mpls_tag.stack,
+                           Stack1b = Stack1#mpls_stack_entry{
+                                       ttl = NextOutermostTTL
+                                      },
+                           T#mpls_tag{
+                             stack = [Stack1b | StackRest]
+                            }
+                   end);
+             [#mpls_tag{stack = S} | _] when length(S) > 1 ->
+                 linc_us3_packet_edit:find_and_edit(
+                   P, mpls_tag,
+                   fun(T) ->
+                           [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
+                           Stack1b = Stack1#mpls_stack_entry{
+                                       ttl = Stack2#mpls_stack_entry.ttl
+                                      },
+                           T#mpls_tag{
+                             %% reconstruct the stack
+                             stack = [Stack1b, Stack2 | StackRest] 
+                            }
+                   end);
+             [#ipv4{}, #ipv4{ttl = NextOutermostTTL}] ->
+                 linc_us3_packet_edit:find_and_edit(
+                   P, ipv4,
+                   fun(T) ->
+                           T#ipv4{ ttl = NextOutermostTTL }
+                   end)
+             end,
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
+    
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Copy the TTL from outermost to next-to-outermost header with TTL
 %% Copy can be IPv4-IPv4, MPLS-MPLS, MPLS-IPv4
-apply_list(Pkt, [#ofp_action_copy_ttl_in{} | Rest]) ->
-    Tags = lists:filter(Pkt,
-                        fun(T) when is_tuple(T) ->
-                                element(1,T) =:= mpls_tag orelse
-                                    element(1,T) =:= ipv4
-                        end),
-
-    %% this will crash if less than 2 ipv4/mpls tags found
-    [Outermost, NextOutermost | _] = Tags,
-
-    %% NOTE: the following code abuses the fact records are tuples
-    case {element(1, Outermost), element(1, NextOutermost)} of
-        {ipv4, ipv4} ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit_skip(
-                     Pkt, ipv4,
-                     fun(T) ->
-                             T#ipv4{ ttl = Outermost#ipv4.ttl }
-                     end, 1);
-        {mpls_tag, ipv4} ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, ipv4,
-                     fun(T) ->
-                             T#ipv4{ ttl = mpls_get_outermost_ttl(Outermost) }
-                     end);
-        %% matches on MPLS tag/whatever and does the copy inside MPLS tag
-        {mpls_tag, _} ->
-            %% Copies TTL from outermost to next-outermost tag inside the same MPLS tag
-            %% TODO: can the packet contain two MPLS stacks? Then this code needs change
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, mpls_tag,
-                     fun(T) ->
-                             [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
-                             Stack2b = Stack2#mpls_stack_entry{
-                                         ttl = Stack1#mpls_stack_entry.ttl
-                                        },
-                             T#mpls_tag{
-                               stack = [Stack1, Stack2b | StackRest] %% reconstruct the stack
-                              }
-                     end);
-        {_, _} ->
-            Pkt2 = Pkt
-    end,
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest]) ->
+    Tags = filter_copy_fields(P),
+    P2 = case Tags of
+             [#mpls_tag{stack = S} = MPLS, #ipv4{} | _]
+               when length(S) == 1 ->
+                 linc_us3_packet_edit:find_and_edit(
+                   P, ipv4,
+                   fun(T) ->
+                           T#ipv4{ ttl = mpls_get_outermost_ttl(MPLS) }
+                   end);
+             [#mpls_tag{stack = S} | _] when length(S) > 1 ->
+                 linc_us3_packet_edit:find_and_edit(
+                   P, mpls_tag,
+                   fun(T) ->
+                           [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
+                           Stack2b = Stack2#mpls_stack_entry{
+                                       ttl = Stack1#mpls_stack_entry.ttl
+                                      },
+                           T#mpls_tag{
+                             stack = [Stack1, Stack2b | StackRest]
+                            }
+                   end);
+             [#ipv4{ttl = OutermostTTL}, #ipv4{}] ->
+                 linc_us3_packet_edit:find_and_edit_skip(
+                   P, ipv4,
+                   fun(T) ->
+                           T#ipv4{ ttl = OutermostTTL }
+                   end, 1)
+         end,
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
@@ -377,3 +352,9 @@ apply_list(Pkt, []) ->
 mpls_get_outermost_ttl(T = #mpls_tag{}) ->
     [H | _] = T#mpls_tag.stack,
     H#mpls_stack_entry.ttl.
+
+filter_copy_fields(List) ->
+    lists:filter(fun(T) when is_tuple(T) ->
+                         element(1,T) =:= mpls_tag orelse
+                             element(1,T) =:= ipv4
+                 end, List).

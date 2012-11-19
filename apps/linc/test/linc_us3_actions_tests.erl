@@ -61,7 +61,7 @@ actions_test_() ->
       {"Action Change-TTL: set IP TTL", fun action_set_ip_ttl/0},
       {"Action Change-TTL: decrement IP TTL", fun action_decrement_ip_ttl/0},
       {"Action Change-TTL: copy TTL outwards", fun action_copy_ttl_outwards/0},
-      {"Action Change-TTL: copy_ttl_inwards", fun action_copy_ttl_inwards/0}]}.
+      {"Action Change-TTL: copy TTL inwards", fun action_copy_ttl_inwards/0}]}.
 
 action_output() ->
     Pkt = #ofs_pkt{},
@@ -229,10 +229,52 @@ action_decrement_ip_ttl() ->
     check_action(Action, Packet, NewPacket).
 
 action_copy_ttl_outwards() ->
-    ok.
+    Action  = #ofp_action_copy_ttl_out{},
+
+    %% from IPv4 to IPv4
+    Packet1 = [#ipv4{ttl = ?INIT_VAL}, #ipv4{ttl = ?NEW_VAL}],
+    NewPacket1 = [#ipv4{ttl = ?NEW_VAL}, #ipv4{ttl = ?NEW_VAL}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% from IPv4 to MPLS
+    Packet2 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?INIT_VAL}]},
+               #ipv4{ttl = ?NEW_VAL}],
+    NewPacket2 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL}]},
+                  #ipv4{ttl = ?NEW_VAL}],
+    check_action(Action, Packet2, NewPacket2),
+
+    %% from MPLS to MPLS
+    Packet3 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?INIT_VAL},
+                                  #mpls_stack_entry{ttl = ?NEW_VAL}]},
+               #ipv4{ttl = ?INIT_VAL}],
+    NewPacket3 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL},
+                                     #mpls_stack_entry{ttl = ?NEW_VAL}]},
+                  #ipv4{ttl = ?INIT_VAL}],
+    check_action(Action, Packet3, NewPacket3).
 
 action_copy_ttl_inwards() ->
-    ok.
+    Action  = #ofp_action_copy_ttl_in{},
+
+    %% from IPv4 to IPv4
+    Packet1 = [#ipv4{ttl = ?NEW_VAL}, #ipv4{ttl = ?INIT_VAL}],
+    NewPacket1 = [#ipv4{ttl = ?NEW_VAL}, #ipv4{ttl = ?NEW_VAL}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% from MPLS to IPv4
+    Packet2 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL}]},
+               #ipv4{ttl = ?INIT_VAL}],
+    NewPacket2 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL}]},
+                  #ipv4{ttl = ?NEW_VAL}],
+    check_action(Action, Packet2, NewPacket2),
+
+    %% from MPLS to MPLS
+    Packet3 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL},
+                                  #mpls_stack_entry{ttl = ?INIT_VAL}]},
+               #ipv4{ttl = ?INIT_VAL}],
+    NewPacket3 = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?NEW_VAL},
+                                     #mpls_stack_entry{ttl = ?NEW_VAL}]},
+                  #ipv4{ttl = ?INIT_VAL}],
+    check_action(Action, Packet3, NewPacket3).
 
 %% Fixtures --------------------------------------------------------------------
 

@@ -434,7 +434,7 @@ group_get_stats(GroupId) ->
 group_get_stat(GroupId, Stat) ->
     case ets:lookup(group_stats, {group, GroupId, Stat}) of
         []      -> 0;
-        [Value] -> Value
+        [{linc_group_stats, {group, GroupId, Stat}, Value}] -> Value
     end.
 
 %%--------------------------------------------------------------------

@@ -40,18 +40,26 @@ group_test_() ->
 
 %%--------------------------------------------------------------------
 add_group() ->
-    %%?assert(unimplemented)
     linc_us3_groups:modify(#ofp_group_mod{
                               command = add,
                               group_id = 1,
                               type = all,
                               buckets = []
                              }),
-    G1Stats = linc_us3_groups:get_stats(
-                #ofp_group_stats_request{ group_id = 1 } ),
-    ?assert(stats_get(G1Stats, 1, reference_count) =:= 0),
-    ?assert(stats_get(G1Stats, 1, packet_count) =:= 0),
-    ?assert(stats_get(G1Stats, 1, byte_count) =:= 0).
+    %% check that counters are zero
+    G1Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    ?assertEqual(0, stats_get(G1Stats, 1, reference_count)),
+    ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
+    ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
+
+    %% send a random package
+    Pkt2 = test_packet_vlan(),
+    linc_us3_groups:apply(1, Pkt2),
+
+    %% check that counters changed
+    G2Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
+    ?assertEqual(Pkt2#ofs_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
 %%--------------------------------------------------------------------
 modify_group() ->
@@ -91,3 +99,20 @@ stats_get(#ofp_group_stats_reply{ stats = Stats }, GroupId, Key) ->
                 byte_count -> GroupStats#ofp_group_stats.byte_count
             end
     end.
+
+%% @doc Creates a test ICMP packet with 2 VLAN headers in it (122 bytes total)
+test_packet_vlan() ->
+    P = [{ether,<<0,27,212,27,164,216>>,<<0,19,195,223,174,24>>,33024,0},
+         {ieee802_1q_tag,0,0,<<7,6:4>>,33024},
+         {ieee802_1q_tag,0,0,<<0,10:4>>,2048},
+         {ipv4,4,5,0,0,100,15,0,0,0,255,1,37531,<<10,118,10,1>>,<<10,118,10,2>>,<<>>},
+         {icmp,8,0,52919,3,0,<<127,0,0,1>>,<<0,0,0,0>>,0,0,0,0,0},
+         <<0,0,0,0,0,31,175,112,171,205,171,205,171,205,171,205,171,205,171,205,171,
+           205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
+           205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
+           205,171,205,171,205,171,205,171,205,171,205,171,205,171,205>>],
+    #ofs_pkt{
+       in_port = 1,
+       packet = P,
+       size = 122
+      }.

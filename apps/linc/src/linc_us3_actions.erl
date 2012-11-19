@@ -268,29 +268,32 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 %% pops the outermost VLAN header from the packet.
 %% "The effect of any inconsistent actions on matched packet is undefined"
 %% OF1.3 spec PDF page 32. Nothing happens if there is no VLAN tag.
-apply_list(Pkt, [#ofp_action_pop_vlan{} | Rest])
-  when length(Pkt) > 1 ->
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, ieee802_1q_tag,
-             %% returning 'delete' atom will work for first VLAN tag only
-             fun(_) -> 'delete' end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_vlan{} | Rest])
+  when length(P) > 1 ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, ieee802_1q_tag,
+           %% returning 'delete' atom will work for first VLAN tag only
+           fun(_) -> 'delete' end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Finds an MPLS tag, and pushes an item in its stack. If there is no MPLS tag,
 %% a new one is added.
 %% Only ethertype 0x8847 or 0x88A8 should be used (OF1.2 spec, p.16)
-apply_list(Pkt, [#ofp_action_push_mpls{ ethertype = EtherType } | Rest])
+apply_list(#ofs_pkt{packet = P} = Pkt,
+           [#ofp_action_push_mpls{ ethertype = EtherType } | Rest])
   when EtherType =:= 16#8847;
-       EtherType =:= 16#88A8 -> %% might be 'when' is redundant
+       EtherType =:= 16#88A8 ->
     %% inherit IP or MPLS ttl value
-    FindOldMPLS = linc_us3_packet_edit:find(Pkt, mpls_tag),
-    SetTTL = case linc_us3_packet_edit:find(Pkt, ipv4) of
+    FindOldMPLS = linc_us3_packet_edit:find(P, mpls_tag),
+    SetTTL = case linc_us3_packet_edit:find(P, ipv4) of
                  not_found ->
                      case FindOldMPLS of
-                         not_found -> 0;
-                         {_, T} -> mpls_get_outermost_ttl(T)
+                         not_found ->
+                             0;
+                         {_, T} ->
+                             mpls_get_outermost_ttl(T)
                      end;
                  {_, T} ->
                      T#ipv4.ttl
@@ -298,59 +301,60 @@ apply_list(Pkt, [#ofp_action_push_mpls{ ethertype = EtherType } | Rest])
 
     case FindOldMPLS of
         not_found ->
-            %% Must insert after ether or vlan tag, whichever is deeper in the packet
-            InsertAfter = case linc_us3_packet_edit:find(Pkt, vlan) of
-                              not_found -> ether;
-                              _ -> vlan
+            %% Must insert after ether or vlan tag,
+            %% whichever is deeper in the packet
+            InsertAfter = case linc_us3_packet_edit:find(P, ieee802_1q_tag) of
+                              not_found ->
+                                  ether;
+                              _ ->
+                                  ieee802_1q_tag
                           end,
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, InsertAfter,
-                     fun(T) -> 
-                             NewEntry = #mpls_stack_entry{},
-                             NewTag = #mpls_tag{
-                               stack = [NewEntry],
-                               ether_type = EtherType
-                              },
-                             %% found ether or vlan element, return it plus
-                             %% MPLS tag for insertion
-                             [T, NewTag]
-                     end);
+            P2 = linc_us3_packet_edit:find_and_edit(
+                   P, InsertAfter,
+                   fun(T) -> 
+                           NewEntry = #mpls_stack_entry{ttl = SetTTL},
+                           NewTag = #mpls_tag{
+                             stack = [NewEntry],
+                             ether_type = EtherType
+                            },
+                           %% found ether or vlan element, return it plus
+                           %% MPLS tag for insertion
+                           [T, NewTag]
+                   end);
         %% found an MPLS shim header, and will push tag into it
         _ ->
-            Pkt2 = linc_us3_packet_edit:find_and_edit(
-                     Pkt, mpls_tag,
-                     fun(T) -> 
-                             %% base the newly inserted entry on a previous one
-                             NewEntry = case T#mpls_tag.stack of
-                                            [] -> #mpls_stack_entry{ttl = SetTTL};
-                                            [H|_] -> H
-                                        end,
-                             T#mpls_tag{
-                               stack = [NewEntry | T#mpls_tag.stack],
-                               ether_type = EtherType
-                              }
-                     end)
+            P2 = linc_us3_packet_edit:find_and_edit(
+                   P, mpls_tag,
+                   fun(T) -> 
+                           %% base the newly inserted entry on a previous one
+                           NewEntry = hd(T#mpls_tag.stack),
+                           T#mpls_tag{
+                             stack = [NewEntry | T#mpls_tag.stack],
+                             ether_type = EtherType
+                            }
+                   end)
     end,
-    apply_list(Pkt2, Rest);
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
 %% inside it is empty. Nothing happens if no MPLS header found.
-apply_list(Pkt, [#ofp_action_pop_mpls{} | Rest]) ->
-    Pkt2 = linc_us3_packet_edit:find_and_edit(
-             Pkt, mpls_tag,
-             fun(T) ->
-                     Stk = T#mpls_tag.stack,
-                     %% based on how many elements were in stack, either pop a
-                     %% top most element or delete the whole tag (for empty)
-                     case Stk of
-                         [] -> 'delete';
-                         L when is_list(L), length(L) =:= 1 -> 'delete';
-                         [_|Rest] -> T#mpls_tag{ stack = Rest }
-                     end
-             end),
-    apply_list(Pkt2, Rest);
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest]) ->
+    P2 = linc_us3_packet_edit:find_and_edit(
+           P, mpls_tag,
+           fun(T) ->
+                   Stk = T#mpls_tag.stack,
+                   %% based on how many elements were in stack, either pop a
+                   %% top most element or delete the whole tag (for empty)
+                   case Stk of
+                       [OnlyOneElement] ->
+                           'delete';
+                       [_|RestOfStack] ->
+                           T#mpls_tag{ stack = RestOfStack }
+                   end
+           end),
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest);
 
 %%------------------------------------------------------------------------------
 %% Optional action

@@ -79,6 +79,8 @@ teardown(ok) ->
 %%% Tools --------------------------------------------------------------------
 %%%
 
+%% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
+%% and returns a field Key from it.
 stats_get(#ofp_group_stats_reply{ stats = Stats }, GroupId, Key) ->
     case lists:keyfind(GroupId, #ofp_group_stats.group_id, Stats) of
         false -> {not_found, group, GroupId};

@@ -51,9 +51,10 @@
 
 %% @doc Group object
 -record(linc_group, {
-          id            :: ofp_group_id(),
-          type    = all :: ofp_group_type(),
-          buckets = []  :: [#linc_bucket{}]
+          id               :: ofp_group_id(),
+          type    = all    :: ofp_group_type(),
+          total_weight = 0 :: integer(),
+          buckets = []     :: [#linc_bucket{}]
          }).
 
 %% @doc Stats item record for storing stats in ETS
@@ -114,8 +115,7 @@ apply(GroupId, Pkt) ->
             group_update_stats(GroupId, packet_count, 1),
             group_update_stats(GroupId, byte_count, Pkt#ofs_pkt.size),
 
-            apply_group_type(Group#linc_group.type,
-                             Group#linc_group.buckets, Pkt)
+            apply_group_type_to_packet(Group, Pkt)
     end.
 
 %%--------------------------------------------------------------------
@@ -127,7 +127,12 @@ modify(#ofp_group_mod{ command = add,
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
-    Entry = #linc_group{id = Id, type = Type, buckets = OFSBuckets},
+    Entry = #linc_group{
+               id = Id,
+               type = Type,
+               buckets = OFSBuckets,
+               total_weight = calculate_total_weight(Buckets)
+              },
     case ets:insert_new(group_table, Entry) of
         true ->
             %% just in case, zero stats
@@ -143,8 +148,12 @@ modify(#ofp_group_mod{ command = modify,
                        buckets = Buckets }) ->
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
-    Entry = #linc_group{id = Id, type = Type, buckets = Buckets},
-
+    Entry = #linc_group{
+               id = Id,
+               type = Type,
+               buckets = Buckets,
+               total_weight = calculate_total_weight(Buckets)
+              },
     %% Reset group counters
     %% Delete stats for buckets
     case group_get(Id) of
@@ -228,10 +237,10 @@ get_features(#ofp_group_features_stats_request{ flags = _F }) ->
 %% @doc Chooses a bucket of actions from list of buckets according to the
 %% group type. Executes actions. Returns [{packet, portnum|'drop'}]
 %% (see 5.4.1 of OF1.2 spec)
--spec apply_group_type(ofp_group_type(), [#linc_bucket{}], #ofs_pkt{}) -> ok.
-                              % [{#ofs_pkt{}, Port :: integer() | drop}].
+-spec apply_group_type_to_packet(#linc_group{}, #ofs_pkt{}) -> ok.
 
-apply_group_type(all, Buckets, Pkt = #ofs_pkt{}) ->
+apply_group_type_to_packet(#linc_group{type = all, buckets = Buckets},
+                           Pkt = #ofs_pkt{}) ->
     %% Required: all: Execute all buckets in the group. This group is used for
     %% multicast or broadcast forwarding. The packet is effectively cloned for
     %% each bucket; one packet is processed for each bucket of the group. If a
@@ -244,7 +253,8 @@ apply_group_type(all, Buckets, Pkt = #ofs_pkt{}) ->
               end, Buckets),
     ok;
 
-apply_group_type(select, Buckets, Pkt) ->
+apply_group_type_to_packet(G = #linc_group{type = select, buckets = Buckets},
+                           Pkt = #ofs_pkt{}) ->
     %% Optional: select: Execute one bucket in the group. Packets are processed
     %% by a single bucket in the group, based on a switch-computed selection
     %% algorithm (e.g. hash on some user-configured tuple or simple round robin).
@@ -255,20 +265,27 @@ apply_group_type(select, Buckets, Pkt) ->
     %% selection to the remaining set (those with forwarding actions to live ports)
     %% instead of dropping packets destined to that port.
 
-    [Bucket | _Whatever] = Buckets, % TODO: add weights and round-robin logic
+    Rand = random:uniform(G#linc_group.total_weight),
+    Bucket = select_random_bucket_by_weight(Rand, 0, Buckets),
+
+    %% check against empty bucket list
+    true = (Bucket =/= not_found),
     ok = apply_bucket(Bucket, Pkt),
     ok;
 
-apply_group_type(indirect, [Bucket], Pkt) ->
+apply_group_type_to_packet(#linc_group{type = indirect, buckets = Buckets},
+                           Pkt = #ofs_pkt{})  ->
     %% Required: indirect: Execute the one defined bucket in this group. This
     %% group supports only a single bucket. Allows multiple flows or groups to
     %% point to a common group identifier, supporting faster, more efficient
     %% convergence (e.g. next hops for IP forwarding). This group type is
     %% effectively identical to an 'all' group with one bucket.
+    [Bucket] = Buckets,
     ok = apply_bucket(Bucket, Pkt),
     ok;
 
-apply_group_type(ff, Buckets, Pkt) ->
+apply_group_type_to_packet(#linc_group{type = ff, buckets = Buckets},
+                           Pkt = #ofs_pkt{})  ->
     %% Optional: fast failover: Execute the first live bucket. Each action bucket
     %% is associated with a specific port and/or group that controls its liveness.
     %% The buckets are evaluated in the order defined by the group, and the first
@@ -277,7 +294,7 @@ apply_group_type(ff, Buckets, Pkt) ->
     %% trip to the controller. If no buckets are live, packets are dropped. This
     %% group type must implement a liveness mechanism (see 6.9 of OF1.2 spec)
     case pick_live_bucket(Buckets) of
-        false ->
+        false -> 
             ok;
         Bucket ->
             ok = apply_bucket(Bucket, Pkt),
@@ -518,3 +535,23 @@ group_enum_groups_2(K, Accum) ->
     group_enum_groups_2(ets:next(K), [GroupDesc | Accum]).
 
 %%--------------------------------------------------------------------
+%% @internal
+
+select_random_bucket_by_weight(_RandomWeight, _Accum, []) ->
+    not_found;
+select_random_bucket_by_weight(RandomWeight, Accum, [Bucket|_])
+  when RandomWeight >= Accum ->
+    Bucket;
+select_random_bucket_by_weight(RandomWeight, Accum, [Bucket|Tail]) ->
+    select_random_bucket_by_weight(RandomWeight,
+                                   Accum + (Bucket#linc_bucket.bucket)#ofp_bucket.weight,
+                                   Tail).
+
+-spec calculate_total_weight(Buckets :: [ofp_bucket()]) -> integer().
+calculate_total_weight(Buckets) ->
+    lists:foldl(fun(B, Sum) ->
+                        case B#ofp_bucket.weight of
+                            W when is_integer(W) -> W;
+                            _ -> 1
+                        end + Sum
+                end, 0, Buckets).

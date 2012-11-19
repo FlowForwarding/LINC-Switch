@@ -58,7 +58,7 @@
 
 %% @doc Stats item record for storing stats in ETS
 -record(linc_group_stats, {
-          key   :: tuple(),
+          key   :: {group, integer(), atom()} | {bucket, {integer(), binary()}, atom()},
           value :: integer()
          }).
 
@@ -187,9 +187,12 @@ modify(#ofp_group_mod{ command = delete,
     ok.
 
 %%--------------------------------------------------------------------
+%% @doc Responds with stats for given group or special atom 'all' requests
+%% stats for all groups in a list
 -spec get_stats(#ofp_group_stats_request{}) ->
                        #ofp_group_stats_reply{}.
 get_stats(R) ->
+    %% Special groupid 'all' requests all groups stats
     case R#ofp_group_stats_request.group_id of
         all -> IdList = [];
         Id -> IdList = [Id]
@@ -201,13 +204,21 @@ get_stats(R) ->
 -spec get_desc(#ofp_group_desc_stats_request{}) ->
                       #ofp_group_desc_stats_reply{}.
 get_desc(_R) ->
-    #ofp_group_desc_stats_reply{}.
+    #ofp_group_desc_stats_reply{
+       stats = group_enum_groups()
+      }.
 
 %%--------------------------------------------------------------------
 -spec get_features(#ofp_group_features_stats_request{}) ->
                           #ofp_group_features_stats_reply{}.
-get_features(_R) ->
-    #ofp_group_features_stats_reply{}.
+get_features(#ofp_group_features_stats_request{ flags = _F }) ->
+    #ofp_group_features_stats_reply{
+       types = [all, select, indirect, ff],
+       capabilities = [select_weight, chaining], %select_liveness, chaining_checks
+       max_groups = {?MAX, ?MAX, ?MAX, ?MAX},
+       actions = {?SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_WRITE_ACTIONS,
+                  ?SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_WRITE_ACTIONS}
+      }.
 
 %%%==============================================================
 %%% Tool Functions
@@ -478,3 +489,32 @@ group_bucket_stat_bitsize(packet_count) -> 64;
 group_bucket_stat_bitsize(byte_count)   -> 64.
 %group_bucket_stat_bitsize(X) ->
 %    erlang:raise(exit, {badarg, X}).
+
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Iterates over all keys of groups table and creates list of
+%% #ofp_group_desc_stats{} standard records for group stats response
+-spec group_enum_groups() -> [#ofp_group_desc_stats{}].
+group_enum_groups() ->
+    group_enum_groups_2(ets:first(group_table), []).
+
+%% @internal
+%% @hidden
+%% @doc (does the iteration job for group_enum_groups/0)
+group_enum_groups_2('$end_of_table', Accum) ->
+    lists:reverse(Accum);
+group_enum_groups_2(K, Accum) ->
+    %% record must always exist, as we are iterating over table keys
+    [Group] = ets:lookup(group_table, K),
+    %% unwrap wrapped buckets
+    Buckets = [B#linc_bucket.bucket || B <- Group#linc_group.buckets],
+    %% create standard structure
+    GroupDesc = #ofp_group_desc_stats{
+                   group_id = Group#linc_group.id,
+                   type = Group#linc_group.type,
+                   buckets = Buckets
+                  },
+    group_enum_groups_2(ets:next(K), [GroupDesc | Accum]).
+
+%%--------------------------------------------------------------------

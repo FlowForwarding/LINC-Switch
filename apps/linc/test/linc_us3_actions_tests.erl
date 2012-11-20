@@ -30,6 +30,7 @@
 -define(MOCKED, [port, group]).
 -define(INIT_VAL, 100).
 -define(NEW_VAL, 200).
+-define(NO_SIDE_EFFECTS, []).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -37,7 +38,37 @@ actions_set_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     []}.
+     [{"Action Set: precedence of Group action", fun action_set_precedence/0},
+      {"Action Set: drop if no Group or Output action", fun action_set_drop/0},
+      {"Action Set: Output action", fun action_set_output/0}
+     ]}.
+
+action_set_precedence() ->
+    ActionSet = [#ofp_action_group{group_id = ?INIT_VAL},
+                 #ofp_action_output{port = ?INIT_VAL}],
+    Pkt = #ofs_pkt{actions = ActionSet},
+    Output = linc_us3_actions:apply_set(Pkt),
+    ?assertEqual({group, ?INIT_VAL, Pkt}, Output).
+
+action_set_drop() ->
+    %% No actions in Action Set
+    ActionSet1 = [],
+    Pkt1 = #ofs_pkt{actions = ActionSet1},
+    Output1 = linc_us3_actions:apply_set(Pkt1),
+    ?assertEqual({drop, Pkt1}, Output1),
+
+    %% No Group or Output actions in Action Set
+    ActionSet2 = [#ofp_action_set_queue{queue_id = ?NEW_VAL}],
+    Pkt2 = #ofs_pkt{actions = ActionSet2, queue_id = ?INIT_VAL},
+    NewPkt2 = #ofs_pkt{queue_id = ?NEW_VAL},
+    Output2 = linc_us3_actions:apply_set(Pkt2),
+    ?assertEqual({drop, NewPkt2}, Output2).
+
+action_set_output() ->
+    ActionSet = [#ofp_action_output{port = ?INIT_VAL}],
+    Pkt = #ofs_pkt{actions = ActionSet},
+    Output = linc_us3_actions:apply_set(Pkt),
+    ?assertEqual({output, ?INIT_VAL, Pkt}, Output).
 
 actions_test_() ->
     {setup,
@@ -45,8 +76,8 @@ actions_test_() ->
      fun teardown/1,
      [%% Required actions
       {"Action Output", fun action_output/0},
-      {"Action Drop", fun action_drop/0},
       {"Action Group", fun action_group/0},
+      {"Action Experimenter", fun action_experimenter/0},
       %% Optional actions
       {"Action Set-Field", fun action_set_field/0},
       {"Action Set-Queue", fun action_set_queue/0},
@@ -67,39 +98,41 @@ action_output() ->
     Pkt = #ofs_pkt{},
     Port = 500,
     Action = #ofp_action_output{port = Port},
-    ?assertEqual({output, Port, Pkt},
+    ?assertEqual({Pkt, [{output, Port, Pkt}]},
                  linc_us3_actions:apply_list(Pkt, [Action])),
     ?assert(check_if_called({linc_us3_port, send, 2})),
     ?assertEqual([{Pkt, Port}], check_output_on_ports()).
-
-action_drop() ->
-    ok.
 
 action_group() ->
     GroupId = 300,
     Pkt = #ofs_pkt{},
     ActionGroup = #ofp_action_group{group_id = GroupId},
-    ?assertEqual({group, GroupId, Pkt},
+    ?assertEqual({Pkt, [{group, GroupId, Pkt}]},
                  linc_us3_actions:apply_list(Pkt, [ActionGroup])),
     ?assert(check_if_called({linc_us3_groups, apply, 2})).
+
+action_experimenter() ->
+    Action = #ofp_action_experimenter{experimenter = 111},
+    Packet = [],
+    NewPacket = [],
+    check_action(Action, Packet, NewPacket).
 
 action_set_field() ->
     EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL}, [#ether{type = ?NEW_VAL}]},
     EthDst = {[#ether{dhost = ?INIT_VAL}], {eth_dst, ?NEW_VAL}, [#ether{dhost = ?NEW_VAL}]},
     EthSrc = {[#ether{shost = ?INIT_VAL}], {eth_src, ?NEW_VAL}, [#ether{shost = ?NEW_VAL}]},
     [begin
-         Pkt = #ofs_pkt{packet = Packet},
          Field = #ofp_field{name = Name, value = Value},
-         ActionSetField = #ofp_action_set_field{field = Field},
-         Pkt2 = linc_us3_actions:apply_list(Pkt, [ActionSetField]),
-         ?assertEqual(NewPacket, Pkt2#ofs_pkt.packet)
+         Action = #ofp_action_set_field{field = Field},
+         check_action(Action, Packet, NewPacket)
      end || {Packet, {Name, Value}, NewPacket} <- [EthType, EthDst, EthSrc]].
 
 action_set_queue() ->
-    Pkt = #ofs_pkt{},
-    ActionSetQueue = #ofp_action_set_queue{queue_id = ?INIT_VAL},
-    Pkt2 = linc_us3_actions:apply_list(Pkt, [ActionSetQueue]),
-    ?assertEqual(?INIT_VAL, Pkt2#ofs_pkt.queue_id).
+    Pkt = #ofs_pkt{queue_id = ?INIT_VAL},
+    Action = #ofp_action_set_queue{queue_id = ?NEW_VAL},
+    {NewPkt, ?NO_SIDE_EFFECTS} =
+        linc_us3_actions:apply_list(Pkt, [Action]),
+    ?assertEqual(?NEW_VAL, NewPkt#ofs_pkt.queue_id).
 
 action_push_tag_vlan() ->
     %% No initial VLAN
@@ -287,5 +320,5 @@ teardown(_) ->
 check_action(Action, Packet, NewPacket) ->
     Pkt = #ofs_pkt{packet = Packet},
     NewPkt = #ofs_pkt{packet = NewPacket},
-    Pkt2 = linc_us3_actions:apply_list(Pkt, [Action]),
+    {Pkt2, ?NO_SIDE_EFFECTS} = linc_us3_actions:apply_list(Pkt, [Action]),
     ?assertEqual(NewPkt, Pkt2).

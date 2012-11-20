@@ -139,7 +139,7 @@ modify(#ofp_group_mod{ command = add,
             group_reset_stats(Id);
         false ->
             {error, #ofp_error_msg{type = group_mod_failed,
-                                        code = group_exists}}
+                                   code = group_exists}}
     end;
 
 modify(#ofp_group_mod{ command = modify,
@@ -157,19 +157,21 @@ modify(#ofp_group_mod{ command = modify,
     %% Reset group counters
     %% Delete stats for buckets
     case group_get(Id) of
-        not_found -> ok;
+        not_found ->
+            {error, #ofp_error_msg{type = group_mod_failed,
+                                   code = unknown_group}};
         Group ->
             [group_reset_bucket_stats(B#linc_bucket.unique_id)
-             || B <- Group#linc_group.buckets]
-    end,
+             || B <- Group#linc_group.buckets],
 
-    case ets:member(group_table, Id) of
-        true ->
-            ets:insert(group_table, Entry),
-            ok;
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = unknown_group}}
+            case ets:member(group_table, Id) of
+                true ->
+                    ets:insert(group_table, Entry),
+                    ok;
+                false ->
+                    {error, #ofp_error_msg{type = group_mod_failed,
+                                           code = unknown_group}}
+            end
     end;
 
 modify(#ofp_group_mod{ command = delete,
@@ -198,6 +200,7 @@ modify(#ofp_group_mod{ command = delete,
 %%--------------------------------------------------------------------
 %% @doc Responds with stats for given group or special atom 'all' requests
 %% stats for all groups in a list
+%% Returns no error, if the requested id doesn't exist, would return empty list
 -spec get_stats(#ofp_group_stats_request{}) ->
                        #ofp_group_stats_reply{}.
 get_stats(R) ->

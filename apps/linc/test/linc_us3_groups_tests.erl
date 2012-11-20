@@ -40,15 +40,17 @@ group_test_() ->
 
 %%--------------------------------------------------------------------
 add_group() ->
-    linc_us3_groups:modify(#ofp_group_mod{
-                              command = add,
-                              group_id = 1,
-                              type = all,
-                              buckets = []
-                             }),
+    M1 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = add, group_id = 1,
+                                   type = all, buckets = []
+                                  }),
+    ?assertEqual(ok, M1),
+
+    linc_us3_groups:update_reference_count(1, 333),
+
     %% check that counters are zero
     G1Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
-    ?assertEqual(0, stats_get(G1Stats, 1, reference_count)),
+    ?assertEqual(333, stats_get(G1Stats, 1, reference_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
 
@@ -63,11 +65,47 @@ add_group() ->
 
 %%--------------------------------------------------------------------
 modify_group() ->
-    ?assert(true).
+    M1 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = add, group_id = 1,
+                                   type = all, buckets = []
+                                  }),
+    ?assertEqual(ok, M1),
+
+    %% Modify group, bucket counters should reset
+    B1 = #ofp_bucket{ watch_port = 1, watch_group = 1, actions = []},
+    %% Send a modify group
+    M2 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = modify, group_id = 1,
+                                   type = all, buckets = [B1]
+                                  }),
+    ?assertEqual(ok, M2),
+
+    %% Send a modify nonexisting group
+    M3 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = modify, group_id = 222,
+                                   type = all, buckets = [B1]
+                                  }),
+    ?assertMatch({error, _}, M3).
 
 %%--------------------------------------------------------------------
 delete_group() ->
-    ?assert(true).
+    M1 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = add, group_id = 1,
+                                   type = all, buckets = []
+                                  }),
+    ?assertEqual(ok, M1),
+
+    M2 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = delete, group_id = 1
+                                  }),
+    ?assertEqual(ok, M2),
+
+    %% Deleting a nonexisting group produces no error
+    M3 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = delete, group_id = 1
+                                  }),
+    ?assertEqual(ok, M3).
+    %%?assertMatch({error, _}, M3).
 
 %%%
 %%% Fixtures --------------------------------------------------------------------

@@ -68,7 +68,7 @@ route_to_controller(TableId,
                                   table_id = TableId,
                                   match = Fields,
                                   data = pkt:encapsulate(Packet)},
-        linc_logic:send(#ofp_message{xid = xid(), body = PacketIn})
+        linc_logic:send(#ofp_message{body = PacketIn})
     catch
         E1:E2 ->
             ?ERROR("Encapsulate failed when routing to controller "
@@ -150,12 +150,6 @@ two_fields_match(#ofp_field{value=Val1},
     mask_match(Val1, Val2, Mask);
 two_fields_match(_, _) ->
     false.
-
--spec xid() -> integer().
-xid() ->
-    %% TODO: think about sequental XIDs
-    %% XID is a 32 bit integer
-    random:uniform(1 bsl 32) - 1.
 
 mask_match(<<V1,Rest1/binary>>, <<V2,Rest2/binary>>, <<M,Rest3/binary>>) ->
     V1 band M == V2 band M

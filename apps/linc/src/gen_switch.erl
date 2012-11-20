@@ -22,14 +22,12 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 
 %% Start the switch.
--callback start(Args :: term()) ->
-    {ok, State :: term()}.
+-callback start(Args :: term()) -> {ok, State :: term()}.
 
 %% Stop the switch.
--callback stop(State :: term()) ->
-    term().
+-callback stop(State :: term()) -> any().
 
 %% Handle all message types supported by the given OFP version.
 -callback handle_message(State :: term(), ofp_message()) ->
-    {ok, NewState :: term()} |
-    {error, term(), NewState :: term()}.
+    {noreply, NewState :: term()} |
+    {reply, Reply :: ofp_message(), NewState :: term()}.

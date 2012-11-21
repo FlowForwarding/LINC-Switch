@@ -379,7 +379,7 @@ add_exact_flow(Flags) ->
 
     %% Increments flow counters
     PacketSize = 1024,
-    linc_us3_flow:update_match_counters(FlowId1,PacketSize),
+    linc_us3_flow:update_match_counters(TableId,FlowId1,PacketSize),
 
     %% Check that counters are updated
     [#flow_entry_counter{
@@ -446,7 +446,7 @@ modify_strict(Flags) ->
 
     %% Increments flow counters
     PacketSize = 1024,
-    linc_us3_flow:update_match_counters(FlowId1,PacketSize),
+    linc_us3_flow:update_match_counters(TableId,FlowId1,PacketSize),
 
     %% Check that counters are updated
     [#flow_entry_counter{
@@ -889,7 +889,9 @@ update_match_counter() ->
 
     %% Increments flow counters
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us3_flow:update_match_counters(FlowId,PacketSize)),
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(TableId,
+                                                         FlowId,
+                                                         PacketSize)),
 
     [Stats] = ets:lookup(flow_entry_counters,FlowId),
     ?assertMatch(#flow_entry_counter{received_packets=1,
@@ -897,9 +899,11 @@ update_match_counter() ->
                  Stats).
 
 update_bad_match_counter() ->
+    TableId = undefined,
     FlowId = undefined,
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us3_flow:update_match_counters(FlowId,PacketSize)),
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(TableId,
+                                                         FlowId,PacketSize)),
 
     ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
     

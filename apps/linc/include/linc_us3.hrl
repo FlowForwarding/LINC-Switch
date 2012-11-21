@@ -124,6 +124,7 @@
           priority                 :: priority(),
           match                    :: ofp_match(),
           cookie                   :: binary(),
+          flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
           expires = {infinity,0,0} :: erlang:timestamp(),
           idle = {infinity,0,0}    :: erlang:timestamp(),

@@ -77,51 +77,101 @@ table_mod(#ofp_table_mod{table_id = _TableId, config = _Config}) ->
 modify(#ofp_flow_mod{command=Cmd, table_id=all})
   when Cmd==add;Cmd==modify;Cmd==modify_strict ->
     {error, {flow_mod_failed, bad_table_id}};
+
 modify(#ofp_flow_mod{command=add,
                      table_id=TableId,
                      priority=Priority,
                      flags=Flags,
                      match=#ofp_match{fields=Match},
                      instructions=Instructions}=FlowMod) ->
-    case validate_match(Match) of
+    case validate_match_and_instructions(TableId, Match, Instructions) of
         ok ->
-            case validate_instructions(TableId,Instructions,Match) of
-                ok ->
-                    case lists:member(check_overlap,Flags) of
+            case lists:member(check_overlap,Flags) of
+                true ->
+                    %% Check that there are no overlapping flows.
+                    case check_overlap(TableId, Priority, Match) of
                         true ->
-                            %% Check that there are no overlapping flows.
-                            case check_overlap(TableId, Priority, Match) of
-                                true ->
-                                    {error, {flow_mod_failed,overlap}};
-                                false ->
-                                    add_new_flow(TableId, FlowMod)
-                            end;
+                            {error, {flow_mod_failed,overlap}};
                         false ->
-                            %% Check if there is any entry with the exact same 
-                            %% priority and match
-                            case find_exact_match(TableId, Priority, Match) of
-                                #flow_entry{}=Matching ->
-                                    modify_existing_flow(TableId, FlowMod,
-                                                         Matching, Flags);
-                                no_match ->
-                                    add_new_flow(TableId, FlowMod)
-                            end
+                            add_new_flow(TableId, FlowMod)
                     end;
-                Error ->
-                    Error
+                false ->
+                    %% Check if there is any entry with the exact same 
+                    %% priority and match
+                    case find_exact_match(TableId, Priority, Match) of
+                        #flow_entry{}=Matching ->
+                            replace_existing_flow(TableId, FlowMod,
+                                                  Matching, Flags);
+                        no_match ->
+                            add_new_flow(TableId, FlowMod)
+                    end
             end;
         Error ->
             Error
     end;
     
-modify(#ofp_flow_mod{command=modify}) ->
+modify(#ofp_flow_mod{command=modify,
+                     cookie=Cookie,
+                     cookie_mask=CookieMask,
+                     table_id=TableId,
+                     priority=Priority,
+                     flags=Flags,
+                     match=#ofp_match{fields=Match},
+                     instructions=Instructions}=FlowMod) ->
+    case validate_match_and_instructions(TableId, Match, Instructions) of
+        ok ->
+            modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags),
+            ok;
+        Error ->
+            Error
+    end;
+
+modify(#ofp_flow_mod{command=modify_strict,
+                     table_id=TableId,
+                     priority=Priority,
+                     flags=Flags,
+                     match=#ofp_match{fields=Match},
+                     instructions=Instructions}=FlowMod) ->
+    case validate_match_and_instructions(TableId, Match, Instructions) of
+        ok ->
+            case find_exact_match(TableId, Priority, Match) of
+                #flow_entry{}=Flow ->
+                    modify_flow(TableId, Flow, Instructions, Flags);
+                no_match ->
+                    %% Do nothing
+                    ok
+            end;
+        Error ->
+            Error
+    end;
+
+modify(#ofp_flow_mod{command=Cmd,
+                     table_id=all}=FlowMod)
+  when Cmd==delete; Cmd==delete_strict ->
+    [modify(FlowMod#ofp_flow_mod{table_id=Id}) || Id <- lists:seq(0, ?OFPTT_MAX)],
     ok;
-modify(#ofp_flow_mod{command=modify_strict}) ->
+
+modify(#ofp_flow_mod{command=delete,
+                     table_id=TableId,
+                     cookie=Cookie,
+                     cookie_mask=CookieMask,
+                     out_port=OutPort,
+                     out_group=OutGroup,
+                     match=#ofp_match{fields=Match}}=FlowMod) ->
+    delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup),
     ok;
-modify(#ofp_flow_mod{command=delete}) ->
-    ok;
-modify(#ofp_flow_mod{command=delete_strict}) ->
-    ok.
+
+modify(#ofp_flow_mod{command=delete_strict,
+                     table_id=TableId,
+                     priority=Priority,
+                     match=#ofp_match{fields=Match}}=FlowMod) ->
+            case find_exact_match(TableId, Priority, Match) of
+                #flow_entry{id=FlowId, flags=Flags} ->
+                    delete_flow(TableId, FlowId, Flags);
+                _ ->
+                    %% Do nothing
+                    ok
+            end.
 
 %% @doc Get all entries in one flow table.
 -spec get_flow_table(TableId :: integer()) -> [FlowTableEntryRepresentation :: term()].
@@ -196,7 +246,6 @@ create_flow_table(Id) ->
 %% a match that overlaps with Match.
 check_overlap(TableId, Priority, NewMatch) ->
     ExistingMatches = lists:sort(get_matches_by_priority(TableId, Priority)),
-    %% io:format("check overlap ~p ~n~p~n",[NewMatch,ExistingMatches]),
     SortedNewMatch = lists:sort(NewMatch),
     lists:any(fun (ExistingMatch) ->
                       overlaps(SortedNewMatch, lists:sort(ExistingMatch))
@@ -204,12 +253,10 @@ check_overlap(TableId, Priority, NewMatch) ->
 
 overlaps([#ofp_field{class=C,name=F,has_mask=false,value=V}|Ms1],
          [#ofp_field{class=C,name=F,has_mask=false,value=V}|Ms2]) ->
-    %% io:format("overlaps5~n"),
     overlaps(Ms1,Ms2);
 overlaps([#ofp_field{class=C,name=F,has_mask=false,value=V1}|_Fields1],
          [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2])
   when V1=/=V2 ->
-    %% io:format("overlaps1 ~p ~p~n",[V1,V2]),
     false;
 overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=MaskBin}|_Fields1],
          [#ofp_field{class=C,name=F,has_mask=false,value=V2}|_Fields2]) ->
@@ -217,7 +264,6 @@ overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=MaskBin}|_Fields
     <<Val1:Bits>> = V1,
     <<Val2:Bits>> = V2,
     <<Mask:Bits>> = MaskBin,
-    %% io:format("overlaps2 ~p ~p~n",[V1,V2]),
     Val1 band Mask == Val2 band Mask;
 overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1}|_Fields1],
          [#ofp_field{class=C,name=F,has_mask=false,value=V2,mask=MaskBin}|_Fields2]) ->
@@ -225,7 +271,6 @@ overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1}|_Fields1],
     <<Val1:Bits>> = V1,
     <<Val2:Bits>> = V2,
     <<Mask:Bits>> = MaskBin,
-    %% io:format("overlaps3 ~p ~p~n",[V1,V2]),
     Val1 band Mask == Val2 band Mask;
 overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=M1}|Ms1],
          [#ofp_field{class=C,name=F,has_mask=true,value=V2,mask=M2}|Ms2]) ->
@@ -236,7 +281,6 @@ overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=M1}|Ms1],
     <<Mask2:Bits>> = M2,
     CommonBits = Mask1 band Mask2,
     %% Is this correct?
-    io:format("overlaps4 vals ~p ~p~nmasks ~p ~p~ncommonbits ~p~n",[V1,V2,Mask1,Mask2,CommonBits]),
     case (Val1 band CommonBits)==(Val2 band CommonBits) of
         false ->
             false;
@@ -246,15 +290,12 @@ overlaps([#ofp_field{class=C,name=F,has_mask=true,value=V1,mask=M1}|Ms1],
 overlaps([#ofp_field{class=C,name=F1}|Ms1],
          [#ofp_field{class=C,name=F2}|_]=Ms2) when F1<F2 ->
     %% Both lists of match fields have been sorted, so this actually works.
-    %% io:format("overlaps6~n"),
     overlaps(Ms1,Ms2);
 overlaps([#ofp_field{class=C,name=F1}|_]=Ms1,
          [#ofp_field{class=C,name=F2}|Ms2]) when F1>F2 ->
     %% Both lists of match fields have been sorted, so this actually works.
-    %% io:format("overlaps7 ~p ~p~n",[F1,F2]),
     overlaps(Ms1,Ms2);
 overlaps(_V1,_V2) ->
-    %% io:format("overlaps8 ~p ~p~n",[_V1,_V2]),
     true.
 
 %% Add a new flow entry.
@@ -266,10 +307,17 @@ add_new_flow(TableId, FlowMod) ->
     ok.
 
 %% Delete a flow
-delete_flow(TableId, FlowId) ->
+delete_flow(TableId, FlowId, Flags) ->
     ets:delete(flow_table_name(TableId), FlowId),
     ets:delete(flow_entry_counters, FlowId),
-    ok.
+    case lists:member(send_flow_rem, Flags) of
+        true ->
+            %% TODO send_flow_removed
+            ok;
+        false ->
+            %% Do nothing
+            ok
+    end.
 
 -spec create_flow_entry(ofp_flow_mod()) -> #flow_entry{}.
 create_flow_entry(#ofp_flow_mod{priority = Priority,
@@ -286,6 +334,19 @@ create_flow_entry(#ofp_flow_mod{priority = Priority,
                 %% All record of type ofp_instruction() MUST have
                 %% seq number as a first element.
                 instructions = lists:keysort(2, Instructions)}.
+
+validate_match_and_instructions(TableId, Match, Instructions) ->
+    case validate_match(Match) of
+        ok ->
+            case validate_instructions(TableId,Instructions,Match) of
+                ok ->
+                    ok;
+                Error ->
+                    Error
+            end;
+        Error ->
+            Error
+    end.
 
 %% Validate a match specification. 
 %% This consists of
@@ -339,7 +400,6 @@ check_prerequisites(#ofp_field{name=Name}=Field,Previous) ->
         [] ->
             true;
         PreReqs ->
-            io:format("prereqs ~p ~p~n",[Field,Previous]),
             lists:any(fun (Required) ->
                               test_prereq(Required,Previous)
                       end, PreReqs)
@@ -535,14 +595,16 @@ validate_action(#ofp_action_experimenter{}, _Match) ->
 validate_value(#ofp_field{name=_Name,value=_Value}) ->
     true.
 
-
-modify_existing_flow(TableId, FlowMod, #flow_entry{id=Existing}, Flags) ->
+%% Replace a flow with a new one, possibly keeping the counters
+%% from the old one. This is used when adding a flow with exactly
+%% the same match as an existing one.
+replace_existing_flow(TableId, FlowMod, #flow_entry{id=Existing}, Flags) ->
     case lists:member(reset_counts, Flags) of
         true ->
             %% Reset flow counters
             %% Store new flow and remove the previous one
             add_new_flow(TableId, FlowMod),
-            delete_flow(TableId, Existing);
+            delete_flow(TableId, Existing, []);
         false ->
             %% Do not reset the flow counters
             %% Just store the new flow with the previous FlowId
@@ -550,6 +612,23 @@ modify_existing_flow(TableId, FlowMod, #flow_entry{id=Existing}, Flags) ->
             ets:insert(flow_table_name(TableId), NewEntry#flow_entry{id=Existing}),
             ok
     end.
+
+%% Modify an existing flow. This only modifies the instructions, leaving all other
+%% fields unchanged.
+modify_flow(TableId, #flow_entry{id=Id}, Instructions, Flags) ->
+    ets:update_element(flow_table_name(TableId),
+                       Id, 
+                       {#flow_entry.instructions, Instructions}),
+    case lists:member(reset_counts, Flags) of
+        true ->
+            true = ets:insert(flow_entry_counters,
+                              #flow_entry_counter{id = Id}),
+            ok;
+        false ->
+            %% Do nothing
+            ok
+    end.
+
 
 %%============================================================================
 %% Various counter functions
@@ -577,9 +656,8 @@ get_matches_by_priority(TableId, Priority) ->
 -spec find_exact_match(ofp_table_id(),non_neg_integer(),ofp_match()) -> flow_id()|no_match.
 find_exact_match(TableId, Priority, Match) ->
     Pattern = ets:fun2ms(fun (#flow_entry{id={Prio,_},
-                                          priority=Prio,
                                           match=#ofp_match{fields=Fields}}=Flow)
-                             when Prio==Priority, Fields==Match ->
+                               when Prio==Priority, Fields==Match ->
                                  Flow
                          end),
     case ets:select(flow_table_name(TableId), Pattern) of
@@ -589,3 +667,108 @@ find_exact_match(TableId, Priority, Match) ->
             no_match
     end.
 
+%% Modify flows that are matching 
+modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags) ->
+    ets:foldl(fun (#flow_entry{cookie=MyCookie}=FlowEntry, Acc) ->
+                      case cookie_match(MyCookie, Cookie, CookieMask)
+                          andalso non_strict_match(FlowEntry, Match) of
+                          true ->
+                              modify_flow(TableId, FlowEntry, Instructions, Flags);
+                          false ->
+                              Acc
+                      end
+              end, [], flow_table_name(TableId)).
+
+%% Delete flows that are matching 
+delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
+    ets:foldl(fun (#flow_entry{id=Id,
+                               cookie=MyCookie,
+                               flags=Flags,
+                               instructions=Instructions}=FlowEntry, Acc) ->
+                      case cookie_match(MyCookie, Cookie, CookieMask)
+                          andalso non_strict_match(FlowEntry, Match)
+                          andalso port_and_group_match(OutPort,
+                                                       OutGroup,
+                                                       Instructions)
+                      of
+                          true ->
+                              delete_flow(TableId, Id, Flags);
+                          false ->
+                              Acc
+                      end
+              end, [], flow_table_name(TableId)).
+
+non_strict_match(#flow_entry{match = #ofp_match{fields = EntryFields}},
+                 FlowModFields) ->
+    lists:all(fun(#ofp_field{name = Field} = FlowModField) ->
+                      case lists:keyfind(Field, #ofp_field.name, EntryFields) of
+                          #ofp_field{} = EntryField ->
+                              is_more_specific(EntryField, FlowModField);
+                          false ->
+                              false
+                      end
+              end, FlowModFields);
+non_strict_match(_FlowEntry, _Match) ->
+    throw(#ofp_error_msg{type = bad_match, code = bad_type}).
+
+cookie_match(Cookie1, Cookie2, CookieMask) ->
+    mask_match(Cookie1, Cookie2, CookieMask).
+
+mask_match(Bin1,Bin2,MaskBin) ->
+    Bits = bit_size(Bin1),
+    <<Val1:Bits>> = Bin1,
+    <<Val2:Bits>> = Bin2,
+    <<Mask:Bits>> = MaskBin,
+    Val1 band Mask == Val2 band Mask.
+
+is_more_specific(#ofp_field{class = Cls1}, #ofp_field{class = Cls2}) when
+      Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
+    throw(#ofp_error_msg{type = bad_match, code = bad_field});
+is_more_specific(#ofp_field{has_mask = true},
+                 #ofp_field{has_mask = false}) ->
+    false; %% masked is less specific than non-masked
+is_more_specific(#ofp_field{has_mask = false, value = Value},
+                 #ofp_field{has_mask = _____, value = Value}) ->
+    true; %% value match with no mask is more specific
+is_more_specific(#ofp_field{has_mask = true, mask = M1, value = V1},
+                 #ofp_field{has_mask = true, mask = M2, value = V2}) ->
+    %% M1 is more specific than M2 (has all of it's bits)
+    %% and V1*M2 == V2*M2
+    is_mask_more_specific(M1, M2)
+        andalso
+        mask_match(V1, V2, M2);
+is_more_specific(_MoreSpecific, _LessSpecific) ->
+    false.
+
+-spec is_mask_more_specific(binary(), binary()) -> boolean().
+is_mask_more_specific(Bin1, Bin2) ->
+    Bits = bit_size(Bin1),
+    <<Mask1:Bits>> = Bin1,
+    <<Mask2:Bits>> = Bin2,
+    Mask1 bor Mask2 == Mask1.
+
+port_and_group_match(any,any,_Instructions) ->
+    true;
+port_and_group_match(Port,Group,
+                     [#ofp_instruction_write_actions{actions=Actions}|Instructions]) ->
+    port_and_group_match_actions(Port,Group,Actions) 
+        orelse port_and_group_match(Port,Group,Instructions);
+port_and_group_match(Port,Group,
+                     [#ofp_instruction_apply_actions{actions=Actions}|Instructions]) ->
+    port_and_group_match_actions(Port,Group,Actions) 
+        orelse port_and_group_match(Port,Group,Instructions);
+port_and_group_match(Port,Group,[_|Instructions]) ->
+    port_and_group_match(Port,Group,Instructions);
+port_and_group_match(_Port,_Group,[]) ->
+    false.
+
+port_and_group_match_actions(OutPort,_OutGroup,
+                             [#ofp_action_output{port=OutPort}|_]) ->
+    true;
+port_and_group_match_actions(_OutPort,OutGroup,
+                             [#ofp_action_group{group_id=OutGroup}|_]) ->
+    true;
+port_and_group_match_actions(OutPort,OutGroup,[_|Instructions]) ->
+    port_and_group_match_actions(OutPort,OutGroup,Instructions);
+port_and_group_match_actions(_OutPort,_OutGroup,[]) ->
+    false.

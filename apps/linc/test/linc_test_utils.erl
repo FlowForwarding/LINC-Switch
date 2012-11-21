@@ -34,12 +34,13 @@ mock([port | Rest]) ->
                      fun(_, _) ->
                              ok
                      end),
-    ok = meck:expect(linc_us3_port, send,
-                     fun(_, _, _) ->
-                             ok
-                     end),
     mock(Rest);
 mock([group | Rest]) ->
+    ok = meck:new(linc_us3_groups),
+    ok = meck:expect(linc_us3_groups, apply,
+                     fun(_GroupId, _Pkt) ->
+                             ok
+                     end),
     mock(Rest);
 mock([instructions | Rest]) ->
     ok = meck:new(linc_us3_instructions),
@@ -66,7 +67,7 @@ unmock([port | Rest]) ->
     ok = meck:unload(linc_us3_port),
     unmock(Rest);
 unmock([group | Rest]) ->
-    ok = meck:unload(linc_us3_group),
+    ok = meck:unload(linc_us3_groups),
     unmock(Rest);
 unmock([instructions | Rest]) ->
     ok = meck:unload(linc_us3_instructions),

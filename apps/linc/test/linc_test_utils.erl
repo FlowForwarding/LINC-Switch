@@ -52,7 +52,7 @@ mock([instructions | Rest]) ->
 mock([actions | Rest]) ->
     ok = meck:new(linc_us3_actions),
     ok = meck:expect(linc_us3_actions, apply_set,
-                     fun(_, _) ->
+                     fun(_) ->
                              ok
                      end),
     ok = meck:expect(linc_us3_actions, apply_list,

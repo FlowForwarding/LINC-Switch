@@ -237,7 +237,7 @@ get_features(#ofp_group_features_stats_request{ flags = _F }) ->
 %% @doc Test if a group exists.
 -spec is_valid(integer()) -> boolean().
 is_valid(GroupId) ->
-    true.
+    ets:member(group_table, GroupId).
 
 %%%==============================================================
 %%% Tool Functions

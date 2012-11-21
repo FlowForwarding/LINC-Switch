@@ -36,7 +36,8 @@ group_test_() ->
      fun teardown/1,
      [{"Add group", fun add_group/0},
       {"Modify group", fun modify_group/0},
-      {"Delete group", fun delete_group/0}]}.
+      {"Delete group", fun delete_group/0},
+      {"is_valid", fun is_valid/0}]}.
 
 %%--------------------------------------------------------------------
 add_group() ->
@@ -107,6 +108,16 @@ delete_group() ->
     ?assertEqual(ok, M3).
     %%?assertMatch({error, _}, M3).
 
+%%--------------------------------------------------------------------
+is_valid() ->
+    ?assertEqual(false, linc_us3_groups:is_valid(1)),
+    M1 = linc_us3_groups:modify(#ofp_group_mod{
+                                   command = add, group_id = 1,
+                                   type = all, buckets = []
+                                  }),
+    ?assertEqual(ok, M1),
+    ?assertEqual(true, linc_us3_groups:is_valid(1)).
+    
 %%%
 %%% Fixtures --------------------------------------------------------------------
 %%%

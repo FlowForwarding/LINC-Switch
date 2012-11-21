@@ -62,6 +62,7 @@ flow_mod_test_() ->
       ,{"Delete flow, outgroup no match", fun delete_outgroup_no_match/0}
       ,{"Delete flow, outgroup match", fun delete_outgroup_match/0}
       ,{"Delete flow, all tables", fun delete_all_tables/0}
+      ,{"Delete where group", fun delete_where_group/0}
      ]}.
 
 bad_table_id() ->
@@ -865,6 +866,31 @@ delete_all_tables() ->
 
     ?assertEqual([],linc_us3_flow:get_flow_table(1)),
     ?assertEqual([],linc_us3_flow:get_flow_table(2)).
+
+delete_where_group() ->    
+    %% Create flow_mod record
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,4}]}]),
+
+    %% Add flows
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+ 
+    #ofp_flow_mod{match=Match2,
+                  instructions=Instructions2} = FlowModAdd2,
+
+    %% Delete all referencing group 3
+    ?assertEqual(ok, linc_us3_flow:delete_where_group(3)),
+
+    ?assertMatch([#flow_entry{match=Match2,
+                              instructions=Instructions2}],
+                 linc_us3_flow:get_flow_table(1)).
     
 statistics_test_() ->
     {foreach,

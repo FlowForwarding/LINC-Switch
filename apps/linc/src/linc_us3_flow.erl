@@ -180,8 +180,8 @@ get_flow_table(TableId) ->
 
 %% @doc Delete all flow entries that are using a specific group.
 -spec delete_where_group(GroupId :: integer()) -> ok.
-delete_where_group(_GroupId) ->
-    %%TODO
+delete_where_group(GroupId) ->
+    [delete_where_group(GroupId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
 %% @doc Get flow statistics.
@@ -776,3 +776,18 @@ port_and_group_match_actions(OutPort,OutGroup,[_|Instructions]) ->
     port_and_group_match_actions(OutPort,OutGroup,Instructions);
 port_and_group_match_actions(_OutPort,_OutGroup,[]) ->
     false.
+
+%% Remove all flows that have output to GroupId.
+delete_where_group(GroupId, TableId) ->
+    ets:foldl(fun (#flow_entry{id=FlowId,
+                               cookie=MyCookie,
+                               flags=Flags,
+                               instructions=Instructions}=FlowEntry, Acc) ->
+                      case port_and_group_match(any, GroupId, Instructions)
+                      of
+                          true ->
+                              delete_flow(TableId, FlowId, Flags);
+                          false ->
+                              Acc
+                      end
+              end, ok, flow_table_name(TableId)).

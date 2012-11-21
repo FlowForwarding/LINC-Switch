@@ -29,7 +29,7 @@
          get_aggregate_stats/1,
          get_table_stats/1,
          update_lookup_counter/1,
-         update_match_counters/2,
+         update_match_counters/3,
          reset_idle_timeout/2
         ]).
 
@@ -64,7 +64,8 @@ terminate() ->
     [ets:delete(flow_table_name(Id)) || Id <- lists:seq(0, ?OFPTT_MAX)],
     ets:delete(flow_table_config),
     ets:delete(flow_table_counters),
-    ets:delete(flow_entry_counters).
+    ets:delete(flow_entry_counters),
+    ok.
 
 %% @doc Handle ofp_table_mod request
 table_mod(#ofp_table_mod{table_id = _TableId, config = _Config}) ->
@@ -204,14 +205,18 @@ get_table_stats(#ofp_table_stats_request{}) ->
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
-update_lookup_counter(_TableId) ->
-    %% TODO
-    ok.
+update_lookup_counter(TableId) ->
+    ets:update_counter(flow_table_counters, TableId,
+                       [{#flow_table_counter.packet_lookups, 1}]).
 
 %% @doc Update the match lookup statistics counters for a specific flow.
--spec update_match_counters(FlowId :: integer(), PktByteSize :: integer()) -> ok.
-update_match_counters(FlowId, PktByteSize) ->
+-spec update_match_counters(TableId :: integer(), FlowId :: integer(),
+                            PktByteSize :: integer()) -> ok.
+update_match_counters(TableId, FlowId, PktByteSize) ->
     try
+        ets:update_counter(flow_table_counters, TableId,
+                           [{#flow_table_counter.packet_lookups, 1},
+                            {#flow_table_counter.packet_matches, 1}]),
         ets:update_counter(flow_entry_counters,
                            FlowId,[{#flow_entry_counter.received_packets, 1},
                                    {#flow_entry_counter.received_bytes, PktByteSize}]),

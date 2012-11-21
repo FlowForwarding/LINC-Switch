@@ -115,10 +115,9 @@ modify(#ofp_flow_mod{command=modify,
                      cookie=Cookie,
                      cookie_mask=CookieMask,
                      table_id=TableId,
-                     priority=Priority,
                      flags=Flags,
                      match=#ofp_match{fields=Match},
-                     instructions=Instructions}=FlowMod) ->
+                     instructions=Instructions}) ->
     case validate_match_and_instructions(TableId, Match, Instructions) of
         ok ->
             modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags),
@@ -132,7 +131,7 @@ modify(#ofp_flow_mod{command=modify_strict,
                      priority=Priority,
                      flags=Flags,
                      match=#ofp_match{fields=Match},
-                     instructions=Instructions}=FlowMod) ->
+                     instructions=Instructions}) ->
     case validate_match_and_instructions(TableId, Match, Instructions) of
         ok ->
             case find_exact_match(TableId, Priority, Match) of
@@ -158,14 +157,14 @@ modify(#ofp_flow_mod{command=delete,
                      cookie_mask=CookieMask,
                      out_port=OutPort,
                      out_group=OutGroup,
-                     match=#ofp_match{fields=Match}}=FlowMod) ->
+                     match=#ofp_match{fields=Match}}) ->
     delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup),
     ok;
 
 modify(#ofp_flow_mod{command=delete_strict,
                      table_id=TableId,
                      priority=Priority,
-                     match=#ofp_match{fields=Match}}=FlowMod) ->
+                     match=#ofp_match{fields=Match}}) ->
             case find_exact_match(TableId, Priority, Match) of
                 #flow_entry{id=FlowId, flags=Flags} ->
                     delete_flow(TableId, FlowId, Flags);
@@ -400,7 +399,7 @@ check_duplicate_fields(Name, Previous) ->
     lists:keymember(Name, #ofp_field.name, Previous).
 
 %% Check that all prerequisite fields are present and have apropiate values
-check_prerequisites(#ofp_field{name=Name}=Field,Previous) ->
+check_prerequisites(#ofp_field{name=Name},Previous) ->
     case prerequisite_for(Name) of
         [] ->
             true;

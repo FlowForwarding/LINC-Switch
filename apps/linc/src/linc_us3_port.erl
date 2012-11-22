@@ -229,8 +229,8 @@ remove(PortNo) ->
 
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
-is_valid(_) ->
-    true.
+is_valid(OfsPort) ->
+    ets:member(ofs_ports, OfsPort).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks

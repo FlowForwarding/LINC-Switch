@@ -166,8 +166,8 @@ modify(#ofp_flow_mod{command=delete_strict,
                      priority=Priority,
                      match=#ofp_match{fields=Match}}) ->
             case find_exact_match(TableId, Priority, Match) of
-                #flow_entry{id=FlowId, flags=Flags} ->
-                    delete_flow(TableId, FlowId, Flags);
+                #flow_entry{}=FlowEntry ->
+                    delete_flow(TableId, FlowEntry);
                 _ ->
                     %% Do nothing
                     ok
@@ -303,17 +303,19 @@ overlaps(_V1,_V2) ->
     true.
 
 %% Add a new flow entry.
-add_new_flow(TableId, FlowMod) ->
+add_new_flow(TableId, #ofp_flow_mod{instructions=Instructions}=FlowMod) ->
     NewEntry = create_flow_entry(FlowMod),
     %% Create counter before inserting flow in flow table to avoid race.
     create_flow_entry_counter(NewEntry#flow_entry.id),
     ets:insert(flow_table_name(TableId), NewEntry),
+    increment_group_ref_count(Instructions),
     ok.
 
 %% Delete a flow
-delete_flow(TableId, FlowId, Flags) ->
+delete_flow(TableId, #flow_entry{id=FlowId,instructions=Instructions, flags=Flags}) ->
     ets:delete(flow_table_name(TableId), FlowId),
     ets:delete(flow_entry_counters, FlowId),
+    decrement_group_ref_count(Instructions),
     case lists:member(send_flow_rem, Flags) of
         true ->
             %% TODO send_flow_removed
@@ -602,27 +604,35 @@ validate_value(#ofp_field{name=_Name,value=_Value}) ->
 %% Replace a flow with a new one, possibly keeping the counters
 %% from the old one. This is used when adding a flow with exactly
 %% the same match as an existing one.
-replace_existing_flow(TableId, FlowMod, #flow_entry{id=Existing}, Flags) ->
+replace_existing_flow(TableId,
+                      #ofp_flow_mod{instructions=NewInstructions}=FlowMod,
+                      #flow_entry{id=Id,instructions=PrevInstructions}=Existing,
+                      Flags) ->
     case lists:member(reset_counts, Flags) of
         true ->
             %% Reset flow counters
             %% Store new flow and remove the previous one
             add_new_flow(TableId, FlowMod),
-            delete_flow(TableId, Existing, []);
+            delete_flow(TableId, Existing);
         false ->
             %% Do not reset the flow counters
             %% Just store the new flow with the previous FlowId
+            increment_group_ref_count(NewInstructions),
+            decrement_group_ref_count(PrevInstructions),
             NewEntry = create_flow_entry(FlowMod),
-            ets:insert(flow_table_name(TableId), NewEntry#flow_entry{id=Existing}),
+            ets:insert(flow_table_name(TableId), NewEntry#flow_entry{id=Id}),
             ok
     end.
 
 %% Modify an existing flow. This only modifies the instructions, leaving all other
 %% fields unchanged.
-modify_flow(TableId, #flow_entry{id=Id}, Instructions, Flags) ->
+modify_flow(TableId, #flow_entry{id=Id,instructions=PrevInstructions},
+            NewInstructions, Flags) ->
     ets:update_element(flow_table_name(TableId),
                        Id, 
-                       {#flow_entry.instructions, Instructions}),
+                       {#flow_entry.instructions, NewInstructions}),
+    increment_group_ref_count(NewInstructions),
+    decrement_group_ref_count(PrevInstructions),
     case lists:member(reset_counts, Flags) of
         true ->
             true = ets:insert(flow_entry_counters,
@@ -685,9 +695,7 @@ modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags) -
 
 %% Delete flows that are matching 
 delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
-    ets:foldl(fun (#flow_entry{id=Id,
-                               cookie=MyCookie,
-                               flags=Flags,
+    ets:foldl(fun (#flow_entry{cookie=MyCookie,
                                instructions=Instructions}=FlowEntry, Acc) ->
                       case cookie_match(MyCookie, Cookie, CookieMask)
                           andalso non_strict_match(FlowEntry, Match)
@@ -696,7 +704,7 @@ delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                                        Instructions)
                       of
                           true ->
-                              delete_flow(TableId, Id, Flags);
+                              delete_flow(TableId, FlowEntry);
                           false ->
                               Acc
                       end
@@ -779,15 +787,37 @@ port_and_group_match_actions(_OutPort,_OutGroup,[]) ->
 
 %% Remove all flows that have output to GroupId.
 delete_where_group(GroupId, TableId) ->
-    ets:foldl(fun (#flow_entry{id=FlowId,
-                               cookie=MyCookie,
-                               flags=Flags,
-                               instructions=Instructions}=FlowEntry, Acc) ->
-                      case port_and_group_match(any, GroupId, Instructions)
-                      of
+    ets:foldl(fun (#flow_entry{instructions=Instructions}=FlowEntry, Acc) ->
+                      case port_and_group_match(any, GroupId, Instructions) of
                           true ->
-                              delete_flow(TableId, FlowId, Flags);
+                              delete_flow(TableId, FlowEntry);
                           false ->
                               Acc
                       end
               end, ok, flow_table_name(TableId)).
+
+
+increment_group_ref_count(Instructions) ->
+    update_group_ref_count(Instructions, 1).
+
+decrement_group_ref_count(Instructions) ->
+    update_group_ref_count(Instructions, -1).
+
+update_group_ref_count(Instructions, Incr) ->
+    [linc_us3_groups:update_reference_count(Group,Incr) || Group<-get_groups(Instructions)].
+
+%% Find all groups reference from the Instructions
+get_groups(Instructions) ->
+    get_groups(Instructions, []).
+
+get_groups([#ofp_instruction_write_actions{actions=Actions}|Instructions], Acc) ->
+    get_groups(Instructions, Acc++get_groups_in_actions(Actions));
+get_groups([#ofp_instruction_apply_actions{actions=Actions}|Instructions], Acc) ->
+    get_groups(Instructions, Acc++get_groups_in_actions(Actions));
+get_groups([_|Instructions], Acc) ->
+    get_groups(Instructions, Acc);
+get_groups([], Acc) ->
+    Acc.
+
+get_groups_in_actions(Actions) ->
+    [Group||#ofp_action_group{group_id=Group} <- Actions].

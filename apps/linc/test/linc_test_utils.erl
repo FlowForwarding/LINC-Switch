@@ -53,6 +53,10 @@ mock([group | Rest]) ->
                          (_) ->
                              true
                      end),
+    ok = meck:expect(linc_us3_groups, update_reference_count,
+                     fun(_GroupId, _Incr) ->
+                             ok
+                     end),
     mock(Rest);
 mock([instructions | Rest]) ->
     ok = meck:new(linc_us3_instructions),

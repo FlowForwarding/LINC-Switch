@@ -87,7 +87,7 @@ duplicate_field() ->
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flow
     ?assertEqual({error,{bad_match,dup_field}}, linc_us3_flow:modify(FlowModAdd)).
- 
+
 prerequisite_field_present() ->
     FlowModAdd = #ofp_flow_mod{
                     cookie = <<0,0,0,0,0,0,0,0>>,
@@ -231,8 +231,8 @@ add_flow(TableId, Flags) ->
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>,<<0,0,0,0,0,15>>}],
                    [{write_actions,[{output,15,1400}]}]),
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd)),
- 
-   %% Check if the flow was added correctly...
+
+    %% Check if the flow was added correctly...
     #ofp_flow_mod{match=Match,
                   instructions=Instructions} = FlowModAdd,
 
@@ -253,22 +253,22 @@ add_non_overlapping_flows(Flags) ->
     Priority=5,
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{output,15,1400}]}]),
 
     FlowModAdd2 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
+                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
                   instructions=Instructions1} = FlowModAdd1,
@@ -289,22 +289,22 @@ add_overlapping_flows() ->
     Flags = [],
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,7>>,<<0,0,0,0,0,15>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,7>>,<<0,0,0,0,0,15>>}],
+                    [{write_actions,[{output,15,1400}]}]),
 
     FlowModAdd2 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>,<<0,0,0,0,0,31>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>,<<0,0,0,0,0,31>>}],
+                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
                   instructions=Instructions1} = FlowModAdd1,
@@ -325,23 +325,23 @@ add_overlapping_flow_check_overlap() ->
     Flags = [check_overlap],
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>,<<0,0,0,0,0,16#0F>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>,<<0,0,0,0,0,16#0F>>}],
+                    [{write_actions,[{output,15,1400}]}]),
 
     FlowModAdd2 = ofp_v3_utils:flow_add(
-                   [{table_id,TableId},
-                    {priority,Priority},
-                    {flags,Flags}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#17>>,<<0,0,0,0,0,16#1F>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,TableId},
+                     {priority,Priority},
+                     {flags,Flags}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#17>>,<<0,0,0,0,0,16#1F>>}],
+                    [{write_actions,[{output,15,1400}]}]),
     %% Add flows
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     ?assertEqual({error,{flow_mod_failed,overlap}},
                  linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check that the the overlapping flow was not added
     #ofp_flow_mod{match=Match1,
                   instructions=Instructions1} = FlowModAdd1,
@@ -390,7 +390,7 @@ add_exact_flow(Flags) ->
 
     %% Add second flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check that the the new flow has replaced the previous one
     #ofp_flow_mod{match=M1,
                   instructions=I1} = FlowModAdd2,
@@ -415,7 +415,7 @@ add_exact_flow(Flags) ->
                                              received_bytes=PacketSize},
                          Stats)
     end.
-    
+
 modify_strict(Flags) ->
     TableId = 4,
     Priority = 6,
@@ -432,63 +432,55 @@ modify_strict(Flags) ->
                    ),
 
     Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowModAdd2 = ofp_v3_utils:flow_modify(
-                    modify_strict,
-                    [{table_id,TableId},
-                     {priority,Priority},
-                     {flags,Flags}],
-                    Match,
-                    Instructions2),
+    FlowMod = ofp_v3_utils:flow_modify(
+                modify_strict,
+                [{table_id,TableId},
+                 {priority,Priority},
+                 {flags,Flags}],
+                Match,
+                Instructions2),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    [#flow_entry{id=FlowId}] = linc_us3_flow:get_flow_table(TableId),
 
     %% Increments flow counters
     PacketSize = 1024,
     linc_us3_flow:update_match_counters(TableId,FlowId1,PacketSize),
 
     %% Check that counters are updated
-    [#flow_entry_counter{
-        id=FlowId1,
-        received_packets=1,
-        received_bytes=PacketSize}] = ets:lookup(flow_entry_counters,FlowId1),
+    ?assertMatch([#flow_entry_counter{
+                     id=FlowId,
+                     received_packets=1,
+                     received_bytes=PacketSize}],
+                 ets:lookup(flow_entry_counters,FlowId)),
 
     %% Modify flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowMod)),
+
     %% Check that the the new flow has replaced the previous one
-    #ofp_flow_mod{match=M1,
-                  instructions=I1} = FlowModAdd2,
+    #ofp_flow_mod{match=M1, instructions=I1} = FlowMod,
 
-    [#flow_entry{id=FlowId,
-                 match = M2,
-                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
-
-    ?assertEqual(M1,M2),
-    ?assertEqual(I1,I2),
+    ?assertMatch([#flow_entry{id=FlowId, match = M1, instructions = I1}],
+                 linc_us3_flow:get_flow_table(TableId)),
 
     %% Check that counters entry is correct
     case Flags of
         [reset_counts] ->
-            [Stats] = ets:lookup(flow_entry_counters,FlowId),
-            ?assertMatch(#flow_entry_counter{received_packets=0,
-                                             received_bytes=0},
-                         Stats);
+            ?assertMatch([#flow_entry_counter{received_packets=0,
+                                              received_bytes=0}],
+                         ets:lookup(flow_entry_counters,FlowId));
         [] ->
-            [Stats] = ets:lookup(flow_entry_counters,FlowId),
-            ?assertMatch(#flow_entry_counter{received_packets=1,
-                                             received_bytes=PacketSize},
-                         Stats)
+            ?assertMatch([#flow_entry_counter{received_packets=1,
+                                              received_bytes=PacketSize}],
+                         ets:lookup(flow_entry_counters,FlowId))
     end.
 
 modify_cookie_no_match() ->    
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
-
-    Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
                     [{table_id,TableId},
@@ -496,38 +488,34 @@ modify_cookie_no_match() ->
                      {priority,Priority},
                      {flags,[]}],
                     Match,
-                    Instructions1
+                    [{write_actions,[{output,15,1400}]}]
                    ),
 
-    Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowModAdd2 = ofp_v3_utils:flow_modify(
-                    modify,
-                    [{table_id,TableId},
-                     {cookie,<<4:64>>},
-                     {cookie_mask,<<4:64>>},
-                     {priority,Priority},
-                     {flags,[]}],
-                    Match,
-                    Instructions2),
+    FlowMod = ofp_v3_utils:flow_modify(
+                modify,
+                [{table_id,TableId},
+                 {cookie,<<4:64>>},
+                 {cookie_mask,<<4:64>>},
+                 {priority,Priority},
+                 {flags,[]}],
+                Match,
+                [{write_actions,[{output,32,1400}]}]),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
-    %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Modify flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowMod)),
+
     %% Check that the the flow was not modified
     #ofp_flow_mod{match=M1,
                   instructions=I1} = FlowModAdd1,
 
-    [#flow_entry{match = M2,
-                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{match = M1,
+                              instructions = I1}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
-    ?assertEqual(M1,M2),
-    ?assertEqual(I1,I2).
-    
 modify_cookie_match() ->    
     TableId = 4,
     Priority = 6,
@@ -557,51 +545,46 @@ modify_cookie_match() ->
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
-    %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Modify flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check that the the flow was modified
     #ofp_flow_mod{match=M,
                   instructions=I} = FlowModAdd2,
 
-    [#flow_entry{match = NowMatch,
-                 instructions = NowInstr}] = linc_us3_flow:get_flow_table(TableId),
-
-    ?assertEqual(M,NowMatch),
-    ?assertEqual(I,NowInstr).
+    ?assertMatch([#flow_entry{match = M,
+                              instructions = I}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
 delete_strict() ->    
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
-
-    Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
                     Match,
-                    Instructions1
+                    [{write_actions,[{output,15,1400}]}]
                    ),
 
-    Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
-                    delete_strict,
-                    [{table_id,TableId},
-                     {priority,Priority},
-                     {flags,[]}],
-                    Match),
-    
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete_strict,
+                [{table_id,TableId},
+                 {priority,Priority},
+                 {flags,[]}],
+                Match),
+
     %% Add flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Check that flow was added
     [#flow_entry{}] = linc_us3_flow:get_flow_table(TableId),
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
     %% Check that flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).
 
@@ -621,33 +604,31 @@ delete_cookie_no_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
-                    delete,
-                    [{table_id,TableId},
-                     {cookie,<<4:64>>},
-                     {cookie_mask,<<4:64>>},
-                     {priority,Priority},
-                     {flags,[]}],
-                    Match),
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete,
+                [{table_id,TableId},
+                 {cookie,<<4:64>>},
+                 {cookie_mask,<<4:64>>},
+                 {priority,Priority},
+                 {flags,[]}],
+                Match),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
+
     %% Check that the the flow was not deleted
     #ofp_flow_mod{match=M1,
                   instructions=I1} = FlowModAdd1,
 
-    [#flow_entry{match = M2,
-                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{match = M1,
+                              instructions = I1}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
-    ?assertEqual(M1,M2),
-    ?assertEqual(I1,I2).
-    
 delete_cookie_match() ->    
     TableId = 4,
     Priority = 6,
@@ -676,11 +657,11 @@ delete_cookie_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).
 
@@ -699,32 +680,28 @@ delete_outport_no_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
-                    delete,
-                    [{table_id,TableId},
-                     {priority,Priority},
-                     {out_port,10},
-                     {flags,[]}],
-                    Match),
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete,
+                [{table_id,TableId},
+                 {priority,Priority},
+                 {out_port,10},
+                 {flags,[]}],
+                Match),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
-    %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
+
     %% Check that the the flow was not deleted
     #ofp_flow_mod{match=M1,
                   instructions=I1} = FlowModAdd1,
 
-    [#flow_entry{match = M2,
-                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{match = M1, instructions = I1}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
-    ?assertEqual(M1,M2),
-    ?assertEqual(I1,I2).
-    
 delete_outport_match() ->
     TableId = 4,
     Priority = 6,
@@ -750,12 +727,11 @@ delete_outport_match() ->
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
-    %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).
 
@@ -774,32 +750,28 @@ delete_outgroup_no_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
-                    delete,
-                    [{table_id,TableId},
-                     {priority,Priority},
-                     {out_group,10},
-                     {flags,[]}],
-                    Match),
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete,
+                [{table_id,TableId},
+                 {priority,Priority},
+                 {out_group,10},
+                 {flags,[]}],
+                Match),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
+
     %% Check that the the flow was not deleted
-    #ofp_flow_mod{match=M1,
-                  instructions=I1} = FlowModAdd1,
+    #ofp_flow_mod{match=M1, instructions=I1} = FlowModAdd1,
 
-    [#flow_entry{match = M2,
-                 instructions = I2}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{match = M1, instructions = I1}],
+                 linc_us3_flow:get_flow_table(TableId)).
 
-    ?assertEqual(M1,M2),
-    ?assertEqual(I1,I2).
-    
 delete_outgroup_match() ->
     TableId = 4,
     Priority = 6,
@@ -815,54 +787,52 @@ delete_outgroup_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
-                    delete,
-                    [{table_id,TableId},
-                     {priority,Priority},
-                     {out_group,3},
-                     {flags,[]}],
-                    Match),
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete,
+                [{table_id,TableId},
+                 {priority,Priority},
+                 {out_group,3},
+                 {flags,[]}],
+                Match),
 
     %% Add first flow
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(TableId),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
+
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).
 
 delete_all_tables() ->
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
-                   [{table_id,1}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{output,15,1400}]}]),
 
     FlowModAdd2 = ofp_v3_utils:flow_add(
-                   [{table_id,2}],
-                   [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
-                   [{write_actions,[{output,15,1400}]}]),
+                    [{table_id,2}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{output,15,1400}]}]),
 
     %% Add flows
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     %% Check if the flows were added correctly...
-    #ofp_flow_mod{match=Match1,
-                  instructions=Instructions1} = FlowModAdd1,
-    #ofp_flow_mod{match=Match2,
-                  instructions=Instructions2} = FlowModAdd2,
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(1)),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(2)),
 
     %% Delete all flows
-    FlowModDel = ofp_v3_utils:flow_delete(
-                   delete,
-                   [{table_id,all},
-                    {flags,[]}],
-                   []),
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModDel)),
+    FlowDel = ofp_v3_utils:flow_delete(
+                delete,
+                [{table_id,all},
+                 {flags,[]}],
+                []),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
 
     ?assertEqual([],linc_us3_flow:get_flow_table(1)),
     ?assertEqual([],linc_us3_flow:get_flow_table(2)).
@@ -881,7 +851,7 @@ delete_where_group() ->
     %% Add flows
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
- 
+
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
@@ -891,7 +861,7 @@ delete_where_group() ->
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
                  linc_us3_flow:get_flow_table(1)).
-    
+
 statistics_test_() ->
     {foreach,
      fun setup/0,
@@ -910,7 +880,7 @@ update_match_counter() ->
                    [{write_actions,[{output,15,1400}]}]),
 
     ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd)),
- 
+
     [#flow_entry{id=FlowId}] = linc_us3_flow:get_flow_table(TableId),
 
     %% Increments flow counters
@@ -932,7 +902,7 @@ update_bad_match_counter() ->
                                                          FlowId,PacketSize)),
 
     ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
-    
+
 %% Fixtures --------------------------------------------------------------------
 setup() ->
     linc_test_utils:mock(?MOCKED),

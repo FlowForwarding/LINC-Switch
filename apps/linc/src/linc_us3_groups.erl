@@ -195,7 +195,8 @@ modify(#ofp_group_mod{ command = delete,
             group_reset_stats(Id),
             ets:delete(group_table, Id)
     end,
-    %% TODO: Remove flows containing given group along with it
+    %% Remove flows containing given group along with it
+    linc_us3_flow:delete_where_group(Id),
     ok.
 
 %%--------------------------------------------------------------------

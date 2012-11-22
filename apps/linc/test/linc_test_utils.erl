@@ -28,6 +28,13 @@
 
 mock([]) ->
     mocked;
+mock([flow | Rest]) ->
+    ok = meck:new(linc_us3_flow),
+    ok = meck:expect(linc_us3_flow, delete_where_group,
+                     fun(_) ->
+                             ok
+                     end),
+    mock(Rest);
 mock([logic | Rest]) ->
     ok = meck:new(linc_logic),
     ok = meck:expect(linc_logic, send_to_controllers,
@@ -86,6 +93,9 @@ mock([actions | Rest]) ->
 
 unmock([]) ->
     unmocked;
+unmock([flow | Rest]) ->
+    ok = meck:unload(linc_us3_flow),
+    unmock(Rest);
 unmock([logic | Rest]) ->
     ok = meck:unload(linc_logic),
     unmock(Rest);

@@ -24,7 +24,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("linc/include/linc_us3.hrl").
 
--define(MOCKED, [port, actions]).
+-define(MOCKED, [flow, port, actions]).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
@@ -123,12 +123,12 @@ is_valid() ->
 %%%
 
 setup() ->
-    %%mock(?MOCKED),
+    mock(?MOCKED),
     linc_us3_groups:create(),
     ok.
 
 teardown(ok) ->
-    %%unmock(?MOCKED),
+    unmock(?MOCKED),
     linc_us3_groups:destroy(),
     ok.
 

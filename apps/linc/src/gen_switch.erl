@@ -28,6 +28,6 @@
 -callback stop(State :: term()) -> any().
 
 %% Handle all message types supported by the given OFP version.
--callback handle_message(State :: term(), ofp_message()) ->
+-callback handle_message(ofp_message(), State :: term()) ->
     {noreply, NewState :: term()} |
     {reply, Reply :: ofp_message(), NewState :: term()}.

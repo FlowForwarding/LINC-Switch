@@ -63,7 +63,7 @@
 
 -spec route(#ofs_pkt{}) -> pid().
 route(Pkt) ->
-    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt, 0]).
+    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt]).
 
 -spec add_port(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
 add_port(physical, Opts) ->
@@ -171,12 +171,12 @@ stop(_State) ->
     end,
     ok.
 
--spec handle_message(state(), ofp_message_body()) ->
+-spec handle_message(ofp_message_body(), state()) ->
                             {ok, state()} |
                             {error, ofp_error_msg(), state()}.
-handle_message(State, Message) ->
-    MessageName = element(1, Message),
-    erlang:apply(?MODULE, MessageName, [State, Message]).
+handle_message(MessageBody, State) ->
+    MessageName = element(1, MessageBody),
+    erlang:apply(?MODULE, MessageName, [State, MessageBody]).
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages

@@ -94,15 +94,16 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     [ofp_channel:open(Host, Port, Opts) || {Host, Port} <- Controllers],
 
     {noreply, State#state{backend_state = BackendState}};
-handle_info({ofp_message, Pid, #ofp_message{xid = Xid} = Message},
+handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
     ?DEBUG("Received message from the controller: ~p", [Message]),
-    NewBState = case Backend:handle_message(Message, BackendState) of
+    NewBState = case Backend:handle_message(MessageBody, BackendState) of
                     {noreply, NewState} ->
                         NewState;
-                    {reply, Reply, NewState} ->
-                        ofp_channel:send(Pid, Reply#ofp_message{xid = Xid}),
+                    {reply, ReplyBody, NewState} ->
+                        ofp_channel:send(Pid,
+                                         Message#ofp_message{body = ReplyBody}),
                         NewState
                 end,
     {noreply, State#state{backend_state = NewBState}};

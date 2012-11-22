@@ -23,7 +23,7 @@
 %% -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
--define(MOCKED, [group,port]).
+-define(MOCKED, [logic,group,port]).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -57,6 +57,7 @@ flow_mod_test_() ->
       ,{"Delete flow, strict", fun delete_strict/0}
       ,{"Delete flow, non-strict, cookie no match", fun delete_cookie_no_match/0}
       ,{"Delete flow, non-strict, cookie match", fun delete_cookie_match/0}
+      ,{"Delete flow, non-strict, send flow rem", fun delete_send_flow_rem/0}
       ,{"Delete flow, outport no match", fun delete_outport_no_match/0}
       ,{"Delete flow, outport match", fun delete_outport_match/0}
       ,{"Delete flow, outgroup no match", fun delete_outgroup_no_match/0}
@@ -322,7 +323,7 @@ add_overlapping_flows() ->
 add_overlapping_flow_check_overlap() ->
     TableId = 2,
     Priority=5,
-    Flags = [check_overlap],
+    Flags = [check_overlap,send_flow_rem],
     %% Create flow_mod record
     FlowModAdd1 = ofp_v3_utils:flow_add(
                     [{table_id,TableId},
@@ -342,6 +343,8 @@ add_overlapping_flow_check_overlap() ->
     ?assertEqual({error,{flow_mod_failed,overlap}},
                  linc_us3_flow:modify(FlowModAdd2)),
 
+    %% Check that flow_removed has not been sent
+    ?assertEqual(false,linc_test_utils:check_if_called({linc_logic,send_to_controllers,1})),
     %% Check that the the overlapping flow was not added
     #ofp_flow_mod{match=Match1,
                   instructions=Instructions1} = FlowModAdd1,
@@ -645,7 +648,7 @@ delete_cookie_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v3_utils:flow_delete(
                     delete,
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
@@ -660,11 +663,49 @@ delete_cookie_match() ->
     ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).
 
+delete_send_flow_rem() ->
+    TableId = 4,
+    Priority = 6,
+    Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
+
+    Instructions1 = [{write_actions,[{output,15,1400}]}],
+    %% Create flow_mod record
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,TableId},
+                     {cookie,<<4:64>>},
+                     {priority,Priority},
+                     {flags,[send_flow_rem]}],
+                    Match,
+                    Instructions1
+                   ),
+
+    FlowDel = ofp_v3_utils:flow_delete(
+                    delete,
+                    [{table_id,TableId},
+                     {cookie,<<4:64>>},
+                     {cookie_mask,<<4:64>>},
+                     {priority,Priority},
+                     {flags,[]}],
+                    Match),
+
+    %% Add first flow
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    %% Get FlowId
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
+
+    %% Delete flow
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
+
+    %% Check that the the flow was deleted
+    ?assertEqual([], linc_us3_flow:get_flow_table(TableId)),
+    ?assertEqual(true,linc_test_utils:check_if_called({linc_logic,send_to_controllers,1})).
+
+    
 delete_outport_no_match() ->
     TableId = 4,
     Priority = 6,
@@ -717,7 +758,7 @@ delete_outport_match() ->
                     Instructions1
                    ),
 
-    FlowModAdd2 = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v3_utils:flow_delete(
                     delete,
                     [{table_id,TableId},
                      {priority,Priority},
@@ -730,7 +771,7 @@ delete_outport_match() ->
     ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowDel)),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(TableId)).

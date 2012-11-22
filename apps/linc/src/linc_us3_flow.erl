@@ -184,7 +184,7 @@ modify(#ofp_flow_mod{command=delete_strict,
                      match=#ofp_match{fields=Match}}) ->
             case find_exact_match(TableId, Priority, Match) of
                 #flow_entry{}=FlowEntry ->
-                    delete_flow(TableId, FlowEntry);
+                    delete_flow(TableId, FlowEntry, delete);
                 _ ->
                     %% Do nothing
                     ok
@@ -329,31 +329,67 @@ add_new_flow(TableId, #ofp_flow_mod{instructions=Instructions}=FlowMod) ->
     ok.
 
 %% Delete a flow
-delete_flow(TableId, #flow_entry{id=FlowId,instructions=Instructions, flags=Flags}) ->
-    ets:delete(flow_table_name(TableId), FlowId),
-    ets:delete(flow_entry_counters, FlowId),
-    decrement_group_ref_count(Instructions),
-    case lists:member(send_flow_rem, Flags) of
+delete_flow(TableId,
+            #flow_entry{id=FlowId,instructions=Instructions, flags=Flags}=Flow,
+           Reason) ->
+    case lists:member(send_flow_rem, Flags) andalso Reason/=no_event of
         true ->
-            %% TODO send_flow_removed
-            ok;
+            send_flow_removed(TableId,Flow,Reason);
         false ->
             %% Do nothing
             ok
-    end.
+    end,
+    ets:delete(flow_table_name(TableId), FlowId),
+    ets:delete(flow_entry_counters, FlowId),
+    decrement_group_ref_count(Instructions),
+    ok.
+
+send_flow_removed(TableId,
+                  #flow_entry{id = FlowId,
+                              cookie = Cookie,
+                              priority = Priority,
+                              install_time = InstallTime,
+                              idle_timeout = IdleTimeout,
+                              hard_timeout = HardTimeout,
+                              match = Match},
+                  Reason) ->
+    DurationMs = timer:now_diff(InstallTime,os:timestamp()),
+    [#flow_entry_counter{
+       received_packets = Packets,
+       received_bytes   = Bytes}] = ets:lookup(flow_entry_counters,FlowId),
+    Body = #ofp_flow_removed{
+              cookie = Cookie,
+              priority =Priority,
+              reason = Reason,
+              table_id = TableId,
+              duration_sec = DurationMs div 1000,
+              duration_nsec = DurationMs * 1000,
+              idle_timeout = IdleTimeout,
+              hard_timeout = HardTimeout,
+              packet_count = Packets,
+              byte_count = Bytes,
+              match = Match},
+    Msg = #ofp_message{type = ofp_flow_removed,
+                       body = Body
+                      },
+    linc_logic:send_to_controllers(Msg).
 
 -spec create_flow_entry(ofp_flow_mod()) -> #flow_entry{}.
 create_flow_entry(#ofp_flow_mod{priority = Priority,
                                 cookie = Cookie,
+                                flags = Flags,
+                                idle_timeout = IdleTimeout,
+                                hard_timeout = HardTimeout,
                                 match = Match,
                                 instructions = Instructions}) ->
     #flow_entry{id = {Priority, make_ref()},
                 priority = Priority,
                 cookie = Cookie,
+                flags = Flags,
                 match = Match,
                 install_time = erlang:now(),
-                %% TODO: Add timers
-                
+                idle_timeout = IdleTimeout,
+                hard_timeout = HardTimeout,
                 %% All record of type ofp_instruction() MUST have
                 %% seq number as a first element.
                 instructions = lists:keysort(2, Instructions)}.
@@ -630,7 +666,7 @@ replace_existing_flow(TableId,
             %% Reset flow counters
             %% Store new flow and remove the previous one
             add_new_flow(TableId, FlowMod),
-            delete_flow(TableId, Existing);
+            delete_flow(TableId, Existing, no_event);
         false ->
             %% Do not reset the flow counters
             %% Just store the new flow with the previous FlowId
@@ -676,11 +712,8 @@ get_matches_by_priority(TableId, Priority) ->
     Pattern = #flow_entry{id = {Priority,'_'},
                           priority = Priority,
                           match = #ofp_match{fields='$1'},
-                          cookie = '_',
-                          install_time = '_',
-                          expires = '_',
-                          idle = '_',
-                          instructions = '_'},
+                          _ = '_'
+                         },
     [M || [M] <- ets:match(flow_table_name(TableId), Pattern)].
 
 %% Find an existing flow with the same Priority and the exact same match expression.
@@ -721,7 +754,7 @@ delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                                        Instructions)
                       of
                           true ->
-                              delete_flow(TableId, FlowEntry);
+                              delete_flow(TableId, FlowEntry, delete);
                           false ->
                               Acc
                       end
@@ -807,7 +840,7 @@ delete_where_group(GroupId, TableId) ->
     ets:foldl(fun (#flow_entry{instructions=Instructions}=FlowEntry, Acc) ->
                       case port_and_group_match(any, GroupId, Instructions) of
                           true ->
-                              delete_flow(TableId, FlowEntry);
+                              delete_flow(TableId, FlowEntry, group_delete);
                           false ->
                               Acc
                       end

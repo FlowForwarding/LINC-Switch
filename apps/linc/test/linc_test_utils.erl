@@ -28,6 +28,13 @@
 
 mock([]) ->
     mocked;
+mock([logic | Rest]) ->
+    ok = meck:new(linc_logic),
+    ok = meck:expect(linc_logic, send_to_controllers,
+                     fun(_) ->
+                             ok
+                     end),
+    mock(Rest);
 mock([port | Rest]) ->
     ok = meck:new(linc_us3_port),
     ok = meck:expect(linc_us3_port, send,
@@ -79,6 +86,9 @@ mock([actions | Rest]) ->
 
 unmock([]) ->
     unmocked;
+unmock([logic | Rest]) ->
+    ok = meck:unload(linc_logic),
+    unmock(Rest);
 unmock([port | Rest]) ->
     ok = meck:unload(linc_us3_port),
     unmock(Rest);

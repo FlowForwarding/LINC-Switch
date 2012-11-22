@@ -126,6 +126,8 @@
           cookie                   :: binary(),
           flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
+          idle_timeout             :: non_neg_integer(),
+          hard_timeout             :: non_neg_integer(),
           expires = {infinity,0,0} :: erlang:timestamp(),
           idle = {infinity,0,0}    :: erlang:timestamp(),
           instructions = []        :: ordsets:ordset(ofp_instruction())

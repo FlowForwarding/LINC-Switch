@@ -27,6 +27,7 @@
          delete_where_group/1,
          get_stats/1,
          get_aggregate_stats/1,
+         get_table_config/1,
          get_table_stats/1,
          update_lookup_counter/1,
          update_match_counters/3,
@@ -68,9 +69,25 @@ terminate() ->
     ok.
 
 %% @doc Handle ofp_table_mod request
-table_mod(#ofp_table_mod{table_id = _TableId, config = _Config}) ->
-    %% TODO
+-spec table_mod(#ofp_table_mod{}) -> ok.
+table_mod(#ofp_table_mod{table_id = all, config = Config}) ->
+    [set_table_config(Table,Config)||Table<-lists:seq(0, ?OFPTT_MAX)],
+    ok;
+table_mod(#ofp_table_mod{table_id = TableId, config = Config}) ->
+    set_table_config(TableId,Config),
     ok.
+
+set_table_config(Table,Config) ->
+    ets:insert(flow_table_config,#flow_table_config{id=Table,config=Config}).
+
+-spec get_table_config(TableId :: integer()) -> drop | controller | continue.
+get_table_config(TableId) ->
+    case ets:lookup(flow_table_config,TableId) of
+        [#flow_table_config{config=Config}] ->
+            Config;
+        [] ->
+            controller
+    end.
 
 %% @doc Handle a flow_mod request from a controller. This may add/modify/delete one or
 %% more flows.

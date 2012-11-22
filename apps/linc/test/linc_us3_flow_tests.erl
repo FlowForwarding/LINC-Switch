@@ -447,7 +447,7 @@ modify_strict(Flags) ->
 
     %% Increments flow counters
     PacketSize = 1024,
-    linc_us3_flow:update_match_counters(TableId,FlowId1,PacketSize),
+    linc_us3_flow:update_match_counters(TableId,FlowId,PacketSize),
 
     %% Check that counters are updated
     ?assertMatch([#flow_entry_counter{
@@ -903,6 +903,32 @@ update_bad_match_counter() ->
 
     ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
 
+table_mod_test_() ->
+    {foreach,
+     fun setup/0,
+     fun teardown/1,
+     [{"Get default value", fun get_default_table_config/0}
+      ,{"Set config", fun set_table_config/0}
+      ,{"Set all config", fun set_all_table_config/0}
+     ]}.
+
+get_default_table_config() ->
+    ?assertEqual(controller, linc_us3_flow:get_table_config(2)).
+
+set_table_config() ->
+    ?assertEqual(controller, linc_us3_flow:get_table_config(2)),
+    ?assertEqual(ok, linc_us3_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
+    ?assertEqual(drop, linc_us3_flow:get_table_config(2)).
+
+set_all_table_config() ->
+    ?assertEqual(ok, linc_us3_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
+    ?assertEqual(ok, linc_us3_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
+    ?assertEqual(ok, linc_us3_flow:table_mod(#ofp_table_mod{table_id=all,
+                                                            config=continue})), 
+    ?assertEqual(continue, linc_us3_flow:get_table_config(2)),
+    ?assertEqual(continue, linc_us3_flow:get_table_config(3)),
+    ?assertEqual(continue, linc_us3_flow:get_table_config(4)).
+    
 %% Fixtures --------------------------------------------------------------------
 setup() ->
     linc_test_utils:mock(?MOCKED),

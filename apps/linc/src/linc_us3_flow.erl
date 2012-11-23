@@ -229,10 +229,41 @@ get_stats(#ofp_flow_stats_request{table_id = TableId,
 
 %% @doc Get aggregate statistics.
 -spec get_aggregate_stats(#ofp_aggregate_stats_request{}) -> #ofp_aggregate_stats_reply{}.
-get_aggregate_stats(#ofp_aggregate_stats_request{}) ->
+get_aggregate_stats(#ofp_aggregate_stats_request{
+                       table_id = all,
+                       out_port = OutPort,
+                       out_group = OutGroup,
+                       cookie = Cookie,
+                       cookie_mask = CookieMask,
+                       match = #ofp_match{fields=Match}}) ->
     %%TODO
-    #ofp_aggregate_stats_reply{}.
-
+    Stats = [get_aggregate_stats(TableId,
+                                 Cookie,
+                                 CookieMask,
+                                 Match,
+                                 OutPort,
+                                 OutGroup) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    %% TODO: merge results
+    {PacketCount,ByteCount,FlowCount} = merge_aggregate_stats(Stats),
+    #ofp_aggregate_stats_reply{packet_count = PacketCount,
+                               byte_count = ByteCount,
+                               flow_count = FlowCount};
+get_aggregate_stats(#ofp_aggregate_stats_request{
+                       table_id = TableId,
+                       out_port = OutPort,
+                       out_group = OutGroup,
+                       cookie = Cookie,
+                       cookie_mask = CookieMask,
+                       match = #ofp_match{fields=Match}}) ->
+    {PacketCount,ByteCount,FlowCount} = get_aggregate_stats(TableId,
+                                                            Cookie,
+                                                            CookieMask,
+                                                            Match,
+                                                            OutPort,
+                                                            OutGroup),
+    #ofp_aggregate_stats_reply{packet_count = PacketCount,
+                               byte_count = ByteCount,
+                               flow_count = FlowCount}.
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
@@ -762,6 +793,33 @@ get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                               Acc
                       end
               end, [], flow_table_name(TableId)).
+
+get_aggregate_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup) ->
+    ets:foldl(fun (#flow_entry{id = FlowId,
+                               cookie = MyCookie,
+                               instructions = Instructions}=FlowEntry, 
+                   {PacketsAcc,BytesAcc,FlowsAcc}=Acc) ->
+                      case cookie_match(MyCookie, Cookie, CookieMask)
+                          andalso non_strict_match(FlowEntry, Match)
+                          andalso port_and_group_match(OutPort,
+                                                       OutGroup,
+                                                       Instructions)
+                      of
+                          true ->
+                              Counters = ets:lookup(flow_entry_counters,FlowId),
+                              [#flow_entry_counter{
+                                  received_packets = Packets,
+                                  received_bytes   = Bytes}] = Counters,
+                              {PacketsAcc+Packets,BytesAcc+Bytes,FlowsAcc+1};
+                          false ->
+                              Acc
+                      end
+              end, {0,0,0}, flow_table_name(TableId)).
+
+merge_aggregate_stats(Stats) ->
+    lists:foldl(fun ({Packets,Bytes,Flows}, {PacketsAcc,BytesAcc,FlowsAcc}) ->
+                        {PacketsAcc+Packets, BytesAcc+Bytes, FlowsAcc+Flows}
+                end,{0,0,0},Stats).
 
 %%============================================================================
 %% Various lookup functions

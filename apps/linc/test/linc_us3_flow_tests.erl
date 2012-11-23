@@ -912,6 +912,9 @@ statistics_test_() ->
       ,{"Empty flow stats", fun empty_flow_stats/0}
       ,{"Flow stats 1 table", fun flow_stats_1_table/0}
       ,{"Flow stats all tables", fun flow_stats_all_tables/0}
+      ,{"Empty aggregate stats", fun empty_aggr_stats/0}
+      ,{"Aggregate stats 1 table", fun aggr_stats_1_table/0}
+      ,{"Aggregate stats all tables", fun aggr_stats_all_tables/0}
      ]}.
 
 update_match_counter() ->
@@ -987,6 +990,80 @@ flow_stats_all_tables() ->
     ?assertMatch(#ofp_flow_stats_reply{stats=[#ofp_flow_stats{},
                                               #ofp_flow_stats{}]},
                  linc_us3_flow:get_stats(StatsReq)).
+
+empty_aggr_stats() ->
+    StatsReq = ofp_v3_utils:aggr_stats(
+                 [{table_id, 1}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertEqual(#ofp_aggregate_stats_reply{packet_count=0,
+                                            byte_count=0,
+                                            flow_count=0},
+                 linc_us3_flow:get_aggregate_stats(StatsReq)).
+
+aggr_stats_1_table() ->
+    TableId = 1,
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,TableId}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,TableId}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,1,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+
+    [#flow_entry{id=FlowId1},
+     #flow_entry{id=FlowId2}] = linc_us3_flow:get_flow_table(TableId),
+
+    %% Increments flow counters
+    PacketSize = 1024,
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(TableId,
+                                                         FlowId1,
+                                                         PacketSize)),
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(TableId,
+                                                         FlowId2,
+                                                         PacketSize)),
+    %% This will only match one of the flows
+    StatsReq = ofp_v3_utils:aggr_stats(
+                 [{table_id, TableId}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertEqual(#ofp_aggregate_stats_reply{packet_count=1,
+                                            byte_count=1024,
+                                            flow_count=1},
+                 linc_us3_flow:get_aggregate_stats(StatsReq)).
+
+aggr_stats_all_tables() ->
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,2}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+
+    [#flow_entry{id=FlowId1}] = linc_us3_flow:get_flow_table(1),
+    [#flow_entry{id=FlowId2}] = linc_us3_flow:get_flow_table(2),
+
+    %% Increments flow counters
+    PacketSize = 1024,
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(1,
+                                                         FlowId1,
+                                                         PacketSize)),
+    ?assertEqual(ok, linc_us3_flow:update_match_counters(2,
+                                                         FlowId2,
+                                                         PacketSize)),
+    %% This will matchboth flows
+    StatsReq = ofp_v3_utils:aggr_stats(
+                 [{table_id, all}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertEqual(#ofp_aggregate_stats_reply{packet_count=2,
+                                            byte_count=2048,
+                                            flow_count=2},
+                 linc_us3_flow:get_aggregate_stats(StatsReq)).
 
 table_mod_test_() ->
     {foreach,

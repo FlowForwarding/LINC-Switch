@@ -35,13 +35,16 @@
          handle_message/2]).
 
 %% Handle all message types
--export([ofp_flow_mod/2,
+-export([ofp_features_request/2,
+         ofp_flow_mod/2,
          ofp_table_mod/2,
          ofp_port_mod/2,
          ofp_group_mod/2,
          ofp_packet_out/2,
          ofp_echo_request/2,
+         ofp_get_config_request/2,
          ofp_barrier_request/2,
+         ofp_queue_get_config_request/2,
          ofp_desc_stats_request/2,
          ofp_flow_stats_request/2,
          ofp_aggregate_stats_request/2,
@@ -183,6 +186,19 @@ handle_message(MessageBody, State) ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Modify flow entry in the flow table.
+-spec ofp_features_request(state(), ofp_features_request()) ->
+                          {noreply, #state{}} |
+                          {reply, ofp_message(), #state{}}.
+ofp_features_request(State, #ofp_features_request{}) ->
+    Ports =  [Port || #ofs_port{port = Port} <- []],
+    FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
+                                        datapath_id = 0,
+                                        n_buffers = 0,
+                                        ports = Ports,
+                                        n_tables = 255},
+    {reply, FeaturesReply, State}.
+
+%% @doc Modify flow entry in the flow table.
 -spec ofp_flow_mod(state(), ofp_flow_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
@@ -255,12 +271,29 @@ ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
     EchoReply = #ofp_echo_reply{data = Data},
     {reply, EchoReply, State}.
 
+%% @doc Reply to get config request.
+-spec ofp_get_config_request(state(), ofp_get_config_request()) ->
+                                    {reply, ofp_message(), #state{}}.
+ofp_get_config_request(State, #ofp_get_config_request{}) ->
+    ConfigReply = #ofp_get_config_reply{flags = [],
+                                        miss_send_len = ?OFPCML_NO_BUFFER},
+    {reply, ConfigReply, State}.
+
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
                                  {reply, ofp_message(), #state{}}.
 ofp_barrier_request(State, #ofp_barrier_request{}) ->
     BarrierReply = #ofp_barrier_reply{},
     {reply, BarrierReply, State}.
+
+%% @doc Reply to get queue config request.
+-spec ofp_queue_get_config_request(state(), ofp_queue_get_config_request()) ->
+                                          {reply, ofp_message(), #state{}}.
+ofp_queue_get_config_request(State,
+                             #ofp_queue_get_config_request{port = Port}) ->
+    QueueConfigReply = #ofp_queue_get_config_reply{port = Port,
+                                                   queues = []},
+    {reply, QueueConfigReply, State}.
 
 %% @doc Get switch description statistics.
 -spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
@@ -377,10 +410,10 @@ get_env(Env) ->
     {ok, Value} = application:get_env(linc, Env),
     Value.
 
-%% get_datapath_mac() ->
-%%     {ok, Ifs} = inet:getifaddrs(),
-%%     MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
-%%              || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
-%%     %% Make sure MAC /= 0
-%%     [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
-%%     list_to_binary(MAC).
+get_datapath_mac() ->
+    {ok, Ifs} = inet:getifaddrs(),
+    MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
+             || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
+    %% Make sure MAC /= 0
+    [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
+    list_to_binary(MAC).

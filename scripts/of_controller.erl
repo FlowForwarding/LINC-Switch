@@ -18,12 +18,15 @@
 
 %% Message generators
 -export([hello/0,
+         get_config_request/0,
          echo_request/0,
          echo_request/1,
          barrier_request/0,
+         queue_get_config_request/0,
          features_request/0,
          remove_all_flows/0,
-         table_config/1]).
+         desc_stats_request/0,
+         table_config/0]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
@@ -105,11 +108,22 @@ loop(Connections) ->
             {ok, {Address, Port}} = inet:peername(Socket),
             lager:info("Accepted connection from ~p {~p,~p}",
                        [Socket, Address, Port]),
-            %% Setting switch to route all frames to controller
-            Msg = of_controller:table_config(controller),
-            {ok, EncodedMessage} = of_protocol:encode(Msg),
-            ok = gen_tcp:send(Socket, EncodedMessage),
-
+            [begin
+                 Msg = ?MODULE:Fun(),
+                 case of_protocol:encode(Msg) of
+                     {ok, EncodedMessage} ->
+                         ok = gen_tcp:send(Socket, EncodedMessage);
+                     Error ->
+                         lager:error("Error in encode of: ~p", [Msg])
+                 end
+             end || Fun <- [table_config,
+                            features_request,
+                            echo_request,
+                            get_config_request,
+                            barrier_request,
+                            queue_get_config_request,
+                            desc_stats_request]],
+            
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
@@ -220,7 +234,7 @@ handle(#cstate{parent = Parent, socket = Socket,
                     handle(State)
             end;
         {msg, Socket, Message} ->
-            lager:debug("Received message from ~p: ~p", [Socket, Message]),
+            lager:info("Received message from ~p: ~p", [Socket, Message]),
             Parent ! {message, Message},
             handle(State)
     end.
@@ -250,14 +264,23 @@ echo_request() ->
 echo_request(Data) ->
     message(#ofp_echo_request{data = Data}).
 
+get_config_request() ->
+    message(#ofp_get_config_request{}).
+
 barrier_request() ->
     message(#ofp_barrier_request{}).
+
+queue_get_config_request() ->
+    message(#ofp_queue_get_config_request{port = any}).
+
+desc_stats_request() ->
+    message(#ofp_desc_stats_request{}).
 
 remove_all_flows() ->
     message(#ofp_flow_mod{command = delete}).
 
-table_config(Config) ->
-    message(#ofp_table_mod{config = Config}).
+table_config() ->
+    message(#ofp_table_mod{config = controller}).
 
 %%% Helpers --------------------------------------------------------------------
 

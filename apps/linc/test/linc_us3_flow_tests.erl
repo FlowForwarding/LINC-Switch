@@ -907,7 +907,8 @@ statistics_test_() ->
     {foreach,
      fun setup/0,
      fun teardown/1,
-     [{"Update match counter", fun update_match_counter/0}
+     [{"Update lookup counter", fun update_lookup_counter/0}
+      ,{"Update match counter", fun update_match_counter/0}
       ,{"Update match counter, bad flow_id", fun update_bad_match_counter/0}
       ,{"Empty flow stats", fun empty_flow_stats/0}
       ,{"Flow stats 1 table", fun flow_stats_1_table/0}
@@ -916,6 +917,13 @@ statistics_test_() ->
       ,{"Aggregate stats 1 table", fun aggr_stats_1_table/0}
       ,{"Aggregate stats all tables", fun aggr_stats_all_tables/0}
      ]}.
+
+update_lookup_counter() ->
+    TableId = 1,
+    ?assertEqual(ok, linc_us3_flow:update_lookup_counter(TableId)),
+    ?assertMatch([#flow_table_counter{packet_lookups=1}],
+                 ets:lookup(flow_table_counters,TableId)).
+
 
 update_match_counter() ->
     TableId = 5,

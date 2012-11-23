@@ -274,7 +274,8 @@ get_table_stats(#ofp_table_stats_request{}) ->
 -spec update_lookup_counter(TableId :: integer()) -> ok.
 update_lookup_counter(TableId) ->
     ets:update_counter(flow_table_counters, TableId,
-                       [{#flow_table_counter.packet_lookups, 1}]).
+                       [{#flow_table_counter.packet_lookups, 1}]),
+    ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
 -spec update_match_counters(TableId :: integer(), FlowId :: integer(),

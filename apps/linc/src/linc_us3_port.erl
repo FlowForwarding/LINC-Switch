@@ -79,23 +79,23 @@ start_link(Args) ->
 -spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
 send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
     Ports = ets:tab2list(ofs_ports),
-    [send(PortNo, Pkt)
+    [send(Pkt, PortNo)
      || #ofs_port{number = PortNo} <- Ports, PortNo /= InPort];
 send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
-    send(InPort, Pkt);
+    send(Pkt, InPort);
 send(Pkt, controller) ->
-    linc_logic:send_to_controller(Pkt, action);
+    linc_logic:send_to_controllers(Pkt, action);
 send(Pkt, PortNo) when is_integer(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
-            do_send(PortNo, Pkt);
+            do_send(Pkt, PortNo);
         {ok, _} ->
-            do_send_with_queue(PortNo, Pkt)
+            do_send_with_queue(Pkt, PortNo)
     end;
-send(UnsupportedPort, _Pkt) ->
+send(_Pkt, UnsupportedPort) ->
     ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
-do_send(PortNo, Pkt) ->
+do_send(Pkt, PortNo) ->
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
@@ -103,7 +103,7 @@ do_send(PortNo, Pkt) ->
             gen_server:cast(Pid, {send, Pkt})
     end.
 
-do_send_with_queue(PortNo, Pkt) ->
+do_send_with_queue(Pkt, PortNo) ->
     case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
         %% XXX: move no_fwd to ETS and check it
         [#ofs_port_queue{queue_pid = Pid}] ->

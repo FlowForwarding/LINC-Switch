@@ -43,27 +43,25 @@ do_route(Pkt) ->
 %% @doc Applies flow instructions from the given table to a packet.
 -spec do_route(#ofs_pkt{}, integer()) -> route_result().
 do_route(Pkt, TableId) ->
-    case linc_us3_flow:get_flow_table(TableId) of
-        [] ->
-            {table_miss, no_table};
-        [FlowTable] ->
-            case match_flow_entries(Pkt, TableId,
-                                    FlowTable#linc_flow_table.entries) of
-                {match, #flow_entry{id = FlowId,
-                                    instructions = Instructions}} ->
-                    case linc_us3_instructions:apply(Pkt, Instructions) of
-                        {stop, NewPkt} ->
-                            linc_us3_actions:apply_set(NewPkt),
-                            {match, TableId, FlowId};
-                        {{goto, NextTableId}, NewPkt} ->
-                            do_route(NewPkt, NextTableId)
-                    end;
-                table_miss when FlowTable#linc_flow_table.config == drop ->
+    FlowEntries = linc_us3_flow:get_flow_table(TableId),
+    case match_flow_entries(Pkt, TableId, FlowEntries) of
+        {match, #flow_entry{id = FlowId,
+                            instructions = Instructions}} ->
+            case linc_us3_instructions:apply(Pkt, Instructions) of
+                {stop, NewPkt} ->
+                    linc_us3_actions:apply_set(NewPkt),
+                    {match, TableId, FlowId};
+                {{goto, NextTableId}, NewPkt} ->
+                    do_route(NewPkt, NextTableId)
+            end;
+        table_miss ->
+            case linc_us3_flow:get_table_config(TableId) of
+                drop ->
                     {table_miss, drop};
-                table_miss when FlowTable#linc_flow_table.config == controller ->
+                controller ->
                     route_to_controller(TableId, Pkt, no_match),
                     {table_miss, controller};
-                table_miss when FlowTable#linc_flow_table.config == continue ->
+                continue ->
                     %% TODO: Return error when reached last flow table
                     do_route(Pkt, TableId + 1)
             end

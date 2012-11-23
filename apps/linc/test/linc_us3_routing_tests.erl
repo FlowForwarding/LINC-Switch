@@ -97,7 +97,7 @@ miss_continue() ->
     [begin
          miss_no_flow_entries(TableConfig, MissError),
          miss_no_matching_flow_entry(TableConfig, MissError)
-     end || {TableConfig, MissError} <- [{continue, no_table}]].
+     end || {TableConfig, MissError} <- [{continue, controller}]].
 
 miss_controller() ->
     meck:new(pkt),
@@ -133,11 +133,10 @@ flow_entry(FlowId, Matches) ->
                             match = #ofp_match{fields = MatchFields}}.
     
 flow_table(TableId, FlowEntries, Config) ->
-    FlowTable = #linc_flow_table{id = TableId,
-                                 entries = FlowEntries,
-                                 config = Config},
+    TableConfig = #flow_table_config{id = TableId, config = Config},
     TableName = list_to_atom("flow_table_" ++ integer_to_list(TableId)),
-    ets:insert(TableName, FlowTable).
+    ets:insert(flow_table_config, TableConfig),
+    ets:insert(TableName, FlowEntries).
 
 pkt(Matches) ->
     MatchFields = [#ofp_field{name = Type, value = Value}

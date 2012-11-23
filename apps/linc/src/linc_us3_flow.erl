@@ -203,9 +203,29 @@ delete_where_group(GroupId) ->
 
 %% @doc Get flow statistics.
 -spec get_stats(#ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
-get_stats(#ofp_flow_stats_request{}) ->
+get_stats(#ofp_flow_stats_request{table_id = all,
+                                  out_port = OutPort,
+                                  out_group = OutGroup,
+                                  cookie = Cookie,
+                                  cookie_mask = CookieMask,
+                                  match = #ofp_match{fields=Match}}) ->
+    Stats = [get_flow_stats(TableId,
+                            Cookie,
+                            CookieMask,
+                            Match,
+                            OutPort,
+                            OutGroup) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    #ofp_flow_stats_reply{stats = lists:concat(Stats)};    
+
+get_stats(#ofp_flow_stats_request{table_id = TableId,
+                                  out_port = OutPort,
+                                  out_group = OutGroup,
+                                  cookie = Cookie,
+                                  cookie_mask = CookieMask,
+                                  match = #ofp_match{fields=Match}}) ->
     %%TODO
-    #ofp_flow_stats_reply{}.
+    Stats = get_flow_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup),
+    #ofp_flow_stats_reply{stats = Stats}.
 
 %% @doc Get aggregate statistics.
 -spec get_aggregate_stats(#ofp_aggregate_stats_request{}) -> #ofp_aggregate_stats_reply{}.
@@ -353,7 +373,7 @@ send_flow_removed(TableId,
                               hard_timeout = HardTimeout,
                               match = Match},
                   Reason) ->
-    DurationMs = timer:now_diff(InstallTime,os:timestamp()),
+    DurationMs = timer:now_diff(os:timestamp(),InstallTime),
     [#flow_entry_counter{
        received_packets = Packets,
        received_bytes   = Bytes}] = ets:lookup(flow_entry_counters,FlowId),
@@ -362,7 +382,7 @@ send_flow_removed(TableId,
               priority =Priority,
               reason = Reason,
               table_id = TableId,
-              duration_sec = DurationMs div 1000,
+              duration_sec = DurationMs div 1000000,
               duration_nsec = DurationMs * 1000,
               idle_timeout = IdleTimeout,
               hard_timeout = HardTimeout,
@@ -703,6 +723,45 @@ create_flow_entry_counter(FlowId) ->
     true = ets:insert(flow_entry_counters,
                       #flow_entry_counter{id = FlowId}).
 
+get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
+    ets:foldl(fun (#flow_entry{id = FlowId,
+                               cookie = MyCookie,
+                               priority = Priority,
+                               install_time = InstallTime,
+                               idle_timeout = IdleTimeout,
+                               hard_timeout = HardTimeout,
+                               match = MyMatch,
+                               instructions = Instructions}=FlowEntry, Acc) ->
+                      case cookie_match(MyCookie, Cookie, CookieMask)
+                          andalso non_strict_match(FlowEntry, Match)
+                          andalso port_and_group_match(OutPort,
+                                                       OutGroup,
+                                                       Instructions)
+                      of
+                          true ->
+                              DurationMs = timer:now_diff(os:timestamp(),InstallTime),
+                              Counters = ets:lookup(flow_entry_counters,FlowId),
+                              [#flow_entry_counter{
+                                  received_packets = Packets,
+                                  received_bytes   = Bytes}] = Counters,
+                                  
+                              Stats = #ofp_flow_stats{
+                                         table_id = TableId,
+                                         duration_sec = DurationMs div 1000000,
+                                         duration_nsec = DurationMs * 1000,
+                                         idle_timeout = IdleTimeout,
+                                         hard_timeout = HardTimeout,
+                                         packet_count = Packets,
+                                         byte_count = Bytes,
+                                         priority = Priority,
+                                         cookie = MyCookie,
+                                         match = MyMatch,
+                                         instructions = Instructions},
+                              [Stats|Acc];
+                          false ->
+                              Acc
+                      end
+              end, [], flow_table_name(TableId)).
 
 %%============================================================================
 %% Various lookup functions

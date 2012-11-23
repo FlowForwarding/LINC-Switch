@@ -909,6 +909,9 @@ statistics_test_() ->
      fun teardown/1,
      [{"Update match counter", fun update_match_counter/0}
       ,{"Update match counter, bad flow_id", fun update_bad_match_counter/0}
+      ,{"Empty flow stats", fun empty_flow_stats/0}
+      ,{"Flow stats 1 table", fun flow_stats_1_table/0}
+      ,{"Flow stats all tables", fun flow_stats_all_tables/0}
      ]}.
 
 update_match_counter() ->
@@ -943,6 +946,47 @@ update_bad_match_counter() ->
                                                          FlowId,PacketSize)),
 
     ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
+
+empty_flow_stats() ->
+    StatsReq = ofp_v3_utils:flow_stats(
+                 [{table_id, 1}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertEqual(#ofp_flow_stats_reply{stats=[]}, linc_us3_flow:get_stats(StatsReq)).
+
+flow_stats_1_table() ->
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,2}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+    StatsReq = ofp_v3_utils:flow_stats(
+                 [{table_id, 1}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertMatch(#ofp_flow_stats_reply{stats=[#ofp_flow_stats{}]},
+                 linc_us3_flow:get_stats(StatsReq)).
+
+flow_stats_all_tables() ->
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,2}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd2)),
+    StatsReq = ofp_v3_utils:flow_stats(
+                 [{table_id, all}],
+                 [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
+    ?assertMatch(#ofp_flow_stats_reply{stats=[#ofp_flow_stats{},
+                                              #ofp_flow_stats{}]},
+                 linc_us3_flow:get_stats(StatsReq)).
 
 table_mod_test_() ->
     {foreach,

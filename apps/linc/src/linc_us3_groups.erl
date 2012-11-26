@@ -17,30 +17,20 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Module for handling all group related tasks.
-
 -module(linc_us3_groups).
 
-%% Group routing
-%%-export([apply/2]).
-
-%% API as defined by LINC team
--export([create/0
-         , destroy/0
-         , apply/2
-         , modify/1
-         , get_stats/1
-         , get_desc/1
-         , get_features/1
-         , update_reference_count/2
-         , is_valid/1]).
-
-%% Group Mod
-%% -export([add/1,
-%%          modify/1,
-%%          delete/1]).
+%% API
+-export([create/0,
+         destroy/0,
+         modify/1,
+         apply/2,
+         get_stats/1,
+         get_desc/1,
+         get_features/1,
+         update_reference_count/2,
+         is_valid/1]).
 
 -include("linc_us3.hrl").
-%% already included from linc_us3.hrl -include_lib("of_protocol/include/ofp_v3.hrl").
 
 -type linc_bucket_id() :: {integer(), binary()}.
 

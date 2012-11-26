@@ -22,24 +22,25 @@
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc.hrl").
 
--define(SUPPORTED_WRITE_ACTIONS, [output,
-                                  group,
-                                  set_queue,
-                                  set_mpls_ttl,
-                                  dec_mpls_ttl,
-                                  set_nw_ttl,
-                                  dec_nw_ttl,
-                                  copy_ttl_out,
-                                  copy_ttl_in,
-                                  push_vlan,
-                                  pop_vlan,
-                                  push_mpls,
-                                  pop_mpls,
-                                  %% push_pbb,
-                                  %% pop_pbb,
-                                  set_field
-                                 ]).
--define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_WRITE_ACTIONS).
+-define(SUPPORTED_ACTIONS, [output,
+                            group,
+                            set_queue,
+                            set_mpls_ttl,
+                            dec_mpls_ttl,
+                            set_nw_ttl,
+                            dec_nw_ttl,
+                            copy_ttl_out,
+                            copy_ttl_in,
+                            push_vlan,
+                            pop_vlan,
+                            push_mpls,
+                            pop_mpls,
+                            %% push_pbb,
+                            %% pop_pbb,
+                            set_field
+                           ]).
+-define(SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_ACTIONS).
+-define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port,
                                  %% in_phy_port,
                                  %% metadata,
@@ -80,20 +81,10 @@
 -define(SUPPORTED_WRITE_SETFIELDS, []).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
-                                 %% write_metadata,
+                                 write_metadata,
                                  write_actions,
                                  apply_actions,
                                  clear_actions]).
--define(SUPPORTED_GROUP_TYPES, [all
-                                %% select,
-                                %% indirect,
-                                %% ff
-                               ]).
--define(SUPPORTED_GROUP_CAPABILITIES, [%% select_weight,
-                                       %% select_liveness,
-                                       %% chaining,
-                                       %% chaining-check
-                                      ]).
 -define(SUPPORTED_RESERVED_PORTS, [all,
                                    controller,
                                    table,
@@ -102,24 +93,46 @@
                                    %% normal
                                    %% flood
                                   ]).
-
+-define(SUPPORTED_GROUP_TYPES, [all,
+                                select,
+                                indirect,
+                                ff
+                               ]).
+-define(SUPPORTED_GROUP_CAPABILITIES, [select_weight,
+                                       select_liveness
+                                       %% chaining,
+                                       %% chaining-check
+                                      ]).
 -define(MAX, (1 bsl 24)). %% some arbitrary big number
 -define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
 -define(MAX_TABLES, 255).
 -define(MAX_PORTS, ?MAX).
--define(MAX_GROUP_ENTRIES, {?MAX, 0, 0, 0}).
 -define(MAX_BUFFERED_PACKETS, 0).
 
+-type priority() :: non_neg_integer().
+-type flow_id() :: {priority(),reference()}.
+
+-record(flow_table_config, {
+          id                 :: non_neg_integer(),
+          config = controller:: ofp_table_config()
+         }).
+
 -record(flow_entry, {
-          priority          :: integer(),
-          match             :: ofp_match(),
-          cookie            :: binary(),
-          install_time      :: erlang:timestamp(),
-          instructions = [] :: ordsets:ordset(ofp_instruction())
+          id                       :: flow_id(),
+          priority                 :: priority(),
+          match                    :: ofp_match(),
+          cookie                   :: binary(),
+          flags = []               :: [ofp_flow_mod_flag()],
+          install_time             :: erlang:timestamp(),
+          idle_timeout             :: non_neg_integer(),
+          hard_timeout             :: non_neg_integer(),
+          expires = {infinity,0,0} :: erlang:timestamp(),
+          idle = {infinity,0,0}    :: erlang:timestamp(),
+          instructions = []        :: ordsets:ordset(ofp_instruction())
          }).
 
 -record(flow_entry_counter, {
-          key                  :: {FlowTableId :: integer(), #flow_entry{}},
+          id                   :: {FlowTableId :: integer(), #flow_entry{}},
           received_packets = 0 :: integer(),
           received_bytes   = 0 :: integer()
          }).
@@ -139,14 +152,15 @@
          }).
 
 -record(ofs_pkt, {
-          fields                :: ofp_match(),
-          actions  = []         :: ordsets:ordset(ofp_action()),
-          metadata = << 0:64 >> :: binary(),
-          size     = 0          :: integer(),
-          in_port               :: ofp_port_no(),
-          queue_id = default    :: integer(),
-          packet   = []         :: pkt:packet()
+          in_port             :: ofp_port_no(),
+          fields              :: ofp_match(),
+          actions = []        :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>> :: binary(),
+          packet              :: pkt:packet(),
+          size                :: integer(),
+          queue_id = default  :: integer() | default
          }).
+-type ofs_pkt() :: #ofs_pkt{}.
 
 -type ofs_port_type() :: physical | logical | reserved.
 
@@ -182,24 +196,3 @@
           max_rate = no_max_rate :: integer() | no_max_rate,
           rate = 0               :: integer()
          }).
-
--record(ofs_bucket, {
-          value   :: ofp_bucket(),
-          counter :: ofp_bucket_counter()
-         }).
-
--record(group, {
-          id            :: ofp_group_id(),
-          type    = all :: ofp_group_type(),
-          buckets = []  :: [#ofs_bucket{}]
-         }).
-
--type route_result() :: tuple(match | nomatch,
-                              FlowId :: integer(),
-                              drop | controller | output).
-
--type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
-                 tuple(match, goto, integer(), #ofs_pkt{}).
-
--type miss() :: tuple(table_miss, drop | controller) |
-                tuple(table_miss, continue, integer()).

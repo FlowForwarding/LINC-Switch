@@ -356,12 +356,11 @@ wrap_buckets_into_linc_buckets(GroupId, Buckets) ->
 -spec create_unique_id_for_bucket(#ofp_bucket{}) -> term().
 
 create_unique_id_for_bucket(B) ->
-    EncodedBucket = ofp_v3_encode:do(#ofp_message{version = 0, xid = 0, body = B}),
-
+    EncodedBucket = term_to_binary(B),
     %% Add a timestamp in case of identical buckets
     {MegaS, S, MicroS} = os:timestamp(),
     Image = <<EncodedBucket/binary, MegaS:32, S:32, MicroS:32>>,
-
+    %% Create a hash
     crypto:sha(Image).
 
 %% create_unique_id_for_bucket(B) ->

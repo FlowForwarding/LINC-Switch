@@ -18,18 +18,9 @@
 %% @copyright 2012 FlowForwarding.org
 %% @doc Header file for OpenFlow switch application.
 
--record(connection, {
-          pid :: pid(),
-          socket :: port(),
-          version :: integer(),
-          role = equal :: equal | master | slave
-         }).
-
--type connection() :: #connection{}.
-
-%%%-----------------------------------------------------------------------------
-%%% Logging macros
-%%%-----------------------------------------------------------------------------
+%%------------------------------------------------------------------------------
+%% Logging macros
+%%------------------------------------------------------------------------------
 
 -define(DEBUG(Msg),
         lager:debug(Msg)).

@@ -29,7 +29,6 @@
 
 %% API
 -export([start_link/1,
-         send/3,
          send/2,
          change_config/2,
          list_ports/0,
@@ -41,7 +40,8 @@
          get_queue_stats/2,
          attach_queue/3,
          detach_queue/2,
-         remove/1]).
+         remove/1,
+         is_valid/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -68,7 +68,6 @@
 %%%-----------------------------------------------------------------------------
 %%% API functions
 %%%-----------------------------------------------------------------------------
-
 %% @doc Start Open Flow port with provided configuration.
 -spec start_link(list(ofs_port_config())) -> {ok, pid()} |
                                              ignore |
@@ -76,35 +75,39 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
-%% @doc Send OF packet to the OF port with no queue specified.
--spec send(ofp_port_no(), #ofs_pkt{}) -> ok | bad_port | bad_queue | no_fwd.
-send(OutPort, OFSPkt) ->
-    send(OutPort, ?DEFAULT_QUEUE, OFSPkt).
-
-%% @doc Send OF packet to the OF port and put it in the given queue.
--spec send(ofp_port_no(), ofp_queue_id(), #ofs_pkt{}) ->
-                  ok | bad_port | bad_queue | no_fwd.
-send(PortNo, QueueId, Packet) ->
+%% @doc Send OF packet to the OF port.
+-spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
+send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
+    Ports = ets:tab2list(ofs_ports),
+    [send(Pkt, PortNo)
+     || #ofs_port{number = PortNo} <- Ports, PortNo /= InPort];
+send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
+    send(Pkt, InPort);
+send(Pkt, controller) ->
+    linc_logic:send_to_controllers(Pkt, action);
+send(Pkt, PortNo) when is_integer(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
-            do_send(PortNo, Packet);
+            do_send(Pkt, PortNo);
         {ok, _} ->
-            do_send_with_queue(PortNo, QueueId, Packet)
-    end.
+            do_send_with_queue(Pkt, PortNo)
+    end;
+send(_Pkt, UnsupportedPort) ->
+    ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
-do_send(PortNo, Packet) ->
+do_send(Pkt, PortNo) ->
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
         Pid ->
-            gen_server:cast(Pid, {send, Packet})
+            gen_server:cast(Pid, {send, Pkt})
     end.
 
-do_send_with_queue(PortNo, QueueId, Packet) ->
-    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
+do_send_with_queue(Pkt, PortNo) ->
+    case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
         %% XXX: move no_fwd to ETS and check it
         [#ofs_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:send(Pid, Packet);
+            linc_us3_queue:send(Pid, Pkt);
         [] ->
             case ets:lookup(ofs_ports, PortNo) of
                 [_] -> bad_queue;
@@ -223,6 +226,11 @@ remove(PortNo) ->
         Pid ->
             supervisor:terminate_child(linc_us3_port_sup, Pid)
     end.
+
+%% @doc Test if a port exists.
+-spec is_valid(ofp_port_no()) -> boolean().
+is_valid(OfsPort) ->
+    ets:member(ofs_ports, OfsPort).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks

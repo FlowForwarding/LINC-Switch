@@ -35,13 +35,17 @@
          handle_message/2]).
 
 %% Handle all message types
--export([ofp_flow_mod/2,
+-export([ofp_features_request/2,
+         ofp_flow_mod/2,
          ofp_table_mod/2,
          ofp_port_mod/2,
          ofp_group_mod/2,
          ofp_packet_out/2,
          ofp_echo_request/2,
+         ofp_get_config_request/2,
+         ofp_set_config/2,
          ofp_barrier_request/2,
+         ofp_queue_get_config_request/2,
          ofp_desc_stats_request/2,
          ofp_flow_stats_request/2,
          ofp_aggregate_stats_request/2,
@@ -63,7 +67,7 @@
 
 -spec route(#ofs_pkt{}) -> pid().
 route(Pkt) ->
-    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt, 0]).
+    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt]).
 
 -spec add_port(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
 add_port(physical, Opts) ->
@@ -128,22 +132,9 @@ start(_Opts) ->
                     permanent, 5000, supervisor, [linc_us3_sup]},
     supervisor:start_child(linc_sup, UserspaceSup),
 
-    %% Flows
-    flow_tables = ets:new(flow_tables, [named_table, public,
-                                        {keypos, #linc_flow_table.id},
-                                        {read_concurrency, true}]),
-    ets:insert(flow_tables, [#linc_flow_table{id = Id}
-                             || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_table_counters = ets:new(flow_table_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_table_counter.id},
-                                   {read_concurrency, true}]),
-    ets:insert(flow_table_counters, [#flow_table_counter{id = Id}
-                                     || Id <- lists:seq(0, ?OFPTT_MAX)]),
-    flow_entry_counters = ets:new(flow_entry_counters,
-                                  [named_table, public,
-                                   {keypos, #flow_entry_counter.key},
-                                   {read_concurrency, true}]),
+    linc_us3_flow:initialize(),
+    linc_us3_groups:create(),
+
     %% Ports
     ofs_ports = ets:new(ofs_ports, [named_table, public,
                                     {keypos, #ofs_port.number},
@@ -160,16 +151,6 @@ start(_Opts) ->
             linc_us3_queue:start()
     end,
 
-    %% Groups
-    group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #group.id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-    group_stats = ets:new(group_stats, [named_table, public,
-                                        {keypos, #ofp_group_stats.group_id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
-
     {ok, BackendOpts} = application:get_env(linc, backends),
     {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
     {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
@@ -183,9 +164,8 @@ stop(_State) ->
     [linc_us3_port:remove(PortNo) ||
         #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
-    ets:delete(flow_tables),
-    ets:delete(flow_table_counters),
-    ets:delete(flow_entry_counters),
+    linc_us3_flow:terminate(),
+    linc_us3_groups:destroy(),
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
@@ -195,206 +175,170 @@ stop(_State) ->
         {ok, _} ->
             linc_us3_queue:stop()
     end,
-    %% Groups
-    ets:delete(group_table),
-    ets:delete(group_stats),
     ok.
 
--spec handle_message(state(), ofp_message_body()) ->
-                            {ok, state()} |
-                            {error, ofp_error_msg(), state()}.
-handle_message(State, Message) ->
-    MessageName = element(1, Message),
-    erlang:apply(?MODULE, MessageName, [State, Message]).
+-spec handle_message(ofp_message_body(), state()) ->
+                            {noreply, state()} |
+                            {reply, ofp_message(), state()}.
+handle_message(MessageBody, State) ->
+    MessageName = element(1, MessageBody),
+    erlang:apply(?MODULE, MessageName, [State, MessageBody]).
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages
 %%%-----------------------------------------------------------------------------
 
 %% @doc Modify flow entry in the flow table.
-ofp_flow_mod(State, #ofp_flow_mod{command = add} = FlowMod) ->
-    case linc_us3_flow:add_flow(FlowMod) of
+-spec ofp_features_request(state(), ofp_features_request()) ->
+                          {noreply, #state{}} |
+                          {reply, ofp_message(), #state{}}.
+ofp_features_request(State, #ofp_features_request{}) ->
+    Ports =  [Port || #ofs_port{port = Port} <- []],
+    FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
+                                        datapath_id = 0,
+                                        n_buffers = 0,
+                                        ports = Ports,
+                                        n_tables = 255},
+    {reply, FeaturesReply, State}.
+
+%% @doc Modify flow entry in the flow table.
+-spec ofp_flow_mod(state(), ofp_flow_mod()) ->
+                          {noreply, #state{}} |
+                          {reply, ofp_message(), #state{}}.
+ofp_flow_mod(State, #ofp_flow_mod{} = FlowMod) ->
+    case linc_us3_flow:modify(FlowMod) of
         ok ->
-            {ok,State};
-        {error,overlap} ->
-            OverlapError = #ofp_error_msg{type = flow_mod_failed,
-                                      code = overlap},
-            {error, OverlapError, State}
-    end;
-                    
-ofp_flow_mod(State, #ofp_flow_mod{command = modify} = FlowMod) ->
-    linc_us3_flow:apply_flow_mod(State, FlowMod,
-                                      fun linc_us3_flow:modify_entries/2,
-                                      fun linc_us3_flow:fm_non_strict_match/2);
-ofp_flow_mod(State, #ofp_flow_mod{command = modify_strict} = FlowMod) ->
-    linc_us3_flow:apply_flow_mod(State, FlowMod,
-                                      fun linc_us3_flow:modify_entries/2,
-                                      fun linc_us3_flow:fm_strict_match/2);
-ofp_flow_mod(State, #ofp_flow_mod{command = delete} = FlowMod) ->
-    linc_us3_flow:apply_flow_mod(State, FlowMod,
-                                      fun linc_us3_flow:delete_entries/2,
-                                      fun linc_us3_flow:fm_non_strict_match/2);
-ofp_flow_mod(State, #ofp_flow_mod{command = delete_strict} = FlowMod) ->
-    linc_us3_flow:apply_flow_mod(State, FlowMod,
-                                      fun linc_us3_flow:delete_entries/2,
-                                      fun linc_us3_flow:fm_strict_match/2).
+            {noreply, State};
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {reply, ErrorMsg, State}
+    end.
 
 %% @doc Modify flow table configuration.
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
-                           {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_table_mod(State, #ofp_table_mod{table_id = TableId, config = Config}) ->
-    lists:foreach(fun(FlowTable) ->
-                          ets:insert(flow_tables,
-                                     FlowTable#linc_flow_table{config = Config})
-                  end, linc_us3_flow:get_flow_tables(TableId)),
-    {ok, State}.
+                           {noreply, #state{}} |
+                           {reply, ofp_message(), #state{}}.
+ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
+    case linc_us3_flow:table_mod(TableMod) of
+        ok ->
+            {noreply, State};
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {reply, ErrorMsg, State}
+    end.
 
 %% @doc Modify port configuration.
 -spec ofp_port_mod(state(), ofp_port_mod()) ->
-      {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
+                          {noreply, #state{}} |
+                          {reply, ofp_message(), #state{}}.
 ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
     case linc_us3_port:change_config(PortNo, PortMod) of
-        {error, Code} ->
-            Error = #ofp_error_msg{type = port_mod_failed,
-                                   code = Code},
-            {error, Error, State};
         ok ->
-            {ok, State}
+            {noreply, State};
+        {error, Code} ->
+            ErrorMsg = #ofp_error_msg{type = port_mod_failed,
+                                      code = Code},
+            {reply, ErrorMsg, State}
     end.
 
 %% @doc Modify group entry in the group table.
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
-                           {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
-ofp_group_mod(State, #ofp_group_mod{command = add, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
-    %% Add new entry to the group table, if entry with given group id is already
-    %% present, then return error.
-    OFSBuckets = lists:map(fun(B) ->
-                                   #ofs_bucket{value = B,
-                                               counter = #ofp_bucket_counter{}}
-                           end, Buckets),
-    Entry = #group{id = Id, type = Type, buckets = OFSBuckets},
-    case ets:insert_new(group_table, Entry) of
-        true ->
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = group_exists}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = modify, group_id = Id, type = Type,
-                                    buckets = Buckets}) ->
-    %% Modify existing entry in the group table, if entry with given group id
-    %% is not in the table, then return error.
-    Entry = #group{id = Id, type = Type, buckets = Buckets},
-    case ets:member(group_table, Id) of
-        true ->
-            ets:insert(group_table, Entry),
-            {ok, State};
-        false ->
-            {error, #ofp_error_msg{type = group_mod_failed,
-                                   code = unknown_group}, State}
-    end;
-ofp_group_mod(State, #ofp_group_mod{command = delete, group_id = Id}) ->
-    %% Deletes existing entry in the group table, if entry with given group id
-    %% is not in the table, no error is recorded. Flows containing given
-    %% group id are removed along with it.
-    %% If one wishes to effectively delete a group yet leave in flow entries
-    %% using it, that group can be cleared by sending a modify with no buckets
-    %% specified.
-    case Id of
-        all ->
-            ets:delete_all_objects(group_table);
-        any ->
-            %% TODO: Should we support this case at all?
-            ok;
-        Id ->
-            ets:delete(group_table, Id)
-    end,
-    %% TODO: Remove flows containing given group along with it
-    {ok, State}.
+                           {noreply, #state{}} |
+                           {reply, ofp_message(), #state{}}.
+ofp_group_mod(State, #ofp_group_mod{} = GroupMod) ->
+    case linc_us3_groups:modify(GroupMod) of
+        ok ->
+            {noreply, State};
+        {error, Type, Code} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {reply, ErrorMsg, State}
+    end.
 
 %% @doc Handle a packet received from controller.
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
-                            {ok, #state{}} | {error, ofp_error_msg(), #state{}}.
+                            {noreply, #state{}} |
+                            {reply, ofp_message(), #state{}}.
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    linc_us3_actions:apply_list(0, Actions,
-                                parse_ofs_pkt(Data, InPort)),
-    {ok, State}.
+    linc_us3_actions:apply_list(parse_ofs_pkt(Data, InPort), Actions),
+    {noreply, State}.
 
 %% @doc Reply to echo request.
 -spec ofp_echo_request(state(), ofp_echo_request()) ->
-      {ok, #ofp_echo_reply{}, #state{}} | {error, ofp_error_msg(), #state{}}.
+                              {reply, ofp_message(), #state{}}.
 ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
     EchoReply = #ofp_echo_reply{data = Data},
-    {ok, EchoReply, State}.
+    {reply, EchoReply, State}.
+
+%% @doc Reply to get config request.
+-spec ofp_get_config_request(state(), ofp_get_config_request()) ->
+                                    {reply, ofp_message(), #state{}}.
+ofp_get_config_request(State, #ofp_get_config_request{}) ->
+    ConfigReply = #ofp_get_config_reply{flags = [],
+                                        miss_send_len = ?OFPCML_NO_BUFFER},
+    {reply, ConfigReply, State}.
+
+%% @doc Set switch configuration.
+-spec ofp_set_config(state(), ofp_set_config()) -> {noreply, state()}.
+ofp_set_config(State, #ofp_set_config{}) ->
+    {noreply, State}.
 
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
-                                 {ok, #ofp_barrier_reply{}, #state{}} | {error, ofp_error_msg(), #state{}}.
+                                 {reply, ofp_message(), #state{}}.
 ofp_barrier_request(State, #ofp_barrier_request{}) ->
     BarrierReply = #ofp_barrier_reply{},
-    {ok, BarrierReply, State}.
+    {reply, BarrierReply, State}.
+
+%% @doc Reply to get queue config request.
+-spec ofp_queue_get_config_request(state(), ofp_queue_get_config_request()) ->
+                                          {reply, ofp_message(), #state{}}.
+ofp_queue_get_config_request(State,
+                             #ofp_queue_get_config_request{port = Port}) ->
+    QueueConfigReply = #ofp_queue_get_config_reply{port = Port,
+                                                   queues = []},
+    {reply, QueueConfigReply, State}.
 
 %% @doc Get switch description statistics.
 -spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
-      {ok, ofp_desc_stats_reply(), #state{}} | {error, ofp_error_msg(), #state{}}.
+                                    {reply, ofp_message(), #state{}}.
 ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
-    {ok, #ofp_desc_stats_reply{flags = [],
-                               mfr_desc = get_env(manufacturer_desc),
-                               hw_desc = get_env(hardware_desc),
-                               sw_desc = get_env(software_desc),
-                               serial_num = get_env(serial_number),
-                               dp_desc = get_env(datapath_desc)
-                              }, State}.
+    {reply, #ofp_desc_stats_reply{flags = [],
+                                  mfr_desc = get_env(manufacturer_desc),
+                                  hw_desc = get_env(hardware_desc),
+                                  sw_desc = get_env(software_desc),
+                                  serial_num = get_env(serial_number),
+                                  dp_desc = get_env(datapath_desc)
+                                 }, State}.
 
 %% @doc Get flow entry statistics.
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
-                                    {ok, ofp_flow_stats_reply(), #state{}} |
-                                    {error, ofp_error_msg(), #state{}}.
-ofp_flow_stats_request(State,
-                       #ofp_flow_stats_request{table_id = TableId} = Request) ->
-    Stats = lists:flatmap(fun(#linc_flow_table{id = TID, entries = Entries}) ->
-                                  linc_us3_flow:get_flow_stats(TID,
-                                                                    Entries,
-                                                                    Request)
-                          end, linc_us3_flow:get_flow_tables(TableId)),
-    {ok, #ofp_flow_stats_reply{flags = [], stats = Stats}, State}.
+                                    {reply, ofp_message(), #state{}}.
+ofp_flow_stats_request(State, #ofp_flow_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
-                                         {ok, ofp_aggregate_stats_reply(),
-                                          #state{}} |
-                                         {error, ofp_error_msg(), #state{}}.
+                                         {reply, ofp_message(), #state{}}.
 ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
-    Tables = linc_us3_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
-    %% for each table, for each flow, collect matching stats
-    Reply = lists:foldl(fun(#linc_flow_table{id = TableId, entries = Entries},
-                            OuterAcc) ->
-                                lists:foldl(fun(Entry, Acc) ->
-                                                    linc_us3_stats:update_aggregate_stats(Acc,
-                                                                                               TableId,
-                                                                                               Entry,
-                                                                                               Request)
-                                            end, OuterAcc, Entries)
-                        end, #ofp_aggregate_stats_reply{}, Tables),
-    {ok, Reply, State}.
+    Reply = linc_us3_flow:get_aggregate_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
-                                     {ok, ofp_table_stats_reply(), #state{}} |
-                                     {error, ofp_error_msg(), #state{}}.
-ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
-    Stats = [linc_us3_stats:table_stats(Table) ||
-                Table <- lists:sort(ets:tab2list(flow_tables))],
-    {ok, #ofp_table_stats_reply{flags = [],
-                                stats = Stats}, State}.
+                                     {reply, ofp_message(), #state{}}.
+ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_table_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
-                                    {ok, ofp_port_stats_reply(), #state{}} |
-                                    {error, ofp_error_msg(), #state{}}.
+                                    {reply, ofp_message(), #state{}}.
 ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
     %% TODO: Should we return error when bad_port is encountered?
     Stats = case linc_us3_port:get_port_stats(PortNo) of
@@ -403,12 +347,11 @@ ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
                 PortStats ->
                     [PortStats]
             end,
-    {ok, #ofp_port_stats_reply{stats = Stats}, State}.
+    {reply, #ofp_port_stats_reply{stats = Stats}, State}.
 
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
-                                     {ok, ofp_queue_stats_reply(), #state{}} |
-                                     {error, ofp_error_msg(), #state{}}.
+                                     {reply, ofp_message(), #state{}}.
 ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
                                                         queue_id = QueueId}) ->
     %% TODO: Should we return error when undefined is encountered?
@@ -418,40 +361,30 @@ ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
                 QueueStats ->
                     [QueueStats]
             end,
-    {ok, #ofp_queue_stats_reply{stats = Stats}, State}.
+    {reply, #ofp_queue_stats_reply{stats = Stats}, State}.
 
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
-                                     {ok, ofp_group_stats_reply(), #state{}} |
-                                     {error, ofp_error_msg(), #state{}}.
-ofp_group_stats_request(State, #ofp_group_stats_request{group_id = GroupId}) ->
-    Stats = case get_group_stats(GroupId) of
-                undefined ->
-                    [];
-                GroupStats ->
-                    [GroupStats]
-            end,
-    {ok, #ofp_group_stats_reply{stats = Stats}, State}.
+                                     {reply, ofp_message(), #state{}}.
+ofp_group_stats_request(State, #ofp_group_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group description statistics.
 -spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
-                                          {ok, ofp_group_desc_stats_reply(), #state{}} |
-                                          {error, ofp_error_msg(), #state{}}.
-ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
-    %% TODO: Add group description statistics
-    {ok, #ofp_group_desc_stats_reply{}, State}.
+                                          {reply, ofp_message(), #state{}}.
+ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_desc(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group features statistics.
--spec ofp_group_features_stats_request(state(), ofp_group_features_stats_request()) ->
-                                              {ok, ofp_group_features_stats_reply(), #state{}} |
-                                              {error, ofp_error_msg(), #state{}}.
-ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
-    Stats = #ofp_group_features_stats_reply{
-      types = ?SUPPORTED_GROUP_TYPES,
-      capabilities = ?SUPPORTED_GROUP_CAPABILITIES,
-      max_groups = ?MAX_GROUP_ENTRIES,
-      actions = {?SUPPORTED_APPLY_ACTIONS, [], [], []}},
-    {ok, Stats, State}.
+-spec ofp_group_features_stats_request(state(),
+                                       ofp_group_features_stats_request()) ->
+                                              {reply, ofp_message(), #state{}}.
+ofp_group_features_stats_request(State,
+                                 #ofp_group_features_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_features(Request),
+    {reply, Reply, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
@@ -460,3 +393,11 @@ ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
 get_env(Env) ->
     {ok, Value} = application:get_env(linc, Env),
     Value.
+
+get_datapath_mac() ->
+    {ok, Ifs} = inet:getifaddrs(),
+    MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
+             || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
+    %% Make sure MAC /= 0
+    [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
+    list_to_binary(MAC).

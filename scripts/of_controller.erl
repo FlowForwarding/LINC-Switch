@@ -18,12 +18,27 @@
 
 %% Message generators
 -export([hello/0,
+         get_config_request/0,
          echo_request/0,
          echo_request/1,
          barrier_request/0,
+         queue_get_config_request/0,
          features_request/0,
          remove_all_flows/0,
-         table_config/1]).
+         table_mod/0,
+         group_mod/0,
+         set_config/0,
+         %% Statistics
+         desc_stats_request/0,
+         flow_stats_request/0,
+         aggregate_stats_request/0,
+         table_stats_request/0,
+         port_stats_request/0,
+         queue_stats_request/0,
+         group_stats_request/0,
+         group_desc_stats_request/0,
+         group_features_stats_request/0
+         ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
@@ -105,11 +120,34 @@ loop(Connections) ->
             {ok, {Address, Port}} = inet:peername(Socket),
             lager:info("Accepted connection from ~p {~p,~p}",
                        [Socket, Address, Port]),
-            %% Setting switch to route all frames to controller
-            Msg = of_controller:table_config(controller),
-            {ok, EncodedMessage} = of_protocol:encode(Msg),
-            ok = gen_tcp:send(Socket, EncodedMessage),
-
+            [begin
+                 Msg = ?MODULE:Fun(),
+                 case of_protocol:encode(Msg) of
+                     {ok, EncodedMessage} ->
+                         ok = gen_tcp:send(Socket, EncodedMessage);
+                     Error ->
+                         lager:error("Error in encode of: ~p", [Msg])
+                 end
+             end || Fun <- [table_mod,
+                            %% group_mod,
+                            set_config,
+                            features_request,
+                            echo_request,
+                            get_config_request,
+                            barrier_request,
+                            queue_get_config_request,
+                            %% Stats
+                            desc_stats_request,
+                            flow_stats_request,
+                            aggregate_stats_request,
+                            table_stats_request,
+                            port_stats_request,
+                            queue_stats_request,
+                            group_stats_request,
+                            group_desc_stats_request,
+                            group_features_stats_request
+                           ]],
+            
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
@@ -220,7 +258,7 @@ handle(#cstate{parent = Parent, socket = Socket,
                     handle(State)
             end;
         {msg, Socket, Message} ->
-            lager:debug("Received message from ~p: ~p", [Socket, Message]),
+            lager:info("Received message from ~p: ~p", [Socket, Message]),
             Parent ! {message, Message},
             handle(State)
     end.
@@ -250,14 +288,61 @@ echo_request() ->
 echo_request(Data) ->
     message(#ofp_echo_request{data = Data}).
 
+get_config_request() ->
+    message(#ofp_get_config_request{}).
+
 barrier_request() ->
     message(#ofp_barrier_request{}).
+
+queue_get_config_request() ->
+    message(#ofp_queue_get_config_request{port = any}).
+
+desc_stats_request() ->
+    message(#ofp_desc_stats_request{}).
+
+flow_stats_request() ->
+    message(#ofp_flow_stats_request{table_id = all}).
+
+aggregate_stats_request() ->
+    message(#ofp_aggregate_stats_request{table_id = all}).
+
+table_stats_request() ->
+    message(#ofp_table_stats_request{}).
+
+port_stats_request() ->
+    message(#ofp_port_stats_request{port_no = any}).
+
+queue_stats_request() ->
+    message(#ofp_queue_stats_request{port_no = any, queue_id = all}).
+
+group_stats_request() ->
+    message(#ofp_group_stats_request{group_id = all}).
+
+group_desc_stats_request() ->
+    message(#ofp_group_desc_stats_request{}).
+
+group_features_stats_request() ->
+    message(#ofp_group_features_stats_request{}).
 
 remove_all_flows() ->
     message(#ofp_flow_mod{command = delete}).
 
-table_config(Config) ->
-    message(#ofp_table_mod{config = Config}).
+table_mod() ->
+    message(#ofp_table_mod{config = controller}).
+
+set_config() ->
+    message(#ofp_set_config{miss_send_len = 16#ffff}).
+
+group_mod() ->
+    message(#ofp_group_mod{
+               command  = add,
+               type = all,
+               group_id = 1,
+               buckets = [#ofp_bucket{
+                             weight = 1,
+                             watch_port = 1,
+                             watch_group = 1,
+                             actions = [#ofp_action_output{port = 2}]}]}).
 
 %%% Helpers --------------------------------------------------------------------
 

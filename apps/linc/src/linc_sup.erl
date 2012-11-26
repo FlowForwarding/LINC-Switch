@@ -40,11 +40,11 @@ start_link() ->
 %%------------------------------------------------------------------------------
 
 init([]) ->
-    ReceiverSup = {linc_receiver_sup, {linc_receiver_sup, start_link, []},
-                   permanent, 5000, supervisor, [linc_receiver_sup]},
+    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, []},
+                  permanent, 5000, supervisor, [ofp_channel_sup]},
 
     {ok, {BackendMod, BackendOpts}} = application:get_env(linc, backend),
     Logic = {linc_logic, {linc_logic, start_link, [BackendMod, BackendOpts]},
              permanent, 5000, worker, [linc_logic]},
 
-    {ok, {{one_for_all, 5, 10}, [ReceiverSup, Logic]}}.
+    {ok, {{one_for_all, 5, 10}, [ChannelSup, Logic]}}.

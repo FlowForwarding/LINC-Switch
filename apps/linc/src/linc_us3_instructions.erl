@@ -20,86 +20,76 @@
 
 -module(linc_us3_instructions).
 
--export([apply/4]).
+-export([apply/2]).
 
 -include("linc_us3.hrl").
 
--spec apply(integer(),
-            list(ofp_instruction()),
-            #ofs_pkt{},
-            output_or_group | {goto, integer()}) -> match().
-apply(TableId,
-      [#ofp_instruction_apply_actions{actions = Actions} | Rest],
-      Pkt,
-      NextStep) ->
+-type instructions_apply_result() :: stop | {goto, integer()}.
+
+-type instructions_apply_output() :: {instructions_apply_result(),
+                                      NewPkt :: ofs_pkt()}.
+
+-spec apply(Pkt :: ofs_pkt(),
+            Instructions :: list(ofp_instruction()))
+           -> instructions_apply_output().
+apply(Pkt, Instructions) ->
+    apply2(Pkt, Instructions, stop).
+
+-spec apply2(Pkt :: ofs_pkt(),
+             Instructions :: list(ofp_instruction()),
+             TerminationType :: instructions_apply_result())
+            -> instructions_apply_output().
+apply2(Pkt,
+       [#ofp_instruction_apply_actions{actions = Actions} | ActionsRest],
+       stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Applies the specific action(s) immediately, without any change to the
     %% Action Set. This instruction may be used to modify the packet between
     %% two tables or to execute multiple actions of the same type.
     %% The actions are specified as an action list (see 5.8).
-    NewPkt = linc_us3_actions:apply(TableId, Actions, Pkt),
-    linc_us3_instructions:apply(TableId, Rest, NewPkt, NextStep);
-apply(TableId,
-      [#ofp_instruction_clear_actions{} | Rest],
-      Pkt,
-      NextStep) ->
+    NewPkt = linc_us3_actions:apply_list(Pkt, Actions),
+    apply2(NewPkt, ActionsRest, stop);
+apply2(Pkt,
+       [#ofp_instruction_clear_actions{} | ActionsRest],
+       stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Clears all the actions in the action set immediately.
-    linc_us3_instructions:apply(TableId, Rest, Pkt#ofs_pkt{actions = []}, NextStep);
-apply(TableId,
-      [#ofp_instruction_write_actions{actions = Actions} | Rest],
-      #ofs_pkt{actions = OldActions} = Pkt,
-      NextStep) ->
+    apply2(Pkt#ofs_pkt{actions = []},
+           ActionsRest, stop);
+apply2(#ofs_pkt{actions = OldActions} = Pkt,
+       [#ofp_instruction_write_actions{actions = Actions} | ActionsRest],
+       stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Merges the specified action(s) into the current action set (see 5.7).
     %% If an action of the given type exists in the current set, overwrite it,
     %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
-    linc_us3_instructions:apply(TableId, Rest, Pkt#ofs_pkt{actions = NewActions},
-                                NextStep);
-apply(TableId,
-      [#ofp_instruction_write_metadata{metadata = NewMetadata,
-                                       metadata_mask = Mask} | Rest],
-      #ofs_pkt{metadata = OldMetadata} = Pkt,
-      NextStep) ->
+    apply2(Pkt#ofs_pkt{actions = NewActions},
+           ActionsRest, stop);
+apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
+       [#ofp_instruction_write_metadata{metadata = NewMetadata,
+                                        metadata_mask = Mask} | ActionsRest],
+       stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Writes the masked metadata value into the metadata field. The mask
     %% specifies which bits of the metadata register should be modified
     %% (i.e. new metadata = old metadata &  ̃mask | value & mask).
     MaskedMetadata = apply_mask(OldMetadata, NewMetadata, Mask, []),
-    linc_us3_instructions:apply(TableId, Rest, Pkt#ofs_pkt{metadata = MaskedMetadata},
-          NextStep);
-apply(TableId,
-      [#ofp_instruction_goto_table{table_id = Id} | Rest],
-      Pkt,
-      _NextStep) ->
+    apply2(Pkt#ofs_pkt{metadata = MaskedMetadata},
+           ActionsRest, stop);
+apply2(Pkt,
+       [#ofp_instruction_goto_table{table_id = Id} | ActionsRest],
+       stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Indicates the next table in the processing pipeline. The table-id must
     %% be greater than the current table-id. The flows of last table of the
     %% pipeline can not include this instruction (see 5.1).
-    linc_us3_instructions:apply(TableId, Rest, Pkt, {goto, Id});
-apply(_TableId, [], Pkt, output_or_group) ->
-    case lists:keymember(ofp_action_group, 1, Pkt#ofs_pkt.actions) of
-        true ->
-            %% From Open Flow spec 1.2 page 15:
-            %% If both an output action and a group action are specified in
-            %% an action set, the output action is ignored and the group action
-            %% takes precedence.
-            {match, group, Pkt#ofs_pkt{
-                             actions = lists:keydelete(ofp_action_output,
-                                                       1,
-                                                       Pkt#ofs_pkt.actions)}};
-        false ->
-            case lists:keymember(ofp_action_output, 1, Pkt#ofs_pkt.actions) of
-                true ->
-                    {match, output, Pkt};
-                false ->
-                    {match, drop, Pkt}
-            end
-    end;
-apply(_TableId, [], Pkt, {goto, Id}) ->
-    {match, goto, Id, Pkt}.
+    apply2(Pkt, ActionsRest, {goto, Id});
+apply2(Pkt, [], stop) ->
+    {stop, Pkt};
+apply2(Pkt, [], {goto, Id}) ->
+    {{goto, Id}, Pkt}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

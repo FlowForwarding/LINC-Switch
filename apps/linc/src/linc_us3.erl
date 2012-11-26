@@ -279,6 +279,11 @@ ofp_get_config_request(State, #ofp_get_config_request{}) ->
                                         miss_send_len = ?OFPCML_NO_BUFFER},
     {reply, ConfigReply, State}.
 
+%% @doc Set switch configuration.
+-spec ofp_set_config(state(), ofp_set_config()) -> {noreply, state()}.
+ofp_set_config(State, #ofp_set_config{}) ->
+    {noreply, State}.
+
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
                                  {reply, ofp_message(), #state{}}.

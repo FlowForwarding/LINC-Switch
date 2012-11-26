@@ -279,8 +279,7 @@ get_aggregate_stats(#ofp_aggregate_stats_request{
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
-    %%TODO
-    #ofp_table_stats_reply{}.
+    #ofp_table_stats_reply{stats=get_table_stats()}.
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
@@ -451,8 +450,6 @@ send_flow_removed(TableId,
 create_flow_entry(#ofp_flow_mod{priority = Priority,
                                 cookie = Cookie,
                                 flags = Flags,
-                                idle_timeout = IdleTimeout,
-                                hard_timeout = HardTimeout,
                                 match = Match,
                                 instructions = Instructions}) ->
     #flow_entry{id = {Priority, make_ref()},
@@ -842,6 +839,30 @@ merge_aggregate_stats(Stats) ->
                         {PacketsAcc+Packets, BytesAcc+Bytes, FlowsAcc+Flows}
                 end,{0,0,0},Stats).
 
+get_table_stats() ->
+    [get_table_stats1(TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)].
+
+get_table_stats1(TableId) ->
+    [#flow_table_counter{packet_lookups = Lookups,
+                         packet_matches = Matches}]
+        = ets:lookup(flow_table_counters, TableId),
+    #ofp_table_stats{
+       table_id = TableId,
+       name = list_to_binary(io_lib:format("Flow Table 0x~2.16.0b", [TableId])),
+       match = ?SUPPORTED_MATCH_FIELDS,
+       wildcards = ?SUPPORTED_WILDCARDS,
+       write_actions = ?SUPPORTED_WRITE_ACTIONS,
+       apply_actions = ?SUPPORTED_APPLY_ACTIONS,
+       write_setfields = ?SUPPORTED_WRITE_SETFIELDS,
+       apply_setfields = ?SUPPORTED_APPLY_SETFIELDS,
+       metadata_match = ?SUPPORTED_METADATA_MATCH, %<<-1:64>>,
+       metadata_write = ?SUPPORTED_METADATA_WRITE, %<<-1:64>>,
+       instructions = ?SUPPORTED_INSTRUCTIONS,
+       config = get_table_config(TableId),
+       max_entries = ?MAX_FLOW_TABLE_ENTRIES,
+       active_count = ets:info(flow_table_name(TableId),size),
+       lookup_count = Lookups,
+       matched_count = Matches}.
 
 %%============================================================================
 %% Various timer functions

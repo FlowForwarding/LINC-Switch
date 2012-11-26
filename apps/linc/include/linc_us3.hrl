@@ -103,6 +103,9 @@
                                        %% chaining,
                                        %% chaining-check
                                       ]).
+-define(SUPPORTED_METADATA_MATCH, <<-1:64>>).
+-define(SUPPORTED_METADATA_WRITE, <<-1:64>>).
+
 -define(MAX, (1 bsl 24)). %% some arbitrary big number
 -define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
 -define(MAX_TABLES, 255).

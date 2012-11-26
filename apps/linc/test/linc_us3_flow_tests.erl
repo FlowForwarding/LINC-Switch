@@ -916,6 +916,7 @@ statistics_test_() ->
       ,{"Empty aggregate stats", fun empty_aggr_stats/0}
       ,{"Aggregate stats 1 table", fun aggr_stats_1_table/0}
       ,{"Aggregate stats all tables", fun aggr_stats_all_tables/0}
+      ,{"Empty table stats", fun empty_table_stats/0}
      ]}.
 
 update_lookup_counter() ->
@@ -1072,6 +1073,10 @@ aggr_stats_all_tables() ->
                                             byte_count=2048,
                                             flow_count=2},
                  linc_us3_flow:get_aggregate_stats(StatsReq)).
+
+empty_table_stats() ->
+    ?assertMatch(#ofp_table_stats_reply{stats=[#ofp_table_stats{}|_]},
+                 linc_us3_flow:get_table_stats(#ofp_table_stats_request{})).
 
 table_mod_test_() ->
     {foreach,

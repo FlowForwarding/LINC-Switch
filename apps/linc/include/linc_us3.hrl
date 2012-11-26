@@ -81,20 +81,10 @@
 -define(SUPPORTED_WRITE_SETFIELDS, []).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
-                                 %% write_metadata,
+                                 write_metadata,
                                  write_actions,
                                  apply_actions,
                                  clear_actions]).
--define(SUPPORTED_GROUP_TYPES, [all
-                                %% select,
-                                %% indirect,
-                                %% ff
-                               ]).
--define(SUPPORTED_GROUP_CAPABILITIES, [%% select_weight,
-                                       %% select_liveness,
-                                       %% chaining,
-                                       %% chaining-check
-                                      ]).
 -define(SUPPORTED_RESERVED_PORTS, [all,
                                    controller,
                                    table,
@@ -103,12 +93,20 @@
                                    %% normal
                                    %% flood
                                   ]).
-
+-define(SUPPORTED_GROUP_TYPES, [all,
+                                select,
+                                indirect,
+                                ff
+                               ]).
+-define(SUPPORTED_GROUP_CAPABILITIES, [select_weight,
+                                       select_liveness
+                                       %% chaining,
+                                       %% chaining-check
+                                      ]).
 -define(MAX, (1 bsl 24)). %% some arbitrary big number
 -define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
 -define(MAX_TABLES, 255).
 -define(MAX_PORTS, ?MAX).
--define(MAX_GROUP_ENTRIES, {?MAX, 0, 0, 0}).
 -define(MAX_BUFFERED_PACKETS, 0).
 
 -type priority() :: non_neg_integer().
@@ -198,15 +196,3 @@
           max_rate = no_max_rate :: integer() | no_max_rate,
           rate = 0               :: integer()
          }).
-
-%% This is removed from linc_us3 as internal to linc_us3_groups module
-%% -record(ofs_bucket, {
-%%           value   :: ofp_bucket(),
-%%           counter :: ofp_bucket_counter()
-%%          }).
-
--type match() :: tuple(match, output | group | drop, #ofs_pkt{}) |
-                 tuple(match, goto, integer(), #ofs_pkt{}).
-
--type miss() :: tuple(table_miss, drop | controller) |
-                tuple(table_miss, continue, integer()).

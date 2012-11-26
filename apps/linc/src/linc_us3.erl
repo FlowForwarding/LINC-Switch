@@ -43,6 +43,7 @@
          ofp_packet_out/2,
          ofp_echo_request/2,
          ofp_get_config_request/2,
+         ofp_set_config/2,
          ofp_barrier_request/2,
          ofp_queue_get_config_request/2,
          ofp_desc_stats_request/2,
@@ -132,6 +133,7 @@ start(_Opts) ->
     supervisor:start_child(linc_sup, UserspaceSup),
 
     linc_us3_flow:initialize(),
+    linc_us3_groups:create(),
 
     %% Ports
     ofs_ports = ets:new(ofs_ports, [named_table, public,
@@ -163,6 +165,7 @@ stop(_State) ->
         #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
     linc_us3_flow:terminate(),
+    linc_us3_groups:destroy(),
     %% Ports
     ets:delete(ofs_ports),
     ets:delete(port_stats),
@@ -315,40 +318,23 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
 %% @doc Get flow entry statistics.
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
                                     {reply, ofp_message(), #state{}}.
-ofp_flow_stats_request(State,
-                       #ofp_flow_stats_request{table_id = TableId} = Request) ->
-    Stats = lists:flatmap(fun(#linc_flow_table{id = TID, entries = Entries}) ->
-                                  linc_us3_flow:get_flow_stats(TID,
-                                                                    Entries,
-                                                                    Request)
-                          end, linc_us3_flow:get_flow_tables(TableId)),
-    {reply, #ofp_flow_stats_reply{flags = [], stats = Stats}, State}.
+ofp_flow_stats_request(State, #ofp_flow_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
                                          {reply, ofp_message(), #state{}}.
 ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
-    Tables = linc_us3_flow:get_flow_tables(Request#ofp_aggregate_stats_request.table_id),
-    %% for each table, for each flow, collect matching stats
-    Reply = lists:foldl(fun(#linc_flow_table{id = TableId, entries = Entries},
-                            OuterAcc) ->
-                                lists:foldl(fun(Entry, Acc) ->
-                                                    linc_us3_stats:update_aggregate_stats(Acc,
-                                                                                               TableId,
-                                                                                               Entry,
-                                                                                               Request)
-                                            end, OuterAcc, Entries)
-                        end, #ofp_aggregate_stats_reply{}, Tables),
+    Reply = linc_us3_flow:get_aggregate_stats(Request),
     {reply, Reply, State}.
 
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
-ofp_table_stats_request(State, #ofp_table_stats_request{}) ->
-    Stats = [linc_us3_stats:table_stats(Table) ||
-                Table <- lists:sort(ets:tab2list(flow_tables))],
-    {reply, #ofp_table_stats_reply{flags = [],
-                                   stats = Stats}, State}.
+ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_table_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
@@ -380,32 +366,25 @@ ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
-ofp_group_stats_request(State, #ofp_group_stats_request{group_id = GroupId}) ->
-    Stats = case get_group_stats(GroupId) of
-                undefined ->
-                    [];
-                GroupStats ->
-                    [GroupStats]
-            end,
-    {reply, #ofp_group_stats_reply{stats = Stats}, State}.
+ofp_group_stats_request(State, #ofp_group_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group description statistics.
 -spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
                                           {reply, ofp_message(), #state{}}.
-ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{}) ->
-    %% TODO: Add group description statistics
-    {reply, #ofp_group_desc_stats_reply{}, State}.
+ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_desc(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group features statistics.
--spec ofp_group_features_stats_request(state(), ofp_group_features_stats_request()) ->
+-spec ofp_group_features_stats_request(state(),
+                                       ofp_group_features_stats_request()) ->
                                               {reply, ofp_message(), #state{}}.
-ofp_group_features_stats_request(State, #ofp_group_features_stats_request{}) ->
-    Stats = #ofp_group_features_stats_reply{
-      types = ?SUPPORTED_GROUP_TYPES,
-      capabilities = ?SUPPORTED_GROUP_CAPABILITIES,
-      max_groups = ?MAX_GROUP_ENTRIES,
-      actions = {?SUPPORTED_APPLY_ACTIONS, [], [], []}},
-    {reply, Stats, State}.
+ofp_group_features_stats_request(State,
+                                 #ofp_group_features_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_features(Request),
+    {reply, Reply, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

@@ -124,11 +124,18 @@
           cookie                   :: binary(),
           flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
-          idle_timeout             :: non_neg_integer(),
-          hard_timeout             :: non_neg_integer(),
           expires = {infinity,0,0} :: erlang:timestamp(),
           idle = {infinity,0,0}    :: erlang:timestamp(),
           instructions = []        :: ordsets:ordset(ofp_instruction())
+         }).
+
+-record(flow_timer, {
+          id                       :: flow_id(),
+          table                    :: non_neg_integer(),
+          idle_timeout = infinity  :: infinity | non_neg_integer(),
+          hard_timeout = infinity  :: infinity | non_neg_integer(),
+          expire = infinity        :: infinity | non_neg_integer(),
+          remove = infinity        :: infinity | non_neg_integer()
          }).
 
 -record(flow_entry_counter, {

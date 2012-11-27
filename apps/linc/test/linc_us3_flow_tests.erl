@@ -1107,10 +1107,10 @@ set_all_table_config() ->
 %% Fixtures --------------------------------------------------------------------
 setup() ->
     linc_test_utils:mock(?MOCKED),
-    ok=linc_us3_flow:initialize().
+    linc_us3_flow:initialize().
 
-teardown(ok) ->
+teardown(State) ->
     linc_test_utils:unmock(?MOCKED),
-    linc_us3_flow:terminate().
+    linc_us3_flow:terminate(State).
 
 %% Helpers ---------------------------------------------------------------------

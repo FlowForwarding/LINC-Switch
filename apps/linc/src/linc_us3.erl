@@ -58,7 +58,7 @@
 
 -include("linc_us3.hrl").
 
--record(state, {}).
+-record(state, {flow_state}).
 -type state() :: #state{}.
 
 %%%-----------------------------------------------------------------------------
@@ -132,7 +132,7 @@ start(_Opts) ->
                     permanent, 5000, supervisor, [linc_us3_sup]},
     supervisor:start_child(linc_sup, UserspaceSup),
 
-    linc_us3_flow:initialize(),
+    FlowState = linc_us3_flow:initialize(),
     linc_us3_groups:create(),
 
     %% Ports
@@ -156,15 +156,15 @@ start(_Opts) ->
     {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
     [add_port(physical, Port) || Port <- UserspacePorts],
 
-    {ok, #state{}}.
+    {ok, #state{flow_state=FlowState}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
-stop(_State) ->
+stop(#state{flow_state=FlowState}) ->
     [linc_us3_port:remove(PortNo) ||
         #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
     %% Flows
-    linc_us3_flow:terminate(),
+    linc_us3_flow:terminate(FlowState),
     linc_us3_groups:destroy(),
     %% Ports
     ets:delete(ofs_ports),

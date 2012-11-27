@@ -21,7 +21,7 @@
 
 %% API
 -export([initialize/0,
-         terminate/0,
+         terminate/1,
          table_mod/1,
          modify/1,
          get_flow_table/1,
@@ -41,8 +41,10 @@
 -include("linc_us3.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
+-record(state,{tref}).
+
 %% @doc Initialize the flow tables module. Only to be called on system startup.
--spec initialize() -> ok.
+-spec initialize() -> State::term().
 initialize() ->
     %% Flows
     ets:new(flow_table_counters,
@@ -62,17 +64,18 @@ initialize() ->
              {keypos, #flow_timer.id},
              {write_concurrency, true}]),
 
-    %% timer:apply_interval(1000, linc_us3_flow, check_timers, []),
+    {ok,Tref} = timer:apply_interval(1000, linc_us3_flow, check_timers, []),
 
     ets:new(flow_entry_counters,
             [named_table, public,
              {keypos, #flow_entry_counter.id},
              {write_concurrency, true}]),
-    ok.
+    #state{tref=Tref}.
 
 %% @doc Terminate the flow table module. Only to be called on system shutdown.
--spec terminate() -> ok.
-terminate() ->
+-spec terminate(#state{}) -> ok.
+terminate(#state{tref=Tref}) ->
+    timer:cancel(Tref),
     [ets:delete(flow_table_name(Id)) || Id <- lists:seq(0, ?OFPTT_MAX)],
     ets:delete(flow_table_config),
     ets:delete(flow_table_counters),

@@ -146,7 +146,7 @@ loop(Connections) ->
                             queue_stats_request,
                             group_stats_request,
                             group_desc_stats_request,
-                            group_features_stats_request
+                            group_features_stats_request,
 
                             barrier_request,
                             queue_get_config_request,
@@ -350,7 +350,7 @@ group_mod() ->
                              actions = [#ofp_action_output{port = 2}]}]}).
 
 role_request() ->
-    message(#ofp_role_request{role = master, generation_id = 1}).
+    message(#ofp_role_request{role = nochange, generation_id = 1}).
 
 %%% Helpers --------------------------------------------------------------------
 

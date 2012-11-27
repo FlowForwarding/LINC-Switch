@@ -25,9 +25,7 @@
 -export([route/1,
          add_port/2,
          remove_port/1,
-         parse_ofs_pkt/2,
-         get_group_stats/0,
-         get_group_stats/1]).
+         parse_ofs_pkt/2]).
 
 %% gen_switch callbacks
 -export([start/1,
@@ -106,19 +104,6 @@ parse_ofs_pkt(Binary, PortNum) ->
                    [Binary, E1, E2]),
             io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
             #ofs_pkt{}
-    end.
-
--spec get_group_stats() -> [ofp_group_stats()].
-get_group_stats() ->
-    ets:tab2list(group_stats).
-
--spec get_group_stats(ofp_group_id()) -> ofp_group_stats() | undefined.
-get_group_stats(GroupId) ->
-    case ets:lookup(group_stats, GroupId) of
-        [] ->
-            undefined;
-        [Any] ->
-            Any
     end.
 
 %%%-----------------------------------------------------------------------------

@@ -311,11 +311,16 @@ update_match_counters(TableId, FlowId, PktByteSize) ->
 %% @doc Reset the idle timeout timer for a specific flow.
 -spec reset_idle_timeout(TableId :: integer(), FlowId :: integer()) -> ok.
 reset_idle_timeout(_TableId, FlowId) ->
-    #flow_timer{idle_timeout = IdleTimeout} = get_flow_timer(FlowId),
-    Now = os:timestamp(),
-    true = ets:update_element(flow_timers,FlowId,
-                              {#flow_timer.expire, calc_timeout(Now, IdleTimeout)}),
-    ok.
+    case get_flow_timer(FlowId) of
+        #flow_timer{idle_timeout = 0} ->
+            ok;
+        #flow_timer{idle_timeout = IdleTimeout}=_R ->
+            Now = os:timestamp(),
+            Next = calc_timeout(Now, IdleTimeout),
+            true = ets:update_element(flow_timers,FlowId,
+                                      {#flow_timer.expire, Next}),
+            ok
+    end.
 
 %%=============================================================================
 
@@ -429,8 +434,8 @@ send_flow_removed(TableId,
        received_packets = Packets,
        received_bytes   = Bytes}] = ets:lookup(flow_entry_counters,FlowId),
 
-    [#flow_timer{idle_timeout = IdleTimeout,
-                 hard_timeout = HardTimeout}] = get_flow_timer(FlowId),
+    #flow_timer{idle_timeout = IdleTimeout,
+                hard_timeout = HardTimeout} = get_flow_timer(FlowId),
 
     Body = #ofp_flow_removed{
               cookie = Cookie,
@@ -794,8 +799,8 @@ get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                   received_packets = Packets,
                                   received_bytes   = Bytes}] = Counters,
 
-                              [#flow_timer{idle_timeout = IdleTimeout,
-                                           hard_timeout = HardTimeout}] = get_flow_timer(FlowId),
+                              #flow_timer{idle_timeout = IdleTimeout,
+                                          hard_timeout = HardTimeout} = get_flow_timer(FlowId),
                                   
                               Stats = #ofp_flow_stats{
                                          table_id = TableId,
@@ -882,7 +887,12 @@ create_flow_timer(TableId, FlowId, IdleTime, HardTime) ->
                                  }).
 
 get_flow_timer(FlowId) ->
-    ets:lookup(flow_timers,FlowId).
+    case ets:lookup(flow_timers,FlowId) of
+        [Rec] ->
+            Rec;
+        [] ->
+            undefined
+    end.
 
 delete_flow_timer(FlowId) ->
     ets:delete(flow_timers,FlowId).
@@ -899,24 +909,34 @@ calc_timeout({Mega,Secs,Micro},Time) ->
 
 check_timers() ->
     Now = os:timestamp(),
-    ets:foldl(fun (#flow_timer{expire=infinity,remove=infinity}, ok) ->
-                      ok;
-                  (#flow_timer{id = FlowId,
-                               table = TableId,
-                               expire = Expire,
-                               remove = _Remove}, ok) when Expire<Now ->
-                      delete_flow(TableId, get_flow(TableId, FlowId), idle_timeout),
-                      ok;
-                  (#flow_timer{id = FlowId,
-                               table = TableId,
-                               expire = _Expire,
-                               remove = Remove}, ok) when Remove<Now ->
-                      delete_flow(TableId, get_flow(TableId, FlowId), hard_timeout),
-                      ok;
-                   (_,_) ->
-                      ok
+    ets:foldl(fun (Flow, ok) ->
+                      case hard_timeout(Now, Flow) of
+                          false ->
+                              idle_timeout(Now, Flow),
+                              ok;
+                          true ->
+                              ok
+                      end
               end, ok, flow_timers).
-    
+
+hard_timeout(Now, #flow_timer{remove = infinity}) ->
+    false;
+hard_timeout(Now, #flow_timer{id = FlowId, table = TableId, remove = Remove})
+  when Remove<Now ->
+    delete_flow(TableId, get_flow(TableId, FlowId), hard_timeout),
+    true;
+hard_timeout(_Now, _Flow) ->
+    false.
+
+idle_timeout(Now, #flow_timer{expire = infinity}) ->
+    false;
+idle_timeout(Now, #flow_timer{id = FlowId, table = TableId, expire = Expire})
+  when Expire<Now ->
+    delete_flow(TableId, get_flow(TableId, FlowId), idle_timeout),
+    true;
+idle_timeout(_Now, _Flow) ->
+    false.
+
 %%============================================================================
 %% Various lookup functions
 

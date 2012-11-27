@@ -19,8 +19,6 @@
 -module(linc_us3_flow_tests).
 
 -include_lib("eunit/include/eunit.hrl").
-%% -include_lib("of_protocol/include/of_protocol.hrl").
-%% -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
 -define(MOCKED, [logic,group,port]).
@@ -1103,6 +1101,41 @@ set_all_table_config() ->
     ?assertEqual(continue, linc_us3_flow:get_table_config(2)),
     ?assertEqual(continue, linc_us3_flow:get_table_config(3)),
     ?assertEqual(continue, linc_us3_flow:get_table_config(4)).
+
+timer_test_() ->
+    {foreach,
+     fun setup/0,
+     fun teardown/1,
+     [{"Idle timeout", fun idle_timeout/0}
+      ,{"Hard timeout", fun hard_timeout/0}
+     ]}.
+
+idle_timeout() ->
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1},
+                    {idle_timeout,2}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    [#flow_entry{id=FlowId}] = linc_us3_flow:get_flow_table(1),
+    timer:sleep(1500),
+    [#flow_entry{id=FlowId}] = linc_us3_flow:get_flow_table(1),
+    ok = linc_us3_flow:reset_idle_timeout(undefined, FlowId),
+    timer:sleep(500),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(1)),
+    timer:sleep(2000),
+    ?assertEqual([], linc_us3_flow:get_flow_table(1)).
+
+hard_timeout() ->
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,1},
+                    {hard_timeout,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{group,3}]}]),
+    ?assertEqual(ok, linc_us3_flow:modify(FlowModAdd1)),
+    ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(1)),
+    timer:sleep(2500),
+    ?assertEqual([], linc_us3_flow:get_flow_table(1)).
     
 %% Fixtures --------------------------------------------------------------------
 setup() ->

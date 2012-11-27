@@ -67,6 +67,8 @@ start() ->
     supervisor:start_child(linc_sup, OFConfig).
 
 stop() ->
+    ok = supervisor:terminate_child(linc_sup, linc_ofconfig),
+    ok = supervisor:delete_child(linc_sup, linc_ofconfig),
     ok = application:stop(enetconf),
     ok = application:stop(ssh).
 
@@ -329,8 +331,8 @@ instructions([clear_actions | Rest], Instructions) ->
     instructions(Rest, ['clear-actions' | Instructions]);
 instructions([write_actions | Rest], Instructions) ->
     instructions(Rest, ['write-actions' | Instructions]);
-%% instructions([write_metadata | Rest], Instructions) ->
-%%     instructions(Rest, ['write-metadata' | Instructions]);
+instructions([write_metadata | Rest], Instructions) ->
+    instructions(Rest, ['write-metadata' | Instructions]);
 instructions([goto_table | Rest], Instructions) ->
     instructions(Rest, ['goto-table' | Instructions]).
 
@@ -462,13 +464,13 @@ group_types(Types) ->
 group_types([], Types) ->
     lists:reverse(Types);
 group_types([all | Rest], Types) ->
-    group_types(Rest, [all | Types]).
-%% group_types([select | Rest], Types) ->
-%%     group_types(Rest, [select | Types]);
-%% group_types([indirect | Rest], Types) ->
-%%     group_types(Rest, [indirect | Types]);
-%% group_types([ff | Rest], Types) ->
-%%     group_types(Rest, ['fast-failover' | Types]).
+    group_types(Rest, [all | Types]);
+group_types([select | Rest], Types) ->
+    group_types(Rest, [select | Types]);
+group_types([indirect | Rest], Types) ->
+    group_types(Rest, [indirect | Types]);
+group_types([ff | Rest], Types) ->
+    group_types(Rest, ['fast-failover' | Types]).
 
 %% @private
 group_caps(Capabilities) ->

@@ -31,12 +31,13 @@
 -export([start_link/1,
          initialize/0,
          terminate/0,
+         modify/1,
          send/2,
-         change_config/2,
-         get_port_stats/1,
-         get_queue_stats/2,
-         is_valid/1
-        ]).
+         get_stats/1,
+         get_queue_stats/1,
+         get_state/1,
+         set_state/2,
+         is_valid/1]).
 
 -include("linc_us3.hrl").
 -include("linc_us3_port.hrl").
@@ -95,6 +96,18 @@ terminate() ->
             linc_us3_queue:stop()
     end.
 
+%% @doc Change config of the given OF port according to the provided port mod.
+-spec modify(ofp_port_mod()) -> ok | {error, {Type :: atom(), Code :: atom()}}.
+modify(#ofp_port_mod{port_no = PortNo} = PortMod) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_port, code}};
+        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
+        %%           {error, bad_hw_addr};
+        Pid ->
+            gen_server:call(Pid, {port_mod, PortMod})
+    end.
+
 %% @doc Send OF packet to the OF port.
 -spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
 send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
@@ -115,40 +128,29 @@ send(Pkt, PortNo) when is_integer(PortNo) ->
 send(_Pkt, UnsupportedPort) ->
     ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
-%% @doc Change config of the given OF port according to the provided port mod.
--spec change_config(ofp_port_no(), ofp_port_mod()) ->
-                           {error, bad_port | bad_hw_addr} | ok.
-change_config(PortNo, PortMod) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            {error, bad_port};
-        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
-        %%           {error, bad_hw_addr};
-        Pid ->
-            gen_server:cast(Pid, {change_config, PortMod})
-    end.
-
-%% @doc Retuen port stats record for the given OF port.
--spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
-get_port_stats(PortNo) ->
-    %% TODO: Add support for PORT_ANY port number
-    case ets:lookup(linc_port_stats, PortNo) of
-        [] ->
-            bad_port;
-        [Any] ->
-            Any
-    end.
+%% @doc Return port stats record for the given OF port.
+-spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply().
+get_stats(#ofp_port_stats_request{}) ->
+    #ofp_port_stats_reply{}.
 
 %% @doc Return queue stats for the given OF port and queue id.
--spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
-                             ofp_queue_stats() | undefined.
-get_queue_stats(PortNo, QueueId) ->
-    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
+-spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
+get_queue_stats(#ofp_queue_stats_request{}) ->
+    case ets:lookup(ofs_port_queue, {port_no, queue_id}) of
         [] ->
             undefined;
         [Any] ->
             queue_stats_convert(Any)
-    end.
+    end,
+    #ofp_queue_stats_reply{}.
+
+-spec get_state(ofp_port_no()) -> ofp_port_state().
+get_state(_PortNo) ->
+    live.
+
+-spec set_state(ofp_port_no(), ofp_port_state()) -> ok.
+set_state(_PortNo, _State) ->
+    ok.
 
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
@@ -198,6 +200,8 @@ init({OfsPortNo, PortOpts}) ->
     end.
 
 %% @private
+handle_call({port_mod, #ofp_port_mod{}}, _From, State) ->
+    {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
@@ -213,9 +217,6 @@ handle_cast({send, #ofs_pkt{packet = Packet}},
         {_, undefined} ->
             port_command(Port, Frame)
     end,
-    {noreply, State};
-handle_cast({change_config, #ofp_port_mod{}}, State) ->
-    %% FIXME: implement
     {noreply, State}.
 
 %% @private
@@ -253,7 +254,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%-----------------------------------------------------------------------------
 
--spec get_queues(ofs_port_no()) -> list(ofs_port_queue()).
+-spec get_queues(ofp_port_no()) -> list(#ofs_port_queue{}).
 get_queues(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
@@ -375,13 +376,6 @@ get_port_pid(PortNo) ->
         [#ofs_port{pid = Pid}] ->
             Pid
     end.
-
--spec port_queue_to_packet_queue(#ofs_port_queue{}) -> #ofp_packet_queue{}.
-port_queue_to_packet_queue(#ofs_port_queue{key = {PortNo, QueueId},
-                                           properties = Properties}) ->
-    #ofp_packet_queue{queue_id = QueueId,
-                      port_no = PortNo,
-                      properties = Properties}.
 
 -spec queue_stats_convert(#ofs_port_queue{}) -> ofp_queue_stats().
 queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},

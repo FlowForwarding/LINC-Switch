@@ -138,11 +138,11 @@ ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
 ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
-    case linc_us3_port:change_config(PortNo, PortMod) of
+    case linc_us3_port:modify(PortMod) of
         ok ->
             {noreply, State};
-        {error, Code} ->
-            ErrorMsg = #ofp_error_msg{type = port_mod_failed,
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
                                       code = Code},
             {reply, ErrorMsg, State}
     end.
@@ -244,29 +244,16 @@ ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
                                     {reply, ofp_message(), #state{}}.
-ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
-    %% TODO: Should we return error when bad_port is encountered?
-    Stats = case linc_us3_port:get_port_stats(PortNo) of
-                bad_port ->
-                    [];
-                PortStats ->
-                    [PortStats]
-            end,
-    {reply, #ofp_port_stats_reply{stats = Stats}, State}.
+ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
+    Reply = linc_us3_port:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
-ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
-                                                        queue_id = QueueId}) ->
-    %% TODO: Should we return error when undefined is encountered?
-    Stats = case linc_us3_port:get_queue_stats(PortNo, QueueId) of
-                undefined ->
-                    [];
-                QueueStats ->
-                    [QueueStats]
-            end,
-    {reply, #ofp_queue_stats_reply{stats = Stats}, State}.
+ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
+    Reply = linc_us3_port:get_queue_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->

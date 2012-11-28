@@ -28,23 +28,14 @@
 -behaviour(gen_server).
 
 %% API
--export([initialize/0,
+-export([start_link/1,
+         initialize/0,
          terminate/0,
-         add/2,
-         remove/1,
-         is_valid/1,
-         start_link/1,
          send/2,
          change_config/2,
-         list_ports/0,
-         list_queues/1,
-         get_port_stats/0,
          get_port_stats/1,
-         get_queue_stats/0,
-         get_queue_stats/1,
          get_queue_stats/2,
-         attach_queue/3,
-         detach_queue/2
+         is_valid/1
         ]).
 
 -include("linc_us3.hrl").
@@ -64,6 +55,14 @@
 %%% API functions
 %%%-----------------------------------------------------------------------------
 
+%% @doc Start Open Flow port with provided configuration.
+-spec start_link(list(ofs_port_config())) -> {ok, pid()} |
+                                             ignore |
+                                             {error, term()}.
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
+
+-spec initialize() -> ok.
 initialize() ->
     linc_ports = ets:new(linc_ports, [named_table, public,
                                      {keypos, #ofs_port.number},
@@ -84,6 +83,7 @@ initialize() ->
     [add(physical, Port) || Port <- UserspacePorts],
     ok.
 
+-spec terminate() -> ok.
 terminate() ->
     [ok = remove(PortNo) || #ofs_port{number = PortNo} <- list_ports()],
     ets:delete(linc_ports),
@@ -94,28 +94,6 @@ terminate() ->
         {ok, _} ->
             linc_us3_queue:stop()
     end.
-
-%% @doc Start Open Flow port with provided configuration.
--spec start_link(list(ofs_port_config())) -> {ok, pid()} |
-                                             ignore |
-                                             {error, term()}.
-start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
-
--spec add(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
-add(physical, Opts) ->
-    case supervisor:start_child(linc_us3_port_sup, [Opts]) of
-        {ok, Pid} ->
-            ?INFO("Created port: ~p", [Opts]),
-            Pid;
-        {error, shutdown} ->
-            ?ERROR("Cannot create port ~p", [Opts]),
-            error
-    end;
-add(logical, _Opts) ->
-    error;
-add(reserved, _Opts) ->
-    error.
 
 %% @doc Send OF packet to the OF port.
 -spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
@@ -137,26 +115,6 @@ send(Pkt, PortNo) when is_integer(PortNo) ->
 send(_Pkt, UnsupportedPort) ->
     ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
-do_send(Pkt, PortNo) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:cast(Pid, {send, Pkt})
-    end.
-
-do_send_with_queue(Pkt, PortNo) ->
-    case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
-        %% XXX: move no_fwd to ETS and check it
-        [#ofs_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:send(Pid, Pkt);
-        [] ->
-            case ets:lookup(linc_ports, PortNo) of
-                [_] -> bad_queue;
-                [ ] -> bad_port
-            end
-    end.
-
 %% @doc Change config of the given OF port according to the provided port mod.
 -spec change_config(ofp_port_no(), ofp_port_mod()) ->
                            {error, bad_port | bad_hw_addr} | ok.
@@ -170,26 +128,6 @@ change_config(PortNo, PortMod) ->
             gen_server:cast(Pid, {change_config, PortMod})
     end.
 
-%% @doc Return list of all OF ports present in the switch.
--spec list_ports() -> [#ofs_port{}].
-list_ports() ->
-    ets:tab2list(linc_ports).
-
-%% @doc Return list of queues connected to the given OF port.
--spec list_queues(ofp_port_no()) -> [ofp_packet_queue()] | bad_port.
-list_queues(PortNo) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, list_queues)
-    end.
-
-%% @doc Return list of port stats records for all OF ports in the switch.
--spec get_port_stats() -> [ofp_port_stats()].
-get_port_stats() ->
-    ets:tab2list(linc_port_stats).
-
 %% @doc Retuen port stats record for the given OF port.
 -spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
 get_port_stats(PortNo) ->
@@ -200,29 +138,6 @@ get_port_stats(PortNo) ->
         [Any] ->
             Any
     end.
-
-%% @doc Return queue stats for all queues installed in the switch.
--spec get_queue_stats() -> [ofp_queue_stats()].
-get_queue_stats() ->
-    lists:map(fun(E) ->
-                      queue_stats_convert(E)
-              end, ets:tab2list(ofs_port_queue)).
-
-get_queues(PortNo) ->
-    case application:get_env(linc, queues) of
-        undefined ->
-            [];
-        {ok, _} ->
-            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
-            ets:match_object(ofs_port_queue, MatchSpec)
-    end.
-
-%% @doc Return queue stats for all queues connected to the given OF port.
--spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
-get_queue_stats(PortNo) ->
-    lists:map(fun(E) ->
-                      queue_stats_convert(E)
-              end, get_queues(PortNo)).
 
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
@@ -235,40 +150,6 @@ get_queue_stats(PortNo, QueueId) ->
             queue_stats_convert(Any)
     end.
 
-%% @doc Create and attach queue with the given queue id and configuration to
-%% the given OF port. Initializes also queue stats for this queue.
--spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) ->
-                          ok | bad_port.
-attach_queue(PortNo, QueueId, Properties) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, {attach_queue, QueueId, Properties})
-    end.
-
-%% @doc Remove queue with the given queue id from the given OF port.
-%% Removes also queue stats entry for this queue.
--spec detach_queue(ofp_port_no(), ofp_queue_id()) -> ok | bad_port.
-detach_queue(PortNo, QueueId) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, {detach_queue, QueueId})
-    end.
-
-%% @doc Removes given OF port from the switch, as well as its port stats entry,
-%% all queues connected to it and their queue stats entries.
--spec remove(ofp_port_no()) -> ok | bad_port.
-remove(PortNo) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            supervisor:terminate_child(linc_us3_port_sup, Pid)
-    end.
-
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
 is_valid(OfsPort) ->
@@ -279,10 +160,6 @@ is_valid(OfsPort) ->
 %%%-----------------------------------------------------------------------------
 
 %% @private
--spec init(list(tuple())) -> {ok, #state{}} |
-                             {ok, #state{}, timeout()} |
-                             ignore |
-                             {stop, Reason :: term()}.
 init({OfsPortNo, PortOpts}) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
@@ -321,29 +198,10 @@ init({OfsPortNo, PortOpts}) ->
     end.
 
 %% @private
--spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-                  #state{}) ->
-                         {reply, Reply :: term(), #state{}} |
-                         {reply, Reply :: term(), #state{}, timeout()} |
-                         {noreply, #state{}} |
-                         {noreply, #state{}, timeout()} |
-                         {stop, Reason :: term() , Reply :: term(), #state{}} |
-                         {stop, Reason :: term(), #state{}}.
-handle_call(list_queues, _From, #state{ofs_port_no = PortNo} = State) ->
-    Queues = [port_queue_to_packet_queue(Q) || Q <- get_queues(PortNo)],
-    {reply, Queues, State};
-handle_call({attach_queue, QueueId, Properties}, _From, State) ->
-    NewState = do_attach_queue(State, QueueId, Properties),
-    {reply, ok, NewState};
-handle_call({detach_queue, QueueId}, _From, State) ->
-    NewState = do_detach_queue(State, QueueId),
-    {reply, ok, NewState}.
+handle_call(_Msg, _From, State) ->
+    {reply, ok, State}.
 
 %% @private
--spec handle_cast(Msg :: term(),
-                  #state{}) -> {noreply, #state{}} |
-                               {noreply, #state{}, timeout()} |
-                               {stop, Reason :: term(), #state{}}.
 handle_cast({send, #ofs_pkt{packet = Packet}},
             #state{socket = Socket,
                    port = Port,
@@ -361,10 +219,6 @@ handle_cast({change_config, #ofp_port_mod{}}, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info(Info :: term(),
-                  #state{}) -> {noreply, #state{}} |
-                               {noreply, #state{}, timeout()} |
-                               {stop, Reason :: term(), #state{}}.
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
             #state{ofs_port_no = OfsPortNo} = State) ->
     handle_frame(Frame, OfsPortNo),
@@ -382,7 +236,6 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
--spec terminate(Reason :: term(), #state{}) -> ok.
 terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
     lists:foldl(fun(#ofs_port_queue{key = {_, QueueId}},
                     StateAcc) ->
@@ -393,16 +246,73 @@ terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
     linc_us3_port_native:close(State).
 
 %% @private
--spec code_change(Vsn :: term() | {down, Vsn :: term()},
-                  #state{}, Extra :: term()) ->
-                         {ok, #state{}} |
-                         {error, Reason :: term()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Internal functions
 %%%-----------------------------------------------------------------------------
+
+-spec get_queues(ofs_port_no()) -> list(ofs_port_queue()).
+get_queues(PortNo) ->
+    case application:get_env(linc, queues) of
+        undefined ->
+            [];
+        {ok, _} ->
+            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
+            ets:match_object(ofs_port_queue, MatchSpec)
+    end.
+
+do_send(Pkt, PortNo) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            gen_server:cast(Pid, {send, Pkt})
+    end.
+
+do_send_with_queue(Pkt, PortNo) ->
+    case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
+        %% XXX: move no_fwd to ETS and check it
+        [#ofs_port_queue{queue_pid = Pid}] ->
+            linc_us3_queue:send(Pid, Pkt);
+        [] ->
+            case ets:lookup(linc_ports, PortNo) of
+                [_] -> bad_queue;
+                [ ] -> bad_port
+            end
+    end.
+
+-spec add(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
+add(physical, Opts) ->
+    case supervisor:start_child(linc_us3_port_sup, [Opts]) of
+        {ok, Pid} ->
+            ?INFO("Created port: ~p", [Opts]),
+            Pid;
+        {error, shutdown} ->
+            ?ERROR("Cannot create port ~p", [Opts]),
+            error
+    end;
+add(logical, _Opts) ->
+    error;
+add(reserved, _Opts) ->
+    error.
+
+%% @doc Removes given OF port from the switch, as well as its port stats entry,
+%% all queues connected to it and their queue stats entries.
+-spec remove(ofp_port_no()) -> ok | bad_port.
+remove(PortNo) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            supervisor:terminate_child(linc_us3_port_sup, Pid)
+    end.
+
+%% @doc Return list of all OF ports present in the switch.
+-spec list_ports() -> [#ofs_port{}].
+list_ports() ->
+    ets:tab2list(linc_ports).
 
 -spec setup_port_and_queues(#state{}) -> #state{}.
 setup_port_and_queues(#state{interface = Interface,

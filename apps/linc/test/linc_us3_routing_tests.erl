@@ -117,11 +117,12 @@ miss_drop() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    ok = linc_us3_flow:initialize(),
-    mock(?MOCKED).
+    State = linc_us3_flow:initialize(),
+    mock(?MOCKED),
+    State.
 
-teardown(_) ->
-    ok = linc_us3_flow:terminate(),
+teardown(State) ->
+    ok = linc_us3_flow:terminate(State),
     unmock(?MOCKED).
 
 flow_entry(FlowId, Matches) ->

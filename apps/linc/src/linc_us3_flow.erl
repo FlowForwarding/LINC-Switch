@@ -21,7 +21,7 @@
 
 %% API
 -export([initialize/0,
-         terminate/0,
+         terminate/1,
          table_mod/1,
          modify/1,
          get_flow_table/1,
@@ -41,8 +41,10 @@
 -include("linc_us3.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
+-record(state,{tref}).
+
 %% @doc Initialize the flow tables module. Only to be called on system startup.
--spec initialize() -> ok.
+-spec initialize() -> State::term().
 initialize() ->
     %% Flows
     ets:new(flow_table_counters,
@@ -62,17 +64,18 @@ initialize() ->
              {keypos, #flow_timer.id},
              {write_concurrency, true}]),
 
-    %% timer:apply_interval(1000, linc_us3_flow, check_timers, []),
+    {ok,Tref} = timer:apply_interval(1000, linc_us3_flow, check_timers, []),
 
     ets:new(flow_entry_counters,
             [named_table, public,
              {keypos, #flow_entry_counter.id},
              {write_concurrency, true}]),
-    ok.
+    #state{tref=Tref}.
 
 %% @doc Terminate the flow table module. Only to be called on system shutdown.
--spec terminate() -> ok.
-terminate() ->
+-spec terminate(#state{}) -> ok.
+terminate(#state{tref=Tref}) ->
+    timer:cancel(Tref),
     [ets:delete(flow_table_name(Id)) || Id <- lists:seq(0, ?OFPTT_MAX)],
     ets:delete(flow_table_config),
     ets:delete(flow_table_counters),
@@ -279,8 +282,7 @@ get_aggregate_stats(#ofp_aggregate_stats_request{
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
-    %%TODO
-    #ofp_table_stats_reply{}.
+    #ofp_table_stats_reply{stats=get_table_stats()}.
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
@@ -309,11 +311,16 @@ update_match_counters(TableId, FlowId, PktByteSize) ->
 %% @doc Reset the idle timeout timer for a specific flow.
 -spec reset_idle_timeout(TableId :: integer(), FlowId :: integer()) -> ok.
 reset_idle_timeout(_TableId, FlowId) ->
-    #flow_timer{idle_timeout = IdleTimeout} = get_flow_timer(FlowId),
-    Now = os:timestamp(),
-    true = ets:update_element(flow_timers,FlowId,
-                              {#flow_timer.expire, calc_timeout(Now, IdleTimeout)}),
-    ok.
+    case get_flow_timer(FlowId) of
+        #flow_timer{idle_timeout = 0} ->
+            ok;
+        #flow_timer{idle_timeout = IdleTimeout}=_R ->
+            Now = os:timestamp(),
+            Next = calc_timeout(Now, IdleTimeout),
+            true = ets:update_element(flow_timers,FlowId,
+                                      {#flow_timer.expire, Next}),
+            ok
+    end.
 
 %%=============================================================================
 
@@ -427,8 +434,8 @@ send_flow_removed(TableId,
        received_packets = Packets,
        received_bytes   = Bytes}] = ets:lookup(flow_entry_counters,FlowId),
 
-    [#flow_timer{idle_timeout = IdleTimeout,
-                 hard_timeout = HardTimeout}] = get_flow_timer(FlowId),
+    #flow_timer{idle_timeout = IdleTimeout,
+                hard_timeout = HardTimeout} = get_flow_timer(FlowId),
 
     Body = #ofp_flow_removed{
               cookie = Cookie,
@@ -451,8 +458,6 @@ send_flow_removed(TableId,
 create_flow_entry(#ofp_flow_mod{priority = Priority,
                                 cookie = Cookie,
                                 flags = Flags,
-                                idle_timeout = IdleTimeout,
-                                hard_timeout = HardTimeout,
                                 match = Match,
                                 instructions = Instructions}) ->
     #flow_entry{id = {Priority, make_ref()},
@@ -794,8 +799,8 @@ get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                   received_packets = Packets,
                                   received_bytes   = Bytes}] = Counters,
 
-                              [#flow_timer{idle_timeout = IdleTimeout,
-                                           hard_timeout = HardTimeout}] = get_flow_timer(FlowId),
+                              #flow_timer{idle_timeout = IdleTimeout,
+                                          hard_timeout = HardTimeout} = get_flow_timer(FlowId),
                                   
                               Stats = #ofp_flow_stats{
                                          table_id = TableId,
@@ -842,6 +847,30 @@ merge_aggregate_stats(Stats) ->
                         {PacketsAcc+Packets, BytesAcc+Bytes, FlowsAcc+Flows}
                 end,{0,0,0},Stats).
 
+get_table_stats() ->
+    [get_table_stats1(TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)].
+
+get_table_stats1(TableId) ->
+    [#flow_table_counter{packet_lookups = Lookups,
+                         packet_matches = Matches}]
+        = ets:lookup(flow_table_counters, TableId),
+    #ofp_table_stats{
+       table_id = TableId,
+       name = list_to_binary(io_lib:format("Flow Table 0x~2.16.0b", [TableId])),
+       match = ?SUPPORTED_MATCH_FIELDS,
+       wildcards = ?SUPPORTED_WILDCARDS,
+       write_actions = ?SUPPORTED_WRITE_ACTIONS,
+       apply_actions = ?SUPPORTED_APPLY_ACTIONS,
+       write_setfields = ?SUPPORTED_WRITE_SETFIELDS,
+       apply_setfields = ?SUPPORTED_APPLY_SETFIELDS,
+       metadata_match = ?SUPPORTED_METADATA_MATCH, %<<-1:64>>,
+       metadata_write = ?SUPPORTED_METADATA_WRITE, %<<-1:64>>,
+       instructions = ?SUPPORTED_INSTRUCTIONS,
+       config = get_table_config(TableId),
+       max_entries = ?MAX_FLOW_TABLE_ENTRIES,
+       active_count = ets:info(flow_table_name(TableId),size),
+       lookup_count = Lookups,
+       matched_count = Matches}.
 
 %%============================================================================
 %% Various timer functions
@@ -858,7 +887,12 @@ create_flow_timer(TableId, FlowId, IdleTime, HardTime) ->
                                  }).
 
 get_flow_timer(FlowId) ->
-    ets:lookup(flow_timers,FlowId).
+    case ets:lookup(flow_timers,FlowId) of
+        [Rec] ->
+            Rec;
+        [] ->
+            undefined
+    end.
 
 delete_flow_timer(FlowId) ->
     ets:delete(flow_timers,FlowId).
@@ -875,24 +909,34 @@ calc_timeout({Mega,Secs,Micro},Time) ->
 
 check_timers() ->
     Now = os:timestamp(),
-    ets:foldl(fun (#flow_timer{expire=infinity,remove=infinity}, ok) ->
-                      ok;
-                  (#flow_timer{id = FlowId,
-                               table = TableId,
-                               expire = Expire,
-                               remove = _Remove}, ok) when Expire<Now ->
-                      delete_flow(TableId, get_flow(TableId, FlowId), idle_timeout),
-                      ok;
-                  (#flow_timer{id = FlowId,
-                               table = TableId,
-                               expire = _Expire,
-                               remove = Remove}, ok) when Remove<Now ->
-                      delete_flow(TableId, get_flow(TableId, FlowId), hard_timeout),
-                      ok;
-                   (_,_) ->
-                      ok
+    ets:foldl(fun (Flow, ok) ->
+                      case hard_timeout(Now, Flow) of
+                          false ->
+                              idle_timeout(Now, Flow),
+                              ok;
+                          true ->
+                              ok
+                      end
               end, ok, flow_timers).
-    
+
+hard_timeout(Now, #flow_timer{remove = infinity}) ->
+    false;
+hard_timeout(Now, #flow_timer{id = FlowId, table = TableId, remove = Remove})
+  when Remove<Now ->
+    delete_flow(TableId, get_flow(TableId, FlowId), hard_timeout),
+    true;
+hard_timeout(_Now, _Flow) ->
+    false.
+
+idle_timeout(Now, #flow_timer{expire = infinity}) ->
+    false;
+idle_timeout(Now, #flow_timer{id = FlowId, table = TableId, expire = Expire})
+  when Expire<Now ->
+    delete_flow(TableId, get_flow(TableId, FlowId), idle_timeout),
+    true;
+idle_timeout(_Now, _Flow) ->
+    false.
+
 %%============================================================================
 %% Various lookup functions
 

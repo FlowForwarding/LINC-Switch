@@ -923,7 +923,7 @@ check_timers() ->
                       end
               end, ok, flow_timers).
 
-hard_timeout(Now, #flow_timer{remove = infinity}) ->
+hard_timeout(_Now, #flow_timer{remove = infinity}) ->
     false;
 hard_timeout(Now, #flow_timer{id = FlowId, table = TableId, remove = Remove})
   when Remove<Now ->
@@ -932,7 +932,7 @@ hard_timeout(Now, #flow_timer{id = FlowId, table = TableId, remove = Remove})
 hard_timeout(_Now, _Flow) ->
     false.
 
-idle_timeout(Now, #flow_timer{expire = infinity}) ->
+idle_timeout(_Now, #flow_timer{expire = infinity}) ->
     false;
 idle_timeout(Now, #flow_timer{id = FlowId, table = TableId, expire = Expire})
   when Expire<Now ->

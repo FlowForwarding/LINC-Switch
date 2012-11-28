@@ -41,6 +41,8 @@
 -include("linc_us3.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
+-define(MAX64, 16#FFFFFFFF). % Max countervalue for 64 bit counters
+
 -record(state,{tref}).
 
 %% @doc Initialize the flow tables module. Only to be called on system startup.
@@ -288,7 +290,7 @@ get_table_stats(#ofp_table_stats_request{}) ->
 -spec update_lookup_counter(TableId :: integer()) -> ok.
 update_lookup_counter(TableId) ->
     ets:update_counter(flow_table_counters, TableId,
-                       [{#flow_table_counter.packet_lookups, 1}]),
+                       [{#flow_table_counter.packet_lookups, 1, ?MAX64, 0}]),
     ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
@@ -297,11 +299,13 @@ update_lookup_counter(TableId) ->
 update_match_counters(TableId, FlowId, PktByteSize) ->
     try
         ets:update_counter(flow_table_counters, TableId,
-                           [{#flow_table_counter.packet_lookups, 1},
-                            {#flow_table_counter.packet_matches, 1}]),
+                           [{#flow_table_counter.packet_lookups, 1, ?MAX64, 0},
+                            {#flow_table_counter.packet_matches, 1, ?MAX64, 0}]),
         ets:update_counter(flow_entry_counters,
-                           FlowId,[{#flow_entry_counter.received_packets, 1},
-                                   {#flow_entry_counter.received_bytes, PktByteSize}]),
+                           FlowId,[{#flow_entry_counter.received_packets,
+                                    1, ?MAX64, 0},
+                                   {#flow_entry_counter.received_bytes, 
+                                    PktByteSize, ?MAX64, 0}]),
         ok
     catch
         _:_ ->

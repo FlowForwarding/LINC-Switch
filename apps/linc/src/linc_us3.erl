@@ -22,12 +22,7 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([route/1,
-         add_port/2,
-         remove_port/1,
-         parse_ofs_pkt/2,
-         get_group_stats/0,
-         get_group_stats/1]).
+-export([]).
 
 %% gen_switch callbacks
 -export([start/1,
@@ -65,62 +60,6 @@
 %%% Switch API
 %%%-----------------------------------------------------------------------------
 
--spec route(#ofs_pkt{}) -> pid().
-route(Pkt) ->
-    proc_lib:spawn_link(linc_us3_routing, do_route, [Pkt]).
-
--spec add_port(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
-add_port(physical, Opts) ->
-    case supervisor:start_child(linc_us3_port_sup, [Opts]) of
-        {ok, Pid} ->
-            ?INFO("Created port: ~p", [Opts]),
-            Pid;
-        {error, shutdown} ->
-            ?ERROR("Cannot create port ~p", [Opts]),
-            error
-    end;
-add_port(logical, _Opts) ->
-    error;
-add_port(reserved, _Opts) ->
-    error.
-
--spec remove_port(ofp_port_no()) -> ok | bad_port.
-remove_port(PortNo) ->
-    linc_us3_port:remove(PortNo).
-
--spec parse_ofs_pkt(binary(), ofp_port_no()) -> #ofs_pkt{}.
-parse_ofs_pkt(Binary, PortNum) ->
-    try
-        Packet = pkt:decapsulate(Binary),
-        Fields = [linc_us3_convert:ofp_field(in_port, <<PortNum:32>>)
-                  || is_integer(PortNum)]
-            ++ linc_us3_convert:packet_fields(Packet),
-        #ofs_pkt{packet = Packet,
-                 fields =
-                     #ofp_match{fields = Fields},
-                 in_port = PortNum,
-                 size = byte_size(Binary)}
-    catch
-        E1:E2 ->
-            ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
-                   [Binary, E1, E2]),
-            io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
-            #ofs_pkt{}
-    end.
-
--spec get_group_stats() -> [ofp_group_stats()].
-get_group_stats() ->
-    ets:tab2list(group_stats).
-
--spec get_group_stats(ofp_group_id()) -> ofp_group_stats() | undefined.
-get_group_stats(GroupId) ->
-    case ets:lookup(group_stats, GroupId) of
-        [] ->
-            undefined;
-        [Any] ->
-            Any
-    end.
-
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
 %%%-----------------------------------------------------------------------------
@@ -128,53 +67,18 @@ get_group_stats(GroupId) ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    UserspaceSup = {linc_us3_sup, {linc_us3_sup, start_link, []},
-                    permanent, 5000, supervisor, [linc_us3_sup]},
-    supervisor:start_child(linc_sup, UserspaceSup),
-
-    FlowState = linc_us3_flow:initialize(),
+    linc_sup:start_backend_sup(),
+    linc_us3_port:initialize(),
     linc_us3_groups:create(),
-
-    %% Ports
-    ofs_ports = ets:new(ofs_ports, [named_table, public,
-                                    {keypos, #ofs_port.number},
-                                    {read_concurrency, true}]),
-    port_stats = ets:new(port_stats,
-                         [named_table, public,
-                          {keypos, #ofp_port_stats.port_no},
-                          {read_concurrency, true}]),
-
-    case application:get_env(linc, queues) of
-        undefined ->
-            no_queues;
-        {ok, _} ->
-            linc_us3_queue:start()
-    end,
-
-    {ok, BackendOpts} = application:get_env(linc, backends),
-    {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
-    {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
-    [add_port(physical, Port) || Port <- UserspacePorts],
-
-    {ok, #state{flow_state=FlowState}}.
+    FlowState = linc_us3_flow:initialize(),
+    {ok, #state{flow_state = FlowState}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
-stop(#state{flow_state=FlowState}) ->
-    [linc_us3_port:remove(PortNo) ||
-        #ofs_port{number = PortNo} <- linc_us3_port:list_ports()],
-    %% Flows
+stop(#state{flow_state = FlowState}) ->
     linc_us3_flow:terminate(FlowState),
     linc_us3_groups:destroy(),
-    %% Ports
-    ets:delete(ofs_ports),
-    ets:delete(port_stats),
-    case application:get_env(linc, queues) of
-        undefined ->
-            ok;
-        {ok, _} ->
-            linc_us3_queue:stop()
-    end,
+    linc_us3_port:terminate(),
     ok.
 
 -spec handle_message(ofp_message_body(), state()) ->
@@ -234,11 +138,11 @@ ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
 ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
-    case linc_us3_port:change_config(PortNo, PortMod) of
+    case linc_us3_port:modify(PortMod) of
         ok ->
             {noreply, State};
-        {error, Code} ->
-            ErrorMsg = #ofp_error_msg{type = port_mod_failed,
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
                                       code = Code},
             {reply, ErrorMsg, State}
     end.
@@ -264,7 +168,8 @@ ofp_group_mod(State, #ofp_group_mod{} = GroupMod) ->
 ofp_packet_out(State, #ofp_packet_out{actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    linc_us3_actions:apply_list(parse_ofs_pkt(Data, InPort), Actions),
+    OfsPkt = linc_us3_packet_edit:binary_to_record(Data, InPort),
+    linc_us3_actions:apply_list(OfsPkt, Actions),
     {noreply, State}.
 
 %% @doc Reply to echo request.
@@ -339,29 +244,16 @@ ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
                                     {reply, ofp_message(), #state{}}.
-ofp_port_stats_request(State, #ofp_port_stats_request{port_no = PortNo}) ->
-    %% TODO: Should we return error when bad_port is encountered?
-    Stats = case linc_us3_port:get_port_stats(PortNo) of
-                bad_port ->
-                    [];
-                PortStats ->
-                    [PortStats]
-            end,
-    {reply, #ofp_port_stats_reply{stats = Stats}, State}.
+ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
+    Reply = linc_us3_port:get_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
-ofp_queue_stats_request(State, #ofp_queue_stats_request{port_no = PortNo,
-                                                        queue_id = QueueId}) ->
-    %% TODO: Should we return error when undefined is encountered?
-    Stats = case linc_us3_port:get_queue_stats(PortNo, QueueId) of
-                undefined ->
-                    [];
-                QueueStats ->
-                    [QueueStats]
-            end,
-    {reply, #ofp_queue_stats_reply{stats = Stats}, State}.
+ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
+    Reply = linc_us3_port:get_queue_stats(Request),
+    {reply, Reply, State}.
 
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->

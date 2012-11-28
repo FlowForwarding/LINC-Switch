@@ -19,7 +19,8 @@
 %% @doc Module defines tools and functions for packet manipulations
 -module(linc_us3_packet_edit).
 
--export([find/2,
+-export([binary_to_record/2,
+         find/2,
          find_and_edit/3,
          find_and_edit_skip/4,
          find_outermost_header/2,
@@ -27,6 +28,29 @@
 
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us3.hrl").
+
+%%------------------------------------------------------------------------------
+%% @doc Parse binary representation of OF-Protocol packets and convert them
+%% to record representation.
+-spec binary_to_record(binary(), ofp_port_no()) -> #ofs_pkt{}.
+binary_to_record(Binary, Port) ->
+    try
+        Packet = pkt:decapsulate(Binary),
+        Fields = [linc_us3_convert:ofp_field(in_port, <<Port:32>>)
+                  || is_integer(Port)]
+            ++ linc_us3_convert:packet_fields(Packet),
+        #ofs_pkt{packet = Packet,
+                 fields =
+                     #ofp_match{fields = Fields},
+                 in_port = Port,
+                 size = byte_size(Binary)}
+    catch
+        E1:E2 ->
+            ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
+                   [Binary, E1, E2]),
+            io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
+            #ofs_pkt{}
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc Looks for given element/tag in packet, returns 'not_found' or the
@@ -43,7 +67,6 @@ find_2([X | _], Tag, Index) when element(1, X) =:= Tag ->
     {Index, X};
 find_2([_ | Rest], Tag, Index) ->
     find_2(Rest, Tag, Index+1).
-
 
 %%------------------------------------------------------------------------------
 %% @doc Scans the packet Pkt until first element of type Tag found, runs

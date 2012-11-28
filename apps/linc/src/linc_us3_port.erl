@@ -29,19 +29,18 @@
 
 %% API
 -export([start_link/1,
+         initialize/0,
+         terminate/0,
+         modify/1,
          send/2,
-         change_config/2,
-         list_ports/0,
-         list_queues/1,
-         get_port_stats/0,
-         get_port_stats/1,
-         get_queue_stats/0,
+         get_stats/1,
          get_queue_stats/1,
-         get_queue_stats/2,
-         attach_queue/3,
-         detach_queue/2,
-         remove/1,
+         get_state/1,
+         set_state/2,
          is_valid/1]).
+
+-include("linc_us3.hrl").
+-include("linc_us3_port.hrl").
 
 %% gen_server callbacks
 -export([init/1,
@@ -51,23 +50,12 @@
          terminate/2,
          code_change/3]).
 
--include("linc_us3.hrl").
-
--record(state, {port :: port(),
-                port_ref :: pid(),
-                socket :: integer(),
-                ifindex :: integer(),
-                epcap_pid :: pid(),
-                interface :: string(),
-                ofs_port_no :: ofp_port_no(),
-                rate_bps :: integer(),
-                throttling_ets :: ets:tid()}).
-
 -define(DEFAULT_QUEUE, default).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
 %%%-----------------------------------------------------------------------------
+
 %% @doc Start Open Flow port with provided configuration.
 -spec start_link(list(ofs_port_config())) -> {ok, pid()} |
                                              ignore |
@@ -75,10 +63,55 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
+-spec initialize() -> ok.
+initialize() ->
+    linc_ports = ets:new(linc_ports, [named_table, public,
+                                     {keypos, #ofs_port.number},
+                                     {read_concurrency, true}]),
+    linc_port_stats = ets:new(linc_port_stats,
+                         [named_table, public,
+                          {keypos, #ofp_port_stats.port_no},
+                          {read_concurrency, true}]),
+    case application:get_env(linc, queues) of
+        undefined ->
+            no_queues;
+        {ok, _} ->
+            linc_us3_queue:start()
+    end,
+    {ok, BackendOpts} = application:get_env(linc, backends),
+    {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
+    {ports, UserspacePorts} = lists:keyfind(ports, 1, UserspaceOpts),
+    [add(physical, Port) || Port <- UserspacePorts],
+    ok.
+
+-spec terminate() -> ok.
+terminate() ->
+    [ok = remove(PortNo) || #ofs_port{number = PortNo} <- list_ports()],
+    ets:delete(linc_ports),
+    ets:delete(linc_port_stats),
+    case application:get_env(linc, queues) of
+        undefined ->
+            ok;
+        {ok, _} ->
+            linc_us3_queue:stop()
+    end.
+
+%% @doc Change config of the given OF port according to the provided port mod.
+-spec modify(ofp_port_mod()) -> ok | {error, {Type :: atom(), Code :: atom()}}.
+modify(#ofp_port_mod{port_no = PortNo} = PortMod) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_port, code}};
+        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
+        %%           {error, bad_hw_addr};
+        Pid ->
+            gen_server:call(Pid, {port_mod, PortMod})
+    end.
+
 %% @doc Send OF packet to the OF port.
 -spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
 send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
-    Ports = ets:tab2list(ofs_ports),
+    Ports = ets:tab2list(linc_ports),
     [send(Pkt, PortNo)
      || #ofs_port{number = PortNo} <- Ports, PortNo /= InPort];
 send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
@@ -95,6 +128,142 @@ send(Pkt, PortNo) when is_integer(PortNo) ->
 send(_Pkt, UnsupportedPort) ->
     ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
 
+%% @doc Return port stats record for the given OF port.
+-spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply().
+get_stats(#ofp_port_stats_request{}) ->
+    #ofp_port_stats_reply{}.
+
+%% @doc Return queue stats for the given OF port and queue id.
+-spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
+get_queue_stats(#ofp_queue_stats_request{}) ->
+    case ets:lookup(ofs_port_queue, {port_no, queue_id}) of
+        [] ->
+            undefined;
+        [Any] ->
+            queue_stats_convert(Any)
+    end,
+    #ofp_queue_stats_reply{}.
+
+-spec get_state(ofp_port_no()) -> ofp_port_state().
+get_state(_PortNo) ->
+    live.
+
+-spec set_state(ofp_port_no(), ofp_port_state()) -> ok.
+set_state(_PortNo, _State) ->
+    ok.
+
+%% @doc Test if a port exists.
+-spec is_valid(ofp_port_no()) -> boolean().
+is_valid(OfsPort) ->
+    ets:member(linc_ports, OfsPort).
+
+%%%-----------------------------------------------------------------------------
+%%% gen_server callbacks
+%%%-----------------------------------------------------------------------------
+
+%% @private
+init({OfsPortNo, PortOpts}) ->
+    process_flag(trap_exit, true),
+    %% epcap crashes if this dir does not exist.
+    filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
+    {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
+    State = #state{interface = Interface, ofs_port_no = OfsPortNo},
+
+    case re:run(Interface, "^tap.*$", [{capture, none}]) of
+        %% When switch connects to a tap interface, erlang receives file
+        %% descriptor to read/write ethernet frames directly from the
+        %% desired /dev/tapX character device. No socket communication
+        %% is involved.
+        match ->
+            case linc_us3_port_native:tap(Interface, PortOpts) of
+                {stop, shutdown} ->
+                    {stop, shutdown};
+                {Port, Pid} ->
+                    State2 = State#state{port = Port, port_ref = Pid},
+                    NewState = setup_port_and_queues(State2),
+                    {ok, NewState}
+                end;
+        %% When switch connects to a hardware interface such as eth0
+        %% then communication is handled by two channels:
+        %% * receiving ethernet frames is done by libpcap wrapped-up by
+        %%   a epcap application
+        %% * sending ethernet frames is done by writing to
+        %%   a RAW socket binded with given network interface.
+        %%   Handling of RAW sockets differs between OSes.
+        nomatch ->
+            {Socket, IfIndex, EpcapPid} = linc_us3_port_native:eth(Interface),
+            State2 = State#state{socket = Socket,
+                                 ifindex = IfIndex,
+                                 epcap_pid = EpcapPid},
+            NewState = setup_port_and_queues(State2),
+            {ok, NewState}
+    end.
+
+%% @private
+handle_call({port_mod, #ofp_port_mod{}}, _From, State) ->
+    {reply, ok, State};
+handle_call(_Msg, _From, State) ->
+    {reply, ok, State}.
+
+%% @private
+handle_cast({send, #ofs_pkt{packet = Packet}},
+            #state{socket = Socket,
+                   port = Port,
+                   ifindex = Ifindex} = State) ->
+    Frame = pkt:encapsulate(Packet),
+    case {Port, Ifindex} of
+        {undefined, _} ->
+            linc_us3_port_native:send(Socket, Ifindex, Frame);
+        {_, undefined} ->
+            port_command(Port, Frame)
+    end,
+    {noreply, State}.
+
+%% @private
+handle_info({packet, _DataLinkType, _Time, _Length, Frame},
+            #state{ofs_port_no = OfsPortNo} = State) ->
+    handle_frame(Frame, OfsPortNo),
+    {noreply, State};
+handle_info({Port, {data, Frame}}, #state{ofs_port_no = OfsPortNo,
+                                          port = Port} = State) ->
+    handle_frame(Frame, OfsPortNo),
+    {noreply, State};
+handle_info({'EXIT', _Pid, {port_terminated, 1}},
+            #state{interface = Interface} = State) ->
+    ?ERROR("Port for interface ~p exited abnormally",
+                [Interface]),
+    {stop, normal, State};
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
+    lists:foldl(fun(#ofs_port_queue{key = {_, QueueId}},
+                    StateAcc) ->
+                        do_detach_queue(StateAcc, QueueId)
+                  end, State, get_queues(PortNo)),
+    true = ets:delete(linc_ports, PortNo),
+    true = ets:delete(linc_port_stats, PortNo),
+    linc_us3_port_native:close(State).
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%-----------------------------------------------------------------------------
+%%% Internal functions
+%%%-----------------------------------------------------------------------------
+
+-spec get_queues(ofp_port_no()) -> list(#ofs_port_queue{}).
+get_queues(PortNo) ->
+    case application:get_env(linc, queues) of
+        undefined ->
+            [];
+        {ok, _} ->
+            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
+            ets:match_object(ofs_port_queue, MatchSpec)
+    end.
+
 do_send(Pkt, PortNo) ->
     case get_port_pid(PortNo) of
         bad_port ->
@@ -109,112 +278,26 @@ do_send_with_queue(Pkt, PortNo) ->
         [#ofs_port_queue{queue_pid = Pid}] ->
             linc_us3_queue:send(Pid, Pkt);
         [] ->
-            case ets:lookup(ofs_ports, PortNo) of
+            case ets:lookup(linc_ports, PortNo) of
                 [_] -> bad_queue;
                 [ ] -> bad_port
             end
     end.
 
-%% @doc Change config of the given OF port according to the provided port mod.
--spec change_config(ofp_port_no(), ofp_port_mod()) ->
-                           {error, bad_port | bad_hw_addr} | ok.
-change_config(PortNo, PortMod) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            {error, bad_port};
-        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
-        %%           {error, bad_hw_addr};
-        Pid ->
-            gen_server:cast(Pid, {change_config, PortMod})
-    end.
-
-%% @doc Return list of all OF ports present in the switch.
--spec list_ports() -> [#ofs_port{}].
-list_ports() ->
-    ets:tab2list(ofs_ports).
-
-%% @doc Return list of queues connected to the given OF port.
--spec list_queues(ofp_port_no()) -> [ofp_packet_queue()] | bad_port.
-list_queues(PortNo) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, list_queues)
-    end.
-
-%% @doc Return list of port stats records for all OF ports in the switch.
--spec get_port_stats() -> [ofp_port_stats()].
-get_port_stats() ->
-    ets:tab2list(port_stats).
-
-%% @doc Retuen port stats record for the given OF port.
--spec get_port_stats(ofp_port_no()) -> ofp_port_stats() | bad_port.
-get_port_stats(PortNo) ->
-    %% TODO: Add support for PORT_ANY port number
-    case ets:lookup(port_stats, PortNo) of
-        [] ->
-            bad_port;
-        [Any] ->
-            Any
-    end.
-
-%% @doc Return queue stats for all queues installed in the switch.
--spec get_queue_stats() -> [ofp_queue_stats()].
-get_queue_stats() ->
-    lists:map(fun(E) ->
-                      queue_stats_convert(E)
-              end, ets:tab2list(ofs_port_queue)).
-
-get_queues(PortNo) ->
-    case application:get_env(linc, queues) of
-        undefined ->
-            [];
-        {ok, _} ->
-            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
-            ets:match_object(ofs_port_queue, MatchSpec)
-    end.
-
-%% @doc Return queue stats for all queues connected to the given OF port.
--spec get_queue_stats(ofp_port_no()) -> [ofp_queue_stats()].
-get_queue_stats(PortNo) ->
-    lists:map(fun(E) ->
-                      queue_stats_convert(E)
-              end, get_queues(PortNo)).
-
-%% @doc Return queue stats for the given OF port and queue id.
--spec get_queue_stats(ofp_port_no(), ofp_queue_id()) ->
-                             ofp_queue_stats() | undefined.
-get_queue_stats(PortNo, QueueId) ->
-    case ets:lookup(ofs_port_queue, {PortNo, QueueId}) of
-        [] ->
-            undefined;
-        [Any] ->
-            queue_stats_convert(Any)
-    end.
-
-%% @doc Create and attach queue with the given queue id and configuration to
-%% the given OF port. Initializes also queue stats for this queue.
--spec attach_queue(ofp_port_no(), ofp_queue_id(), [ofp_queue_property()]) ->
-                          ok | bad_port.
-attach_queue(PortNo, QueueId, Properties) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, {attach_queue, QueueId, Properties})
-    end.
-
-%% @doc Remove queue with the given queue id from the given OF port.
-%% Removes also queue stats entry for this queue.
--spec detach_queue(ofp_port_no(), ofp_queue_id()) -> ok | bad_port.
-detach_queue(PortNo, QueueId) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:call(Pid, {detach_queue, QueueId})
-    end.
+-spec add(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
+add(physical, Opts) ->
+    case supervisor:start_child(linc_us3_port_sup, [Opts]) of
+        {ok, Pid} ->
+            ?INFO("Created port: ~p", [Opts]),
+            Pid;
+        {error, shutdown} ->
+            ?ERROR("Cannot create port ~p", [Opts]),
+            error
+    end;
+add(logical, _Opts) ->
+    error;
+add(reserved, _Opts) ->
+    error.
 
 %% @doc Removes given OF port from the switch, as well as its port stats entry,
 %% all queues connected to it and their queue stats entries.
@@ -227,106 +310,25 @@ remove(PortNo) ->
             supervisor:terminate_child(linc_us3_port_sup, Pid)
     end.
 
-%% @doc Test if a port exists.
--spec is_valid(ofp_port_no()) -> boolean().
-is_valid(OfsPort) ->
-    ets:member(ofs_ports, OfsPort).
+%% @doc Return list of all OF ports present in the switch.
+-spec list_ports() -> [#ofs_port{}].
+list_ports() ->
+    ets:tab2list(linc_ports).
 
-%%%-----------------------------------------------------------------------------
-%%% gen_server callbacks
-%%%-----------------------------------------------------------------------------
+-spec setup_port_and_queues(#state{}) -> #state{}.
+setup_port_and_queues(#state{interface = Interface,
+                            ofs_port_no = OfsPortNo} = State) ->
+    OfsPort = #ofs_port{number = OfsPortNo,
+                        type = physical,
+                        pid = self(),
+                        iface = Interface,
+                        port = #ofp_port{port_no = OfsPortNo}},
+    ets:insert(linc_ports, OfsPort),
+    ets:insert(linc_port_stats, #ofp_port_stats{port_no = OfsPortNo}),
+    setup_queues(State).
 
-%% @private
--spec init(list(tuple())) -> {ok, #state{}} |
-                             {ok, #state{}, timeout()} |
-                             ignore |
-                             {stop, Reason :: term()}.
-init({OfsPortNo, PortOpts}) ->
-    process_flag(trap_exit, true),
-    %% epcap crashes if this dir does not exist.
-    filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
-
-    {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-
-    State = case re:run(Interface, "^tap.*$", [{capture, none}]) of
-                %% When switch connects to a tap interface, erlang receives file
-                %% descriptor to read/write ethernet frames directly from the
-                %% desired /dev/tapX character device. No socket communication
-                %% is involved.
-                match ->
-                    case tuncer:create(Interface) of
-                        {ok, Ref} ->
-                            case os:type() of
-                                %% Under MacOS we configure TAP interfaces
-                                %% programatically as they can't be created in
-                                %% persistent mode before node startup.
-                                {unix, darwin} ->
-                                    {ip, IP} = lists:keyfind(ip, 1, PortOpts),
-                                    ok = tuncer:up(Ref, IP);
-                                %% We assume that under linux TAP interfaces are
-                                %% already set up in persistent state and
-                                %% configured with proper IP addresses.
-                                {unix, linux} ->
-                                    ok
-                            end,
-                            Fd = tuncer:getfd(Ref),
-                            Port = open_port({fd, Fd, Fd}, [binary]),
-                            #state{port = Port,
-                                   port_ref = Ref,
-                                   ofs_port_no = OfsPortNo};
-                        {error, Error} ->
-                            ?ERROR("Tuncer error ~p for interface ~p",
-                                   [Error, Interface]),
-                            {stop, shutdown}
-                    end;
-                %% When switch connects to a hardware interface such as eth0
-                %% then communication is handled by two channels:
-                %% * receiving ethernet frames is done by libpcap wrapped-up by
-                %%   a epcap application
-                %% * sending ethernet frames is done by writing to
-                %%   a RAW socket binded with given network interface.
-                %%   Handling of RAW sockets differs between OSes.
-                nomatch ->
-                    {ok, Pid} = epcap:start([{no_register, true},
-                                             {promiscuous, true},
-                                             {interface, Interface},
-                                             %% to work on ipv4-less interfaces
-                                             {no_lookupnet, true},
-                                             %% for ethernet-only (without taps and bridges)
-                                             {filter_incoming, true},
-                                             {filter, ""}]),
-                    {S, I} = case os:type() of
-                                 {unix, darwin} ->
-                                     bpf_raw_socket(Interface);
-                                 {unix, netbsd} ->
-                                     bpf_raw_socket(Interface);
-                                 {unix, linux} ->
-                                     linux_raw_socket(Interface)
-                             end,
-                    #state{socket = S,
-                           ifindex = I,
-                           epcap_pid = Pid,
-                           ofs_port_no = OfsPortNo}
-            end,
-    case State of
-        {stop, shutdown} ->
-            {stop, shutdown};
-        _ ->
-            OfsPort = #ofs_port{number = OfsPortNo,
-                                type = physical,
-                                pid = self(),
-                                iface = Interface,
-                                port = #ofp_port{port_no = OfsPortNo}},
-            ets:insert(ofs_ports, OfsPort),
-            ets:insert(port_stats, #ofp_port_stats{port_no = OfsPortNo}),
-            State1 = State#state{interface = Interface,
-                                 ofs_port_no = OfsPortNo},
-
-            PortState = setup_queues(State1, OfsPortNo),
-            {ok, PortState}
-    end.
-
-setup_queues(State, PortNo) ->
+-spec setup_queues(#state{}) -> #state{}.
+setup_queues(#state{ofs_port_no = PortNo} = State) ->
     case application:get_env(linc, queues) of
         undefined ->
             State;
@@ -355,146 +357,25 @@ setup_queues(State, PortNo) ->
                        end, State3, Queues)
     end.
 
-%% @private
--spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-                  #state{}) ->
-                         {reply, Reply :: term(), #state{}} |
-                         {reply, Reply :: term(), #state{}, timeout()} |
-                         {noreply, #state{}} |
-                         {noreply, #state{}, timeout()} |
-                         {stop, Reason :: term() , Reply :: term(), #state{}} |
-                         {stop, Reason :: term(), #state{}}.
-handle_call(list_queues, _From, #state{ofs_port_no = PortNo} = State) ->
-    Queues = [port_queue_to_packet_queue(Q) || Q <- get_queues(PortNo)],
-    {reply, Queues, State};
-handle_call({attach_queue, QueueId, Properties}, _From, State) ->
-    NewState = do_attach_queue(State, QueueId, Properties),
-    {reply, ok, NewState};
-handle_call({detach_queue, QueueId}, _From, State) ->
-    NewState = do_detach_queue(State, QueueId),
-    {reply, ok, NewState}.
-
-%% @private
--spec handle_cast(Msg :: term(),
-                  #state{}) -> {noreply, #state{}} |
-                               {noreply, #state{}, timeout()} |
-                               {stop, Reason :: term(), #state{}}.
-handle_cast({send, #ofs_pkt{packet = Packet}},
-            #state{socket = Socket,
-                   port = Port,
-                   ifindex = Ifindex} = State) ->
-    Frame = pkt:encapsulate(Packet),
-    case {Port, Ifindex} of
-        {undefined, _} ->
-            send_to_wire(Socket, Ifindex, Frame);
-        {_, undefined} ->
-            port_command(Port, Frame)
-    end,
-    {noreply, State};
-handle_cast({change_config, #ofp_port_mod{}}, State) ->
-    %% FIXME: implement
-    {noreply, State}.
-
-%% @private
--spec handle_info(Info :: term(),
-                  #state{}) -> {noreply, #state{}} |
-                               {noreply, #state{}, timeout()} |
-                               {stop, Reason :: term(), #state{}}.
-handle_info({packet, _DataLinkType, _Time, _Length, Frame},
-            #state{ofs_port_no = OfsPortNo} = State) ->
-    handle_frame(Frame, OfsPortNo),
-    {noreply, State};
-handle_info({Port, {data, Frame}}, #state{ofs_port_no = OfsPortNo,
-                                          port = Port} = State) ->
-    handle_frame(Frame, OfsPortNo),
-    {noreply, State};
-handle_info({'EXIT', _Pid, {port_terminated, 1}},
-            #state{interface = Interface} = State) ->
-    ?ERROR("Port for interface ~p exited abnormally",
-                [Interface]),
-    {stop, normal, State};
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-%% @private
--spec terminate(Reason :: term(), #state{}) -> ok.
-terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
-    lists:foldl(fun(#ofs_port_queue{key = {_, QueueId}},
-                    StateAcc) ->
-                        do_detach_queue(StateAcc, QueueId)
-                  end, State, get_queues(PortNo)),
-    true = ets:delete(ofs_ports, PortNo),
-    true = ets:delete(port_stats, PortNo),
-    close_ports(State).
-
-%% @private
--spec code_change(Vsn :: term() | {down, Vsn :: term()},
-                  #state{}, Extra :: term()) ->
-                         {ok, #state{}} |
-                         {error, Reason :: term()}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%%-----------------------------------------------------------------------------
-%%% Internal functions
-%%%-----------------------------------------------------------------------------
-
 handle_frame(Frame, OfsPortNo) ->
-    OFSPacket = linc_us3:parse_ofs_pkt(Frame, OfsPortNo),
+    OFSPacket = linc_us3_packet_edit:binary_to_record(Frame, OfsPortNo),
     update_port_received_counters(OfsPortNo, byte_size(Frame)),
-    linc_us3:route(OFSPacket).
+    linc_us3_routing:spawn_route(OFSPacket).
 
 -spec update_port_received_counters(integer(), integer()) -> any().
 update_port_received_counters(PortNum, Bytes) ->
-    ets:update_counter(port_stats, PortNum,
+    ets:update_counter(linc_port_stats, PortNum,
                        [{#ofp_port_stats.rx_packets, 1},
                         {#ofp_port_stats.rx_bytes, Bytes}]).
 
-%% TODO: Add typespecs to bpf and procket in general to avoid:
-%% linc_us3_port.erl:446: Function bpf_raw_socket/1 has no local return
-%% warnings in dialyzer.
--spec bpf_raw_socket(string()) -> tuple(integer(), 0).
-bpf_raw_socket(Interface) ->
-    case bpf:open(Interface) of
-        {ok, Socket, _Length} ->
-            bpf:ctl(Socket, setif, Interface),
-            {Socket, 0};
-        {error, Error} ->
-            ?ERROR("Cannot open bpf raw socket for"
-                        " interface ~p because: ~p", [Interface, Error]),
-            {0, 0};
-        Any ->
-            ?ERROR("Cannot open bpf raw socket for"
-                        " interface ~p because: ~p", [Interface, Any]),
-            {0, 0}
-    end.
-
-%% TODO: Add typespecs to packet and procket in general to avoid:
-%% linc_us3_port.erl:462: Function linux_raw_socket/1 has no local return
-%% warnings in dialyzer.
--spec linux_raw_socket(string()) -> tuple(integer(), integer()).
-linux_raw_socket(Interface) ->
-    {ok, Socket} = packet:socket(),
-    Ifindex = packet:ifindex(Socket, Interface),
-    packet:promiscuous(Socket, Ifindex),
-    ok = packet:bind(Socket, Ifindex),
-    {Socket, Ifindex}.
-
 -spec get_port_pid(ofp_port_no()) -> pid() | bad_port.
 get_port_pid(PortNo) ->
-    case ets:lookup(ofs_ports, PortNo) of
+    case ets:lookup(linc_ports, PortNo) of
         [] ->
             bad_port;
         [#ofs_port{pid = Pid}] ->
             Pid
     end.
-
--spec port_queue_to_packet_queue(#ofs_port_queue{}) -> #ofp_packet_queue{}.
-port_queue_to_packet_queue(#ofs_port_queue{key = {PortNo, QueueId},
-                                           properties = Properties}) ->
-    #ofp_packet_queue{queue_id = QueueId,
-                      port_no = PortNo,
-                      properties = Properties}.
 
 -spec queue_stats_convert(#ofs_port_queue{}) -> ofp_queue_stats().
 queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
@@ -503,35 +384,6 @@ queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
                                     tx_errors = TxErrors}) ->
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
-
-%% TODO: Add typespecs to packet and procket in general to avoid:
-%% linc_us3_port.erl:496: Function send_to_wire/3 has no local return
-%% warnings in dialyzer.
--spec send_to_wire(integer(), integer(), binary()) -> ok.
-send_to_wire(Socket, Ifindex, Frame) ->
-    case os:type() of
-        {unix, darwin} ->
-            linc_us3_port_procket:send(Socket, Frame);
-        {unix, netbsd} ->
-            linc_us3_port_procket:send(Socket, Frame);
-        {unix, linux} ->
-            packet:send(Socket, Ifindex, Frame)
-    end.
-
-close_ports(#state{socket = undefined, port_ref = PortRef}) ->
-    tuncer:down(PortRef),
-    tuncer:destroy(PortRef);
-close_ports(#state{socket = Socket, port_ref = undefined,
-                          epcap_pid = EpcapPid}) ->
-    %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
-    %% and it's an atom, not a pid.
-    case catch is_process_alive(EpcapPid) of
-        true ->
-            epcap:stop(EpcapPid);
-        _ ->
-            ok
-    end,
-    linc_us3_port_procket:close(Socket).
 
 rate_desc_to_bps(Bps) when is_integer(Bps) ->
     Bps;
@@ -573,7 +425,9 @@ do_attach_queue(#state{socket = Socket,
     Key = {OfsPortNo, QueueId},
     case {Port, Ifindex} of
         {undefined, _} ->
-            SendFun = fun(Frame) -> send_to_wire(Socket, Ifindex, Frame) end;
+            SendFun = fun(Frame) ->
+                              linc_us3_port_native:send(Socket, Ifindex, Frame)
+                      end;
         {_, undefined} ->
             SendFun = fun(Frame) -> port_command(Port, Frame) end
     end,

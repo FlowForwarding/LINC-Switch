@@ -122,11 +122,11 @@ sleep_and_send(MyKey, MinRate, MaxRate, PortRate, ThrottlingEts,
         History2
     catch
         E1:E2 ->
-            lager:error("Error ~p:~p Total transfer: ~p, Frame Size: ~p, "
-                        "HistoryLenMs: ~p, PauseMs: ~p",
-                        [E1, E2, TotalTransfer, FrameSize,
-                         HistoryLenMs, PauseMs]),
-            lager:error("History1: ~p", [History1]),
+            ?ERROR("Error ~p:~p Total transfer: ~p, Frame Size: ~p, "
+                   "HistoryLenMs: ~p, PauseMs: ~p",
+                   [E1, E2, TotalTransfer, FrameSize,
+                    HistoryLenMs, PauseMs]),
+            ?ERROR("History1: ~p", [History1]),
             History1
     end.
 

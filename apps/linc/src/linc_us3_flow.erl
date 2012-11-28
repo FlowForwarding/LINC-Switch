@@ -711,12 +711,18 @@ validate_action(#ofp_action_copy_ttl_out{}, _Match) ->
     ok;
 validate_action(#ofp_action_copy_ttl_in{}, _Match) ->
     ok;
-validate_action(#ofp_action_push_vlan{}, _Match) ->
+validate_action(#ofp_action_push_vlan{ethertype=Ether}, _Match)
+  when Ether == 16#8100; Ether==16#88A8 ->
     ok;
+validate_action(#ofp_action_push_vlan{}, _Match) ->
+    {error,{bad_action,bad_argument}};
 validate_action(#ofp_action_pop_vlan{}, _Match) ->
     ok;
-validate_action(#ofp_action_push_mpls{}, _Match) ->
+validate_action(#ofp_action_push_mpls{ethertype=Ether}, _Match)
+  when Ether == 16#8100; Ether==16#88A8 ->
     ok;
+validate_action(#ofp_action_push_mpls{}, _Match) ->
+    {error,{bad_action,bad_argument}};
 validate_action(#ofp_action_pop_mpls{}, _Match) ->
     ok;
 validate_action(#ofp_action_set_field{field=Field}, Match) ->

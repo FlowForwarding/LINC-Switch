@@ -111,6 +111,8 @@ apply(GroupId, Pkt) ->
 
 %%--------------------------------------------------------------------
 -spec modify(#ofp_group_mod{}) -> ok | {error, Type :: atom(), Code :: atom()}.
+
+%%------ group_mod ADD GROUP
 modify(#ofp_group_mod{ command = add,
                        group_id = Id,
                        type = Type,
@@ -133,6 +135,7 @@ modify(#ofp_group_mod{ command = add,
                                    code = group_exists}}
     end;
 
+%%------ group_mod MODIFY GROUP
 modify(#ofp_group_mod{ command = modify,
                        group_id = Id,
                        type = Type,
@@ -155,16 +158,11 @@ modify(#ofp_group_mod{ command = modify,
             [group_reset_bucket_stats(B#linc_bucket.unique_id)
              || B <- Group#linc_group.buckets],
 
-            case ets:member(group_table, Id) of
-                true ->
-                    ets:insert(group_table, Entry),
-                    ok;
-                false ->
-                    {error, #ofp_error_msg{type = group_mod_failed,
-                                           code = unknown_group}}
-            end
+            ets:insert(group_table, Entry),
+            ok
     end;
 
+%%------ group_mod DELETE GROUP
 modify(#ofp_group_mod{ command = delete,
                        group_id = Id }) ->
     %% Deletes existing entry in the group table, if entry with given group id
@@ -324,15 +322,21 @@ apply_bucket(#linc_bucket{
     group_update_bucket_stats(BucketId, byte_count, Pkt#ofs_pkt.size),
 
     %%ActionsSet = ordsets:from_list(Actions),
-    case linc_us3_actions:apply_set(Actions, Pkt) of
+    case linc_us3_actions:apply_set(Pkt#ofs_pkt{ actions = Actions }) of
         {output, NewPkt, PortNo} ->
-            linc_us3_port:send(NewPkt, PortNo);
+            linc_us3_port:send(NewPkt, PortNo),
+            ok;
+
         {group, NewPkt, GroupId} ->
-            ?MODULE:apply(NewPkt, GroupId);
-        drop ->
-            drop
-    end,
-    ok.
+            ?MODULE:apply(NewPkt, GroupId); %% tail-recur & should return ok
+
+        %% no side effects, packet is going to be dropped anyway
+        ok ->
+            ok;
+
+        {drop, _} ->
+            ok
+    end.
 
 %%--------------------------------------------------------------------
 %% @internal
@@ -356,12 +360,11 @@ wrap_buckets_into_linc_buckets(GroupId, Buckets) ->
 -spec create_unique_id_for_bucket(#ofp_bucket{}) -> term().
 
 create_unique_id_for_bucket(B) ->
-    EncodedBucket = ofp_v3_encode:do(#ofp_message{version = 0, xid = 0, body = B}),
-
+    EncodedBucket = term_to_binary(B),
     %% Add a timestamp in case of identical buckets
     {MegaS, S, MicroS} = os:timestamp(),
     Image = <<EncodedBucket/binary, MegaS:32, S:32, MicroS:32>>,
-
+    %% Create a hash
     crypto:sha(Image).
 
 %% create_unique_id_for_bucket(B) ->
@@ -533,7 +536,7 @@ group_enum_groups_2(K, Accum) ->
                    type = Group#linc_group.type,
                    buckets = Buckets
                   },
-    group_enum_groups_2(ets:next(K), [GroupDesc | Accum]).
+    group_enum_groups_2(ets:next(group_table, K), [GroupDesc | Accum]).
 
 %%--------------------------------------------------------------------
 %% @internal

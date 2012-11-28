@@ -66,12 +66,12 @@ match() ->
     %% Match on the first flow entry in the first flow table
     MatchFieldsPkt1 = [{ipv4_dst, abc}, {ipv4_src, def}],
     Pkt1 = pkt(MatchFieldsPkt1),
-    ?assertEqual({match, 0, f1}, linc_us3_routing:do_route(Pkt1)),
+    ?assertEqual({match, 0, f1}, linc_us3_routing:route(Pkt1)),
 
     %% Match on the second flow entry in the first flow table
     MatchFieldsPkt2 = [{ipv4_dst, ghi}, {ipv4_src, jkl}],
     Pkt2 = pkt(MatchFieldsPkt2),
-    ?assertEqual({match, 0, f2}, linc_us3_routing:do_route(Pkt2)).
+    ?assertEqual({match, 0, f2}, linc_us3_routing:route(Pkt2)).
 
 goto() ->
     MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
@@ -90,7 +90,7 @@ goto() ->
     %% Match on the first flow entry in the second flow table    
     MatchFieldsPkt = [{ipv4_dst, abc}, {ipv4_src, def}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 1, f2}, linc_us3_routing:do_route(Pkt)),
+    ?assertEqual({match, 1, f2}, linc_us3_routing:route(Pkt)),
     ok.
 
 miss_continue() ->
@@ -151,7 +151,7 @@ miss_no_flow_entries(TableConfig, MissError) ->
     FlowEntries = [],
     TableId = 0,
     flow_table(TableId, FlowEntries, TableConfig),
-    ?assertEqual({table_miss, MissError}, linc_us3_routing:do_route(Pkt)).
+    ?assertEqual({table_miss, MissError}, linc_us3_routing:route(Pkt)).
 
 miss_no_matching_flow_entry(TableConfig, MissError) ->
     %% Table miss when no flow entry matches the packet
@@ -161,4 +161,4 @@ miss_no_matching_flow_entry(TableConfig, MissError) ->
     FlowEntries = [flow_entry(f1, MatchFieldsFlow)],
     TableId = 0,
     flow_table(TableId, FlowEntries, TableConfig),
-    ?assertEqual({table_miss, MissError}, linc_us3_routing:do_route(Pkt)).
+    ?assertEqual({table_miss, MissError}, linc_us3_routing:route(Pkt)).

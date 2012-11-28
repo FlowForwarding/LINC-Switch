@@ -19,7 +19,8 @@
 %% @doc Main module responsible for routing packets.
 -module(linc_us3_routing).
 
--export([do_route/1,
+-export([spawn_route/1,
+         route/1,
          route_to_controller/3]).
 
 -ifdef(TEST).
@@ -35,37 +36,14 @@
 
 -type route_result() :: match | {table_miss, drop | controller}.
 
-%% @doc Applies flow instructions from the first flow table to a packet.
--spec do_route(#ofs_pkt{}) -> route_result().
-do_route(Pkt) ->
-    do_route(Pkt, 0).
+-spec spawn_route(#ofs_pkt{}) -> pid().
+spawn_route(Pkt) ->
+    proc_lib:spawn_link(?MODULE, route, [Pkt]).
 
-%% @doc Applies flow instructions from the given table to a packet.
--spec do_route(#ofs_pkt{}, integer()) -> route_result().
-do_route(Pkt, TableId) ->
-    FlowEntries = linc_us3_flow:get_flow_table(TableId),
-    case match_flow_entries(Pkt, TableId, FlowEntries) of
-        {match, #flow_entry{id = FlowId,
-                            instructions = Instructions}} ->
-            case linc_us3_instructions:apply(Pkt, Instructions) of
-                {stop, NewPkt} ->
-                    linc_us3_actions:apply_set(NewPkt),
-                    {match, TableId, FlowId};
-                {{goto, NextTableId}, NewPkt} ->
-                    do_route(NewPkt, NextTableId)
-            end;
-        table_miss ->
-            case linc_us3_flow:get_table_config(TableId) of
-                drop ->
-                    {table_miss, drop};
-                controller ->
-                    route_to_controller(TableId, Pkt, no_match),
-                    {table_miss, controller};
-                continue ->
-                    %% TODO: Return error when reached last flow table
-                    do_route(Pkt, TableId + 1)
-            end
-    end.
+%% @doc Applies flow instructions from the first flow table to a packet.
+-spec route(#ofs_pkt{}) -> route_result().
+route(Pkt) ->
+    route(Pkt, 0).
 
 -spec route_to_controller(integer(), #ofs_pkt{}, atom()) -> ok.
 route_to_controller(TableId,
@@ -89,6 +67,33 @@ route_to_controller(TableId,
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+%% @doc Applies flow instructions from the given table to a packet.
+-spec route(#ofs_pkt{}, integer()) -> route_result().
+route(Pkt, TableId) ->
+    FlowEntries = linc_us3_flow:get_flow_table(TableId),
+    case match_flow_entries(Pkt, TableId, FlowEntries) of
+        {match, #flow_entry{id = FlowId,
+                            instructions = Instructions}} ->
+            case linc_us3_instructions:apply(Pkt, Instructions) of
+                {stop, NewPkt} ->
+                    linc_us3_actions:apply_set(NewPkt),
+                    {match, TableId, FlowId};
+                {{goto, NextTableId}, NewPkt} ->
+                    route(NewPkt, NextTableId)
+            end;
+        table_miss ->
+            case linc_us3_flow:get_table_config(TableId) of
+                drop ->
+                    {table_miss, drop};
+                controller ->
+                    route_to_controller(TableId, Pkt, no_match),
+                    {table_miss, controller};
+                continue ->
+                    %% TODO: Return error when reached last flow table
+                    route(Pkt, TableId + 1)
+            end
+    end.
 
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
                         -> {match, #flow_entry{}} | table_miss.

@@ -22,10 +22,13 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         start_backend_sup/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
+
+-define(BACKEND_SUP, linc_us3_sup).
 
 %%------------------------------------------------------------------------------
 %% API functions
@@ -34,6 +37,11 @@
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+start_backend_sup() ->
+    UserspaceSup = {?BACKEND_SUP, {?BACKEND_SUP, start_link, []},
+                    transient, 5000, supervisor, [?BACKEND_SUP]},
+    supervisor:start_child(?MODULE, UserspaceSup).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks

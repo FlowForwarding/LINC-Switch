@@ -651,7 +651,7 @@ validate_instructions(_TableId, [], _Match) ->
     ok.
 
 validate_instruction(TableId, #ofp_instruction_goto_table{table_id=NextTable}, _Match)
-  when is_integer(TableId), TableId<NextTable->
+  when is_integer(TableId), TableId<NextTable, TableId<?OFPTT_MAX ->
     ok;
 validate_instruction(_TableId, #ofp_instruction_goto_table{}, _Match) ->
     %% goto-table with invalid next-table-id

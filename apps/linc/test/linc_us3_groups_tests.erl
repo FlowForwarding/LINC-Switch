@@ -45,8 +45,7 @@ group_test_() ->
 
 %%--------------------------------------------------------------------
 add_group() ->
-    Act1 = #ofp_action_pop_vlan{},
-    Bkt1 = #ofp_bucket{ weight=1, watch_port=1, watch_group=1, actions=[Act1]},
+    Bkt1 = test_bucket(),
     M1 = linc_us3_groups:modify(#ofp_group_mod{
                                    command = add, group_id = 1,
                                    type = all, buckets = [Bkt1]
@@ -79,9 +78,7 @@ add_group() ->
 
 %%--------------------------------------------------------------------
 modify_group() ->
-    A1 = #ofp_action_pop_vlan{},
-    B1 = #ofp_bucket{ weight=1, watch_port=1, watch_group=1, actions=[A1]},
-
+    B1 = test_bucket(),
     M1 = linc_us3_groups:modify(#ofp_group_mod{
                                    command = add, group_id = 1,
                                    type = all, buckets = [B1]
@@ -146,8 +143,7 @@ apply_to_packet() ->
     %% Apply to nonexisting group is not an error, makes no effect
     ?assertEqual(ok, linc_us3_groups:apply(12345, Pkt)),
 
-    A1 = #ofp_action_pop_vlan{},
-    B1 = #ofp_bucket{ weight=1, watch_port=1, watch_group=1, actions=[A1]},
+    B1 = test_bucket(),
 
     %% try SELECT group type
     M1 = linc_us3_groups:modify(#ofp_group_mod{
@@ -184,8 +180,7 @@ apply_to_packet() ->
 %%--------------------------------------------------------------------
 stats_and_features() ->
     %% create test group
-    A1 = #ofp_action_pop_vlan{},
-    B1 = #ofp_bucket{ weight=1, watch_port=1, watch_group=1, actions=[A1]},
+    B1 = test_bucket(),
     M1 = linc_us3_groups:modify(#ofp_group_mod{
                                    command = add, group_id = 1,
                                    type = select, buckets = [B1]
@@ -259,4 +254,15 @@ test_packet_vlan() ->
        in_port = 1,
        packet = P,
        size = 122
+      }.
+
+%% @doc Creates a test bucket with few simple actions
+test_bucket() -> test_bucket(1).
+
+test_bucket(G) ->
+    Act1 = #ofp_action_pop_vlan{},
+    Act2 = #ofp_action_group{ group_id = G },
+    #ofp_bucket{
+       weight=1, watch_port=1, watch_group=1,
+       actions=[Act1, Act2]
       }.

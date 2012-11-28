@@ -45,7 +45,8 @@
           id               :: ofp_group_id(),
           type    = all    :: ofp_group_type(),
           total_weight = 0 :: integer(),
-          buckets = []     :: [#linc_bucket{}]
+          buckets = []     :: [#linc_bucket{}],
+          refers_to_groups = [] :: ordsets:ordset(integer())
          }).
 
 %% @doc Stats item record for storing stats in ETS
@@ -120,11 +121,13 @@ modify(#ofp_group_mod{ command = add,
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
+    RefersToGroups = calculate_refers_to_groups(Buckets, ordsets:new()),
     Entry = #linc_group{
                id = Id,
                type = Type,
                buckets = OFSBuckets,
-               total_weight = calculate_total_weight(Buckets)
+               total_weight = calculate_total_weight(Buckets),
+               refers_to_groups = RefersToGroups
               },
     case ets:insert_new(group_table, Entry) of
         true ->
@@ -180,11 +183,8 @@ modify(#ofp_group_mod{ command = delete,
             %% TODO: Should we support this case at all?
             ok;
         Id ->
-            group_reset_stats(Id),
-            ets:delete(group_table, Id)
+            group_delete(Id)
     end,
-    %% Remove flows containing given group along with it
-    linc_us3_flow:delete_where_group(Id),
     ok.
 
 %%--------------------------------------------------------------------
@@ -540,7 +540,39 @@ group_enum_groups_2(K, Accum) ->
 
 %%--------------------------------------------------------------------
 %% @internal
+%% @doc Deletes a group by Id, also deletes all groups and flows referring
+%% to this group
+group_delete(Id) ->
+    ReferringGroups = group_find_groups_that_refer_to(Id, ets:first(group_table), []),
 
+    %% Delete group stats and remove the group
+    group_reset_stats(Id),
+    ets:delete(group_table, Id),
+
+    %% Remove flows containing given group along with it
+    linc_us3_flow:delete_where_group(Id),
+
+    %% Remove referring groups
+    [group_delete(G) || G <- ReferringGroups].
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Iterates over groups table, filters out groups which refer to the
+%% group id 'Id' using cached field in #linc_group{} record
+group_find_groups_that_refer_to(_, '$end_of_table', Accum) -> Accum;
+group_find_groups_that_refer_to(Id, EtsKey, Accum) ->
+    %% this should never crash, as we are iterating over existing keys
+    [G] = ets:lookup(group_table, Id),
+    NextKey = ets:next(group_table, EtsKey),
+    case ordsets:is_element(Id, G#linc_group.refers_to_groups) of
+        false ->
+            group_find_groups_that_refer_to(Id, NextKey, Accum);
+        true ->
+            group_find_groups_that_refer_to(Id, NextKey, [Id | Accum])
+    end.
+
+%%--------------------------------------------------------------------
+%% @internal
 select_random_bucket_by_weight(_RandomWeight, _Accum, []) ->
     not_found;
 select_random_bucket_by_weight(RandomWeight, Accum, [Bucket|_])
@@ -551,6 +583,9 @@ select_random_bucket_by_weight(RandomWeight, Accum, [Bucket|Tail]) ->
                                    Accum + (Bucket#linc_bucket.bucket)#ofp_bucket.weight,
                                    Tail).
 
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Iterates over buckets, calculates sum of all weights in a bucket
 -spec calculate_total_weight(Buckets :: [ofp_bucket()]) -> integer().
 calculate_total_weight(Buckets) ->
     lists:foldl(fun(B, Sum) ->
@@ -559,3 +594,31 @@ calculate_total_weight(Buckets) ->
                             _ -> 1
                         end + Sum
                 end, 0, Buckets).
+
+%%--------------------------------------------------------------------
+%% @internal
+%% @doc Iterates over all buckets and actions, and builds a set of group
+%% references, to have ordset of groupids this bucket list refers to
+-spec calculate_refers_to_groups([#ofp_bucket{}],
+                                 ordsets:ordset(integer())) ->
+                                        ordsets:ordset(integer()).
+
+calculate_refers_to_groups([], Set) -> Set;
+calculate_refers_to_groups([B|Buckets], Set) ->
+    %%B1 = B#linc_bucket.bucket,
+    Set2 = calculate_refers_to_groups_2(B#ofp_bucket.actions, Set),
+    calculate_refers_to_groups(Buckets, Set2).
+
+%% @internal
+%% @doc Iterates over actions in a bucket, filtering out #ofp_action_group
+%% actions, and adding GroupId in them to Set
+calculate_refers_to_groups_2([], Set) -> Set;
+
+calculate_refers_to_groups_2([#ofp_action_group{
+                                 group_id = GroupId
+                                }|Actions], Set) ->
+    Set2 = ordsets:add_element(GroupId, Set),
+    calculate_refers_to_groups_2(Actions, Set2);
+
+calculate_refers_to_groups_2([_|Actions], Set) ->
+    calculate_refers_to_groups_2(Actions, Set).

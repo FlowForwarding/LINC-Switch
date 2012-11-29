@@ -113,6 +113,28 @@ modify(#ofp_flow_mod{command=Cmd, table_id=all})
   when Cmd==add;Cmd==modify;Cmd==modify_strict ->
     {error, {flow_mod_failed, bad_table_id}};
 
+modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
+  when (Cmd==add orelse Cmd==modify orelse Cmd==modify_strict)
+       andalso BufferId /= no_buffer ->
+    %% A buffer_id is provided, we have to first do the flow_mod
+    %% and then a packet_out to OFPP_TABLE. This actually means to first
+    %% perform the flow_mod and then restart the processing of the buffered
+    %% packet starting in flow_table=0.
+    case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
+        ok ->
+            %% TODO: packet_out
+            case linc_us3_buffer:get_buffer(BufferId) of
+                #ofs_pkt{}=OfsPkt ->
+                    linc_us3_actions:apply_list(OfsPkt,
+                                                [#ofp_action_output{port=table}]);
+                not_found ->
+                    %% Buffer has been dropped, ignore
+                    ok
+            end;
+        Error ->
+            Error
+    end;
+
 modify(#ofp_flow_mod{command=add,
                      table_id=TableId,
                      priority=Priority,

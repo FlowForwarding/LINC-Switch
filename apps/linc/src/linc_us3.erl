@@ -165,11 +165,22 @@ ofp_group_mod(State, #ofp_group_mod{} = GroupMod) ->
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
                             {noreply, #state{}} |
                             {reply, ofp_message(), #state{}}.
-ofp_packet_out(State, #ofp_packet_out{actions = Actions,
+ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
+                                      actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
     OfsPkt = linc_us3_packet_edit:binary_to_record(Data, InPort),
     linc_us3_actions:apply_list(OfsPkt, Actions),
+    {noreply, State};
+ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
+                                      actions = Actions}) ->
+    case linc_us3_buffer:get_buffer(BufferId) of
+        #ofs_pkt{}=OfsPkt ->
+            linc_us3_actions:apply_list(OfsPkt, Actions);
+        not_found ->
+            %% Buffer has been dropped, ignore
+            ok
+    end,
     {noreply, State}.
 
 %% @doc Reply to echo request.

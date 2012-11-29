@@ -27,7 +27,7 @@
 -include_lib("linc/include/linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
 
--define(MOCKED, []).
+-define(MOCKED, [port]).
 
 %% Tests -----------------------------------------------------------------------
 

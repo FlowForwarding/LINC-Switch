@@ -110,23 +110,46 @@ modify(#ofp_port_mod{port_no = PortNo} = PortMod) ->
 
 %% @doc Send OF packet to the OF port.
 -spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
-send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
-    Ports = ets:tab2list(linc_ports),
-    [send(Pkt, PortNo)
-     || #ofs_port{number = PortNo} <- Ports, PortNo /= InPort];
 send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
     send(Pkt, InPort);
-send(Pkt, controller) ->
-    linc_logic:send_to_controllers(Pkt, action);
-send(Pkt, PortNo) when is_integer(PortNo) ->
+send(#ofs_pkt{} = Pkt, table) ->
+    linc_us3_routing:spawn_route(Pkt),
+    ok;
+send(#ofs_pkt{}, normal) ->
+    %% Normal port represents traditional non-OpenFlow pipeline of the switch
+    %% not supprted by LINC
+    bad_port;
+send(#ofs_pkt{}, flood) ->
+    %% Flood port represents traditional non-OpenFlow pipeline of the switch
+    %% not supprted by LINC
+    bad_port;
+send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
+    [send(Pkt, PortNo)
+     || #ofs_port{number = PortNo} <- list_ports(), PortNo /= InPort],
+    ok;
+send(#ofs_pkt{fields = Fields, packet = Packet,
+              table_id = TableId, packet_in_reason = Reason},
+     controller) ->
+    PacketIn = #ofp_packet_in{buffer_id = no_buffer, reason = Reason,
+                              table_id = TableId, match = Fields,
+                              data = pkt:encapsulate(Packet)},
+    linc_logic:send_to_controllers(#ofp_message{body = PacketIn}),
+    ok;
+send(#ofs_pkt{}, local) ->
+    ?WARNING("Unsupported port type: local", []),
+    bad_port;
+send(#ofs_pkt{}, any) ->
+    %% Special value used in some OpenFlow commands when no port is specified
+    %% (port wildcarded).
+    %% Can not be used as an ingress port nor as an output port.
+    bad_port;
+send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
             do_send(Pkt, PortNo);
         {ok, _} ->
             do_send_with_queue(Pkt, PortNo)
-    end;
-send(_Pkt, UnsupportedPort) ->
-    ?WARNING("Unsupported port type: ~p", [UnsupportedPort]).
+    end.
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply().

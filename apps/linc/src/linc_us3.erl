@@ -137,7 +137,7 @@ ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
 -spec ofp_port_mod(state(), ofp_port_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_port_mod(State, #ofp_port_mod{port_no = PortNo} = PortMod) ->
+ofp_port_mod(State, #ofp_port_mod{} = PortMod) ->
     case linc_us3_port:modify(PortMod) of
         ok ->
             {noreply, State};

@@ -705,6 +705,13 @@ validate_actions([Action|Actions], Match) ->
 validate_actions([], _Match) ->
     ok.
 
+validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
+    case MaxLen>?OFPCML_MAX of
+        true ->
+            {error,{bad_action,bad_argument}};
+        false ->
+            ok
+    end;
 validate_action(#ofp_action_output{port=Port}, _Match) ->
     case linc_us3_port:is_valid(Port) of
         true ->
@@ -755,7 +762,7 @@ validate_action(#ofp_action_set_field{field=Field}, Match) ->
             {error,{bad_action,bad_argument}}
     end;
 validate_action(#ofp_action_experimenter{}, _Match) ->
-    ok.
+    {error,{bad_action,bad_experimenter}}.
 
 %% Check that field value is in the allowed domain
 %% TODO

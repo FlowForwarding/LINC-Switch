@@ -39,6 +39,7 @@ flow_mod_test_() ->
       ,{"Invalid out port", fun invalid_out_port/0}
       ,{"Valid out group", fun valid_out_group/0}
       ,{"Invalid out group", fun invalid_out_group/0}
+      ,{"Duplicate instruction type", fun dupl_instruction/0}
       ,{"Set field incompatible with match", fun incompatible_set_field/0}
       ,{"Add 1 flow, no check_overlap", fun () -> add_flow(0, []) end}
       ,{"Add 1 flow, check_overlap", fun () -> add_flow(1, [check_overlap]) end}
@@ -209,6 +210,18 @@ invalid_out_group() ->
     ?assertEqual({error,{bad_action,bad_out_group}},
                  linc_us3_flow:modify(FlowModAdd)).
 
+dupl_instruction() ->
+    %% FIXME: The spec 1.2 does not specify an error for this case.
+    %% So for now we return this {bad_instruction, unknown_inst}.
+    FlowModAdd = ofp_v3_utils:flow_add(
+                   [{table_id,5},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6},{eth_type,<<8,0>>},{udp_src,<<8,0>>}],
+                   [{write_actions,[{set_field,tcp_dst,<<8,0>>}]},
+                    {write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
+    ?assertEqual({error,{bad_instruction, unknown_inst}}, linc_us3_flow:modify(FlowModAdd)).
+    
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
     FlowModAdd = ofp_v3_utils:flow_add(

@@ -101,9 +101,7 @@ terminate() ->
 modify(#ofp_port_mod{port_no = PortNo} = PortMod) ->
     case get_port_pid(PortNo) of
         bad_port ->
-            {error, {bad_port, code}};
-        %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
-        %%           {error, bad_hw_addr};
+            {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, {port_mod, PortMod})
     end.
@@ -224,8 +222,8 @@ init({OfsPortNo, PortOpts}) ->
 
 %% @private
 handle_call({port_mod, #ofp_port_mod{}}, _From, State) ->
-    {reply, ok, State};
-handle_call(_Msg, _From, State) ->
+    %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
+    %%           {error, bad_hw_addr};
     {reply, ok, State}.
 
 %% @private

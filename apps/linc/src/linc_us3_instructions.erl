@@ -40,7 +40,7 @@ apply(Pkt, Instructions) ->
              TerminationType :: instructions_apply_result())
             -> instructions_apply_output().
 apply2(Pkt,
-       [#ofp_instruction_apply_actions{actions = Actions} | ActionsRest],
+       [#ofp_instruction_apply_actions{actions = Actions} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Applies the specific action(s) immediately, without any change to the
@@ -48,16 +48,16 @@ apply2(Pkt,
     %% two tables or to execute multiple actions of the same type.
     %% The actions are specified as an action list (see 5.8).
     NewPkt = linc_us3_actions:apply_list(Pkt, Actions),
-    apply2(NewPkt, ActionsRest, stop);
+    apply2(NewPkt, InstructionsRest, stop);
 apply2(Pkt,
-       [#ofp_instruction_clear_actions{} | ActionsRest],
+       [#ofp_instruction_clear_actions{} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Clears all the actions in the action set immediately.
     apply2(Pkt#ofs_pkt{actions = []},
-           ActionsRest, stop);
+           InstructionsRest, stop);
 apply2(#ofs_pkt{actions = OldActions} = Pkt,
-       [#ofp_instruction_write_actions{actions = Actions} | ActionsRest],
+       [#ofp_instruction_write_actions{actions = Actions} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Merges the specified action(s) into the current action set (see 5.7).
@@ -66,10 +66,10 @@ apply2(#ofs_pkt{actions = OldActions} = Pkt,
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
     apply2(Pkt#ofs_pkt{actions = NewActions},
-           ActionsRest, stop);
+           InstructionsRest, stop);
 apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
        [#ofp_instruction_write_metadata{metadata = NewMetadata,
-                                        metadata_mask = Mask} | ActionsRest],
+                                        metadata_mask = Mask} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Writes the masked metadata value into the metadata field. The mask
@@ -77,15 +77,15 @@ apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
     %% (i.e. new metadata = old metadata &  ̃mask | value & mask).
     MaskedMetadata = apply_mask(OldMetadata, NewMetadata, Mask, []),
     apply2(Pkt#ofs_pkt{metadata = MaskedMetadata},
-           ActionsRest, stop);
+           InstructionsRest, stop);
 apply2(Pkt,
-       [#ofp_instruction_goto_table{table_id = Id} | ActionsRest],
+       [#ofp_instruction_goto_table{table_id = Id} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Indicates the next table in the processing pipeline. The table-id must
     %% be greater than the current table-id. The flows of last table of the
     %% pipeline can not include this instruction (see 5.1).
-    apply2(Pkt, ActionsRest, {goto, Id});
+    apply2(Pkt, InstructionsRest, {goto, Id});
 apply2(Pkt, [], stop) ->
     {stop, Pkt};
 apply2(Pkt, [], {goto, Id}) ->

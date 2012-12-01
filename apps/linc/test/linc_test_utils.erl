@@ -55,6 +55,25 @@ mock([port | Rest]) ->
                              true
                      end),
     mock(Rest);
+mock([port_native | Rest]) ->
+    ok = meck:new(linc_us3_port_native),
+    ok = meck:expect(linc_us3_port_native, eth,
+                     fun(_) ->
+                             {socket, 0, pid}
+                     end),
+    ok = meck:expect(linc_us3_port_native, tap,
+                     fun(_, _) ->
+                             {port, pid}
+                     end),
+    ok = meck:expect(linc_us3_port_native, close,
+                     fun(_) ->
+                             ok
+                     end),
+    ok = meck:expect(linc_us3_port_native, send,
+                     fun(_, _, _) ->
+                             ok
+                     end),
+    mock(Rest);
 mock([group | Rest]) ->
     ok = meck:new(linc_us3_groups),
     ok = meck:expect(linc_us3_groups, apply,
@@ -101,6 +120,9 @@ unmock([logic | Rest]) ->
     unmock(Rest);
 unmock([port | Rest]) ->
     ok = meck:unload(linc_us3_port),
+    unmock(Rest);
+unmock([port_native | Rest]) ->
+    ok = meck:unload(linc_us3_port_native),
     unmock(Rest);
 unmock([group | Rest]) ->
     ok = meck:unload(linc_us3_groups),

@@ -42,6 +42,9 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 -define(MAX64, 16#FFFFFFFF). % Max countervalue for 64 bit counters
+-define(INSTRUCTIONS, [ofp_instruction_goto_table, ofp_instruction_write_metadata,
+                       ofp_instruction_write_actions, ofp_instruction_apply_actions,
+                       ofp_instruction_clear_actions, ofp_instruction_experimenter]).
 
 -record(state,{tref}).
 
@@ -662,14 +665,47 @@ test_prereq(none, _Previous) ->
 %% invalid group
 %% invalid value in set-field
 %% operation inconsistent with match, 
-validate_instructions(TableId, [Instruction|Instructions], Match) ->
+validate_instructions(TableId, Instructions, Match) ->
+    case check_occurances(Instructions) of
+        ok ->
+            do_validate_instructions(TableId, Instructions, Match);
+        Error ->
+            Error
+    end.
+
+check_occurances(Instructions) ->
+    case lists:all(fun (Type) ->
+                           check_occurrences(Type, Instructions)
+                   end, ?INSTRUCTIONS) of
+        true ->
+            ok;
+        false ->
+            %% FIXME: The spec 1.2 does not specify an error for this case.
+            %% So for now we return this.
+            {error,{bad_instruction, unknown_inst}}
+    end.
+
+check_occurrences(ofp_instruction_goto_table, Instructions) ->
+    1 >= length([x||#ofp_instruction_goto_table{}<-Instructions]);
+check_occurrences(ofp_instruction_write_metadata, Instructions) ->
+    1 >= length([x||#ofp_instruction_write_metadata{}<-Instructions]);
+check_occurrences(ofp_instruction_write_actions, Instructions) ->
+    1 >= length([x||#ofp_instruction_write_actions{}<-Instructions]);
+check_occurrences(ofp_instruction_apply_actions, Instructions) ->
+    1 >= length([x||#ofp_instruction_apply_actions{}<-Instructions]);
+check_occurrences(ofp_instruction_clear_actions, Instructions) ->
+    1 >= length([x||#ofp_instruction_clear_actions{}<-Instructions]);
+check_occurrences(ofp_instruction_experimenter, Instructions) ->
+    1 >= length([x||#ofp_instruction_experimenter{}<-Instructions]).
+                
+do_validate_instructions(TableId, [Instruction|Instructions], Match) ->
     case validate_instruction(TableId, Instruction, Match) of
         ok ->
-            validate_instructions(TableId, Instructions, Match);
+            do_validate_instructions(TableId, Instructions, Match);
         Error ->
             Error
     end;
-validate_instructions(_TableId, [], _Match) ->
+do_validate_instructions(_TableId, [], _Match) ->
     ok.
 
 validate_instruction(TableId, #ofp_instruction_goto_table{table_id=NextTable}, _Match)
@@ -705,6 +741,13 @@ validate_actions([Action|Actions], Match) ->
 validate_actions([], _Match) ->
     ok.
 
+validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
+    case MaxLen>?OFPCML_MAX of
+        true ->
+            {error,{bad_action,bad_argument}};
+        false ->
+            ok
+    end;
 validate_action(#ofp_action_output{port=Port}, _Match) ->
     case linc_us3_port:is_valid(Port) of
         true ->
@@ -755,7 +798,7 @@ validate_action(#ofp_action_set_field{field=Field}, Match) ->
             {error,{bad_action,bad_argument}}
     end;
 validate_action(#ofp_action_experimenter{}, _Match) ->
-    ok.
+    {error,{bad_action,bad_experimenter}}.
 
 %% Check that field value is in the allowed domain
 %% TODO

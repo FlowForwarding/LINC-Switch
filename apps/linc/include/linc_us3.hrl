@@ -168,7 +168,9 @@
           metadata = <<0:64>> :: binary(),
           packet              :: pkt:packet(),
           size                :: integer(),
-          queue_id = default  :: integer() | default
+          queue_id = default  :: integer() | default,
+          table_id            :: integer(),
+          packet_in_reason    :: ofp_packet_in_reason()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.
 

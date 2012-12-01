@@ -20,8 +20,7 @@
 -module(linc_us3_routing).
 
 -export([spawn_route/1,
-         route/1,
-         route_to_controller/3]).
+         route/1]).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -45,25 +44,6 @@ spawn_route(Pkt) ->
 route(Pkt) ->
     route(Pkt, 0).
 
--spec route_to_controller(integer(), #ofs_pkt{}, atom()) -> ok.
-route_to_controller(TableId,
-                    #ofs_pkt{fields = Fields,
-                             packet = Packet} = OFSPkt,
-                    Reason) ->
-    try
-        PacketIn = #ofp_packet_in{buffer_id = no_buffer,
-                                  reason = Reason,
-                                  table_id = TableId,
-                                  match = Fields,
-                                  data = pkt:encapsulate(Packet)},
-        linc_logic:send_to_controllers(#ofp_message{body = PacketIn})
-    catch
-        E1:E2 ->
-            ?ERROR("Encapsulate failed when routing to controller "
-                   "for pkt: ~p because: ~p:~p",
-                   [OFSPkt, E1, E2])
-    end.
-
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
@@ -74,39 +54,40 @@ route(Pkt, TableId) ->
     FlowEntries = linc_us3_flow:get_flow_table(TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
         {match, #flow_entry{id = FlowId,
-                            instructions = Instructions}} ->
-            case linc_us3_instructions:apply(Pkt, Instructions) of
-                {stop, NewPkt} ->
-                    linc_us3_actions:apply_set(NewPkt),
+                            instructions = Instructions}, Pkt2} ->
+            case linc_us3_instructions:apply(Pkt2, Instructions) of
+                {stop, Pkt3} ->
+                    linc_us3_actions:apply_set(Pkt3),
                     {match, TableId, FlowId};
-                {{goto, NextTableId}, NewPkt} ->
-                    route(NewPkt, NextTableId)
+                {{goto, NextTableId}, Pkt3} ->
+                    route(Pkt3, NextTableId)
             end;
-        table_miss ->
+        {table_miss, Pkt2} ->
             case linc_us3_flow:get_table_config(TableId) of
                 drop ->
                     {table_miss, drop};
                 controller ->
-                    route_to_controller(TableId, Pkt, no_match),
+                    linc_us3_port:send(Pkt2, controller),
                     {table_miss, controller};
                 continue ->
                     %% TODO: Return error when reached last flow table
-                    route(Pkt, TableId + 1)
+                    route(Pkt2, TableId + 1)
             end
     end.
 
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
-                        -> {match, #flow_entry{}} | table_miss.
+                        -> {match, #flow_entry{}, #ofs_pkt{}} |
+                           {table_miss, #ofs_pkt{}}.
 match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
     case match_flow_entry(Pkt, TableId, FlowEntry) of
         nomatch ->
             match_flow_entries(Pkt, TableId, Rest);
-        Match ->
-            Match
+        {match, FlowEntry} ->
+            {match, FlowEntry, Pkt#ofs_pkt{table_id = TableId}}
     end;
-match_flow_entries(_Pkt, TableId, []) ->
+match_flow_entries(Pkt, TableId, []) ->
     linc_us3_flow:update_lookup_counter(TableId),
-    table_miss.
+    {table_miss, Pkt#ofs_pkt{table_id = TableId, packet_in_reason = no_match}}.
 
 -spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
 match_flow_entry(Pkt, TableId, FlowEntry) ->

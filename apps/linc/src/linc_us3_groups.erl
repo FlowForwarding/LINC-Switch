@@ -543,32 +543,55 @@ group_enum_groups_2(K, Accum) ->
 %% @doc Deletes a group by Id, also deletes all groups and flows referring
 %% to this group
 group_delete(Id) ->
-    ReferringGroups = group_find_groups_that_refer_to(Id, ets:first(group_table), []),
+    group_delete_2(Id, ordsets:new()).
 
-    %% Delete group stats and remove the group
-    group_reset_stats(Id),
-    ets:delete(group_table, Id),
+%% @internal
+%% @doc Does recursive deletion taking into account groups already processed to
+%% avoid infinite loops. Returns false o
+-spec group_delete_2(Id :: integer(), ProcessedGroups :: ordsets:ordset()) ->
+                            ordsets:ordset().
 
-    %% Remove flows containing given group along with it
-    linc_us3_flow:delete_where_group(Id),
+group_delete_2(Id, ProcessedGroups) ->
+    case ordsets:is_element(Id, ProcessedGroups) of
+        true ->
+            ProcessedGroups;
 
-    %% Remove referring groups
-    [group_delete(G) || G <- ReferringGroups].
+        false ->
+            ReferringGroups = group_find_groups_that_refer_to(
+                                Id, ets:first(group_table), ordsets:new()),
+
+            %% Delete group stats and remove the group
+            group_reset_stats(Id),
+            ets:delete(group_table, Id),
+
+            %% Remove flows containing given group along with it
+            linc_us3_flow:delete_where_group(Id),
+
+            PG2 = ordsets:add_element(Id, ProcessedGroups),
+
+            %% Remove referring groups
+            RFunc = fun(X, Accum) -> group_delete_2(X, Accum) end,
+            lists:foldl(RFunc, PG2, ReferringGroups)
+    end.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Iterates over groups table, filters out groups which refer to the
 %% group id 'Id' using cached field in #linc_group{} record
-group_find_groups_that_refer_to(_, '$end_of_table', Accum) -> Accum;
-group_find_groups_that_refer_to(Id, EtsKey, Accum) ->
+group_find_groups_that_refer_to(Id, '$end_of_table', OrdSet) ->
+    OrdSet;
+
+group_find_groups_that_refer_to(Id, EtsKey, OrdSet) ->
     %% this should never crash, as we are iterating over existing keys
-    [G] = ets:lookup(group_table, Id),
+    [G] = ets:lookup(group_table, EtsKey),
+
     NextKey = ets:next(group_table, EtsKey),
     case ordsets:is_element(Id, G#linc_group.refers_to_groups) of
         false ->
-            group_find_groups_that_refer_to(Id, NextKey, Accum);
+            group_find_groups_that_refer_to(Id, NextKey, OrdSet);
         true ->
-            group_find_groups_that_refer_to(Id, NextKey, [Id | Accum])
+            OrdSet2 = ordsets:add_element(EtsKey, OrdSet),
+            group_find_groups_that_refer_to(Id, NextKey, OrdSet2)
     end.
 
 %%--------------------------------------------------------------------
@@ -603,7 +626,8 @@ calculate_total_weight(Buckets) ->
                                  ordsets:ordset(integer())) ->
                                         ordsets:ordset(integer()).
 
-calculate_refers_to_groups([], Set) -> Set;
+calculate_refers_to_groups([], Set) ->
+    Set;
 calculate_refers_to_groups([B|Buckets], Set) ->
     %%B1 = B#linc_bucket.bucket,
     Set2 = calculate_refers_to_groups_2(B#ofp_bucket.actions, Set),

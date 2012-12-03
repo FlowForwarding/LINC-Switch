@@ -103,7 +103,7 @@ send_all() ->
 
 send_controller() ->
     ?assertEqual(ok, linc_us3_port:send(#ofp_port_status{}, controller)),
-    ?assertEqual(ok, linc_us3_port:send(pkt(), controller)).
+    ?assertEqual(ok, linc_us3_port:send(pkt(controller,table_miss), controller)).
 
 send_local() ->
     ?assertEqual(bad_port, linc_us3_port:send(pkt(), local)).
@@ -204,3 +204,6 @@ pkt() ->
 
 pkt(Port) ->
     #ofs_pkt{in_port = Port, packet = [<<>>]}.
+
+pkt(controller=Port,Reason) ->
+    #ofs_pkt{in_port = Port, packet_in_reason=Reason, packet = [<<>>]}.

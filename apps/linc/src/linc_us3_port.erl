@@ -136,11 +136,13 @@ send(#ofs_pkt{no_packet_in = true}, controller) ->
     %% Drop packets which originate from port with no_packet_in config flag set
     ok;
 send(#ofs_pkt{no_packet_in = false, fields = Fields, packet = Packet,
-              table_id = TableId, packet_in_reason = Reason},
+              table_id = TableId, packet_in_reason = Reason, 
+              packet_in_bytes = Bytes},
      controller) ->
-    PacketIn = #ofp_packet_in{buffer_id = no_buffer, reason = Reason,
+    {BufferId,Data} = maybe_buffer(Reason, Packet, Bytes),
+    PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
                               table_id = TableId, match = Fields,
-                              data = pkt:encapsulate(Packet)},
+                              data = Data},
     linc_logic:send_to_controllers(#ofp_message{body = PacketIn}),
     ok;
 send(#ofp_port_status{} = PortStatus, controller) ->
@@ -611,3 +613,36 @@ do_detach_queue(#state{port = #ofp_port{port_no = PortNo},
     ets:delete(linc_port_queue, {PortNo, QueueId}),
     ets:delete(ThrottlingEts, QueueId),
     State.
+
+maybe_buffer(action, Packet, no_buffer) ->
+    {no_buffer,pkt:encapsulate(Packet)};
+maybe_buffer(action, Packet, Bytes) ->
+    maybe_buffer(Packet, Bytes);
+maybe_buffer(table_miss, Packet, _Bytes) ->
+    maybe_buffer(Packet, get_switch_config(miss_send_len));
+maybe_buffer(invalid_ttl, Packet, _Bytes) ->
+    %% The spec does not specify how many bytes to include for invalid_ttl,
+    %% so we use miss_send_len here as well.
+    maybe_buffer(Packet, get_switch_config(miss_send_len)).
+
+maybe_buffer(Packet, no_buffer) ->
+    {no_buffer, pkt:encapsulate(Packet)};
+maybe_buffer(Packet, Bytes) ->
+    BufferId = linc_us3_buffer:save_buffer(Packet),
+    {BufferId, truncate_packet(Packet,Bytes)}.
+
+truncate_packet(Packet,Bytes) -> 
+    Bin = pkt:encapsulate(Packet),
+    case byte_size(Bin) > Bytes of
+        true ->
+            <<Head:Bytes/bytes, _/binary>> = Bin,
+            Head;
+        false ->
+            Bin
+    end.
+
+get_switch_config(miss_send_len) ->
+    %%TODO: get this from the switch configuration
+    no_buffer.
+
+

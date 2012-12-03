@@ -32,7 +32,7 @@
 -type action_list_output() :: {NewPkt :: ofs_pkt(),
                                SideEffects :: list(side_effect())}.
 
--type action_set_output() :: side_effect() | {drop, ofs_pkt()}.
+-type action_set_output() :: side_effect() | {drop, ofs_pkt()} | {error, term()}.
 
 %%------------------------------------------------------------------------------
 %% @doc Applies set of actions to the packet.
@@ -47,11 +47,19 @@ apply_set(#ofs_pkt{actions = [#ofp_action_group{} = Action | _Rest]} = Pkt) ->
     {_NewPkt, [SideEffect]} = apply_list(Pkt, [Action]),
     SideEffect;
 apply_set(#ofs_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
-    {_NewPkt, [SideEffect]} = apply_list(Pkt, [Action]),
-    SideEffect;
+    case apply_list(Pkt, [Action]) of
+        {#ofs_pkt{}, [SideEffect]} ->
+            SideEffect;
+        {error,_Reason}=Error ->
+            Error
+    end;
 apply_set(#ofs_pkt{actions = [Action | Rest]} = Pkt) ->
-    {NewPkt, []} = apply_list(Pkt, [Action]),
-    apply_set(NewPkt#ofs_pkt{actions = Rest}).
+    case apply_list(Pkt, [Action]) of
+        {#ofs_pkt{}=NewPkt, []} ->
+            apply_set(NewPkt#ofs_pkt{actions = Rest});
+        {error,_Reason}=Error ->
+            Error
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc Does the routing decisions for the packet according to the action list
@@ -91,20 +99,25 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Modifies top tag on MPLS stack to have TTL reduced by 1.
-%% Nothing happens if packet had no MPLS header. Clamps value below 0 to 0.
+%% Nothing happens if packet had no MPLS header.
+%% If an invalid TTL is found the packet is sent to the controller.
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
            SideEffects) ->
-    P2 = linc_us3_packet_edit:find_and_edit(
-           P, mpls_tag,
-           fun(T) ->
-                   [TopTag | StackTail] = T#mpls_tag.stack,
-                   Decremented = erlang:max(0, TopTag#mpls_stack_entry.ttl - 1),
-                   NewTag = TopTag#mpls_stack_entry{
-                              ttl = Decremented
-                             },
-                   T#mpls_tag{ stack = [NewTag | StackTail] }
-           end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    try 
+        P2 = linc_us3_packet_edit:find_and_edit(
+               P, mpls_tag,
+               fun(#mpls_tag{stack=[#mpls_stack_entry{ttl=0} | _]}) ->
+                       throw({error,invalid_ttl});
+                  (#mpls_tag{stack=[#mpls_stack_entry{ttl=TTL}=TopTag | StackTail]}=T) ->
+                       NewTag = TopTag#mpls_stack_entry{ttl = TTL-1},
+                       T#mpls_tag{ stack = [NewTag | StackTail] }
+               end),
+        apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects)
+    catch 
+        throw:{error,invalid_ttl}=Error ->
+            linc_us3_port:send(Pkt#ofs_pkt{packet_in_reason=invalid_ttl}, controller),
+            Error
+    end;
 
 %%------------------------------------------------------------------------------
 %% Optional action
@@ -125,13 +138,21 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 %% Nothing happens if packet had no IPv4 header. Clamps values below 0 to 0.
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
            SideEffects) ->
-    P2 = linc_us3_packet_edit:find_and_edit(
-           P, ipv4,
-           fun(T) ->
-                   Decremented = erlang:max(0, T#ipv4.ttl - 1),
-                   T#ipv4{ ttl = Decremented }
-           end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    try
+        P2 = linc_us3_packet_edit:find_and_edit(
+               P, ipv4,
+               fun(#ipv4{ ttl = 0 }) ->
+                       throw({error,invalid_ttl});
+                  (#ipv4{ ttl = TTL } = T) ->
+                       T#ipv4{ ttl = TTL-1 }
+               end),
+        apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects)
+    catch
+        throw:{error,invalid_ttl}=Error ->
+            linc_us3_port:send(Pkt#ofs_pkt{packet_in_reason=invalid_ttl}, controller),
+            Error
+    end;
+
 
 %%------------------------------------------------------------------------------
 %% Optional action

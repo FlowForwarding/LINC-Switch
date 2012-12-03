@@ -89,8 +89,10 @@ actions_test_() ->
 
       {"Action Change-TTL: set MPLS TTL", fun action_set_mpls_ttl/0},
       {"Action Change-TTL: decrement MPLS TTL", fun action_decrement_mpls_ttl/0},
+      {"Action Change-TTL: invalid MPLS TTL", fun invalid_mpls_ttl/0},
       {"Action Change-TTL: set IP TTL", fun action_set_ip_ttl/0},
       {"Action Change-TTL: decrement IP TTL", fun action_decrement_ip_ttl/0},
+      {"Action Change-TTL: invalid IP TTL", fun invalid_ip_ttl/0},
       {"Action Change-TTL: copy TTL outwards", fun action_copy_ttl_outwards/0},
       {"Action Change-TTL: copy TTL inwards", fun action_copy_ttl_inwards/0}]}.
 
@@ -249,6 +251,11 @@ action_decrement_mpls_ttl() ->
     Action = #ofp_action_dec_mpls_ttl{},
     check_action(Action, Packet, NewPacket).
 
+invalid_mpls_ttl() ->
+    Packet = [#mpls_tag{stack = [#mpls_stack_entry{ttl = 0}]}],
+    Action = #ofp_action_dec_mpls_ttl{},
+    check_action_error(Action, Packet, {error,invalid_ttl}).
+
 action_set_ip_ttl() ->
     Packet = [#ipv4{ttl = ?INIT_VAL}],
     NewPacket = [#ipv4{ttl = ?NEW_VAL}],
@@ -260,6 +267,11 @@ action_decrement_ip_ttl() ->
     NewPacket = [#ipv4{ttl = ?INIT_VAL - 1}],
     Action = #ofp_action_dec_nw_ttl{},
     check_action(Action, Packet, NewPacket).
+
+invalid_ip_ttl() ->
+    Packet = [#ipv4{ttl = 0}],
+    Action = #ofp_action_dec_nw_ttl{},
+    check_action_error(Action, Packet, {error,invalid_ttl}).
 
 action_copy_ttl_outwards() ->
     Action  = #ofp_action_copy_ttl_out{},
@@ -322,3 +334,7 @@ check_action(Action, Packet, NewPacket) ->
     NewPkt = #ofs_pkt{packet = NewPacket},
     {Pkt2, ?NO_SIDE_EFFECTS} = linc_us3_actions:apply_list(Pkt, [Action]),
     ?assertEqual(NewPkt, Pkt2).
+
+check_action_error(Action, Packet, Error) ->
+    Pkt = #ofs_pkt{packet = Packet},
+    ?assertEqual(Error, linc_us3_actions:apply_list(Pkt, [Action])).

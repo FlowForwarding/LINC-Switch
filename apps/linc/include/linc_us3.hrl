@@ -171,6 +171,7 @@
           queue_id = default   :: integer() | default,
           table_id             :: integer(),
           no_packet_in = false :: boolean(),
-          packet_in_reason     :: ofp_packet_in_reason()
+          packet_in_reason     :: ofp_packet_in_reason(),
+          packet_in_bytes      :: ofp_packet_in_bytes()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

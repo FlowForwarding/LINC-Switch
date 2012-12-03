@@ -59,11 +59,11 @@ mock([port_native | Rest]) ->
     ok = meck:new(linc_us3_port_native),
     ok = meck:expect(linc_us3_port_native, eth,
                      fun(_) ->
-                             {socket, 0, pid}
+                             {socket, 0, pid, <<1,1,1,1,1,1>>}
                      end),
     ok = meck:expect(linc_us3_port_native, tap,
                      fun(_, _) ->
-                             {port, pid}
+                             {port, pid, <<1,1,1,1,1,1>>}
                      end),
     ok = meck:expect(linc_us3_port_native, close,
                      fun(_) ->

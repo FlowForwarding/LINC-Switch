@@ -31,12 +31,19 @@
 -export([start_link/1,
          initialize/0,
          terminate/0,
+
          modify/1,
          send/2,
+
          get_stats/1,
          get_queue_stats/1,
+
          get_state/1,
          set_state/2,
+
+         get_config/1,
+         set_config/2,
+
          is_valid/1,
          get_ports/0]).
 
@@ -125,13 +132,19 @@ send(#ofs_pkt{}, flood) ->
 send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
     [send(Pkt, PortNo) || PortNo <- get_all_port_no(), PortNo /= InPort],
     ok;
-send(#ofs_pkt{fields = Fields, packet = Packet,
+send(#ofs_pkt{no_packet_in = true}, controller) ->
+    %% Drop packets which originate from port with no_packet_in config flag set
+    ok;
+send(#ofs_pkt{no_packet_in = false, fields = Fields, packet = Packet,
               table_id = TableId, packet_in_reason = Reason},
      controller) ->
     PacketIn = #ofp_packet_in{buffer_id = no_buffer, reason = Reason,
                               table_id = TableId, match = Fields,
                               data = pkt:encapsulate(Packet)},
     linc_logic:send_to_controllers(#ofp_message{body = PacketIn}),
+    ok;
+send(#ofp_port_status{} = PortStatus, controller) ->
+    linc_logic:send_to_controllers(#ofp_message{body = PortStatus}),
     ok;
 send(#ofs_pkt{}, local) ->
     ?WARNING("Unsupported port type: local", []),
@@ -151,27 +164,77 @@ send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply().
-get_stats(#ofp_port_stats_request{}) ->
-    #ofp_port_stats_reply{}.
+get_stats(#ofp_port_stats_request{port_no = all}) ->
+    PortStats = ets:tab2list(linc_port_stats),
+    #ofp_port_stats_reply{stats = PortStats};
+get_stats(#ofp_port_stats_request{port_no = PortNo}) ->
+    case ets:lookup(linc_port_stats, PortNo) of
+        [] ->
+            {error, {bad_request, bad_port}};
+        [#ofp_port_stats{}] = PortStats ->
+            #ofp_port_stats_reply{stats = PortStats}
+    end.
 
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
-get_queue_stats(#ofp_queue_stats_request{}) ->
-    case ets:lookup(linc_port_queue, {port_no, queue_id}) of
-        [] ->
-            undefined;
-        [Any] ->
-            queue_stats_convert(Any)
-    end,
-    #ofp_queue_stats_reply{}.
+get_queue_stats(#ofp_queue_stats_request{port_no = all, queue_id = all}) ->
+    #ofp_queue_stats_reply{};
+get_queue_stats(#ofp_queue_stats_request{port_no = all, queue_id = _QueueId}) ->
+    #ofp_queue_stats_reply{};
+get_queue_stats(#ofp_queue_stats_request{port_no = _PortNo, queue_id = all}) ->
+    #ofp_queue_stats_reply{};
+get_queue_stats(#ofp_queue_stats_request{port_no = PortNo,
+                                         queue_id = QueueId}) ->
+    case is_valid(PortNo) of
+        false ->
+            {error, {bad_request, bad_port}};
+        true ->
+            try
+                [LincPortQueue] = ets:lookup(linc_port_queue,
+                                             {PortNo, QueueId}),
+                QueueStats = queue_stats_convert(LincPortQueue),
+                #ofp_queue_stats_reply{stats = [QueueStats]}
+            catch 
+                _:_ ->
+                    {error, {bad_request, bad_queue}}
+            end
+    end.
 
--spec get_state(ofp_port_no()) -> ofp_port_state().
-get_state(_PortNo) ->
-    live.
+-spec get_state(ofp_port_no()) -> [ofp_port_state()].
+get_state(PortNo) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, get_port_state)
+    end.
 
--spec set_state(ofp_port_no(), ofp_port_state()) -> ok.
-set_state(_PortNo, _State) ->
-    ok.
+-spec set_state(ofp_port_no(), [ofp_port_state()]) -> ok.
+set_state(PortNo, PortState) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, {set_port_state, PortState})
+    end.
+
+-spec get_config(ofp_port_no()) -> [ofp_port_config()].
+get_config(PortNo) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, get_port_config)
+    end.
+
+-spec set_config(ofp_port_no(), [ofp_port_config()]) -> ok.
+set_config(PortNo, PortConfig) ->
+    case get_port_pid(PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, {set_port_config, PortConfig})
+    end.
 
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
@@ -194,7 +257,12 @@ init({PortNo, PortOpts}) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    State = #state{interface = Interface, port = #ofp_port{port_no = PortNo}},
+    Port = #ofp_port{port_no = PortNo,
+                     config = [], state = [live],
+                     curr = [other], advertised = [other],
+                     supported = [other], peer = [other],
+                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
+    State = #state{interface = Interface, port = Port},
 
     case re:run(Interface, "^tap.*$", [{capture, none}]) of
         %% When switch connects to a tap interface, erlang receives file
@@ -205,8 +273,9 @@ init({PortNo, PortOpts}) ->
             case linc_us3_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
-                {Port, Pid} ->
-                    State2 = State#state{erlang_port = Port, port_ref = Pid},
+                {Port, Pid, HwAddr} ->
+                    State2 = State#state{erlang_port = Port, port_ref = Pid,
+                                         port = Port#ofp_port{hw_addr = HwAddr}},
                     NewState = setup_port_and_queues(State2),
                     {ok, NewState}
             end;
@@ -218,42 +287,82 @@ init({PortNo, PortOpts}) ->
         %%   a RAW socket binded with given network interface.
         %%   Handling of RAW sockets differs between OSes.
         nomatch ->
-            {Socket, IfIndex, EpcapPid} = linc_us3_port_native:eth(Interface),
+            {Socket, IfIndex, EpcapPid, HwAddr} =
+                linc_us3_port_native:eth(Interface),
             State2 = State#state{socket = Socket,
                                  ifindex = IfIndex,
-                                 epcap_pid = EpcapPid},
+                                 epcap_pid = EpcapPid,
+                                 port = Port#ofp_port{hw_addr = HwAddr}},
             NewState = setup_port_and_queues(State2),
             {ok, NewState}
     end.
 
 %% @private
-handle_call({port_mod, #ofp_port_mod{}}, _From, State) ->
-    %% TODO: [#ofp_port{hw_addr = OtherHWAddr}] ->
-    %%           {error, bad_hw_addr};
-    {reply, ok, State}.
+handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
+                                     config = Config,
+                                     mask = _Mask,
+                                     advertise = Advertise}}, _From,
+            #state{port = #ofp_port{hw_addr = HWAddr} = Port} = State) ->
+    {Reply, NewPort} = case PMHwAddr == HWAddr of
+                           true ->
+                               {ok, Port#ofp_port{config = Config,
+                                                  advertised = Advertise}};
+                           false ->
+                               {{error, {bad_request, bad_hw_addr}}, Port}
+                       end,
+    {reply, Reply, State#state{port = NewPort}};
+handle_call(get_port_state, _From,
+            #state{port = #ofp_port{state = PortState}} = State) ->
+    {reply, PortState, State};
+handle_call({set_port_state, NewPortState}, _From,
+            #state{port = Port} = State) ->
+    NewPort = Port#ofp_port{state = NewPortState},
+    PortStatus = #ofp_port_status{reason = modify,
+                                  desc = NewPort},
+    send(PortStatus, controller),
+    {reply, ok, State#state{port = NewPort}};
+handle_call(get_port_config, _From,
+            #state{port = #ofp_port{config = PortConfig}} = State) ->
+    {reply, PortConfig, State};
+handle_call({set_port_config, NewPortConfig}, _From,
+            #state{port = Port} = State) ->
+    NewPort = Port#ofp_port{config = NewPortConfig},
+    PortStatus = #ofp_port_status{reason = modify,
+                                  desc = NewPort},
+    send(PortStatus, controller),
+    {reply, ok, State#state{port = NewPort}}.
 
 %% @private
 handle_cast({send, #ofs_pkt{packet = Packet}},
             #state{socket = Socket,
+                   port = #ofp_port{port_no = PortNo, config = PortConfig},
                    erlang_port = Port,
                    ifindex = Ifindex} = State) ->
-    Frame = pkt:encapsulate(Packet),
-    case {Port, Ifindex} of
-        {undefined, _} ->
-            linc_us3_port_native:send(Socket, Ifindex, Frame);
-        {_, undefined} ->
-            port_command(Port, Frame)
+    case lists:member(no_fwd, PortConfig) of
+        true ->
+            drop;
+        false ->
+            Frame = pkt:encapsulate(Packet),
+            update_port_tx_counters(PortNo, byte_size(Frame)),
+            case {Port, Ifindex} of
+                {undefined, _} ->
+                    linc_us3_port_native:send(Socket, Ifindex, Frame);
+                {_, undefined} ->
+                    port_command(Port, Frame)
+            end
     end,
     {noreply, State}.
 
 %% @private
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
-            #state{port = #ofp_port{port_no = PortNo}} = State) ->
-    handle_frame(Frame, PortNo),
+            #state{port = #ofp_port{port_no = PortNo,
+                                    config = PortConfig}} = State) ->
+    handle_frame(Frame, PortNo, PortConfig),
     {noreply, State};
-handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo},
+handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
+                                                           config = PortConfig},
                                           erlang_port = Port} = State) ->
-    handle_frame(Frame, PortNo),
+    handle_frame(Frame, PortNo, PortConfig),
     {noreply, State};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
@@ -308,14 +417,17 @@ do_send(Pkt, PortNo) ->
     end.
 
 do_send_with_queue(Pkt, PortNo) ->
-    case ets:lookup(linc_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
+    Key = {PortNo, Pkt#ofs_pkt.queue_id},
+    case ets:lookup(linc_port_queue, Key) of
         %% XXX: move no_fwd to ETS and check it
         [#linc_port_queue{queue_pid = Pid}] ->
             linc_us3_queue:send(Pid, Pkt);
         [] ->
             case ets:lookup(linc_ports, PortNo) of
-                [_] -> bad_queue;
-                [ ] -> bad_port
+                [_] ->
+                    bad_queue;
+                [ ] ->
+                    bad_port
             end
     end.
 
@@ -382,16 +494,32 @@ setup_queues(#state{port = #ofp_port{port_no = PortNo}} = State) ->
                         end, State3, Queues)
     end.
 
-handle_frame(Frame, PortNo) ->
-    OFSPacket = linc_us3_packet_edit:binary_to_record(Frame, PortNo),
-    update_port_received_counters(PortNo, byte_size(Frame)),
-    linc_us3_routing:spawn_route(OFSPacket).
+handle_frame(Frame, PortNo, PortConfig) ->
+    case lists:member(no_recv, PortConfig) of
+        true ->
+            drop;
+        false ->
+            LincPkt = linc_us3_packet_edit:binary_to_record(Frame, PortNo),
+            update_port_rx_counters(PortNo, byte_size(Frame)),
+            case lists:member(no_packet_in, PortConfig) of
+                false ->
+                    linc_us3_routing:spawn_route(LincPkt);
+                true ->
+                    linc_us3_routing:spawn_route(LincPkt#ofs_pkt{no_packet_in = true})
+            end
+    end.
 
--spec update_port_received_counters(integer(), integer()) -> any().
-update_port_received_counters(PortNum, Bytes) ->
+-spec update_port_rx_counters(integer(), integer()) -> any().
+update_port_rx_counters(PortNum, Bytes) ->
     ets:update_counter(linc_port_stats, PortNum,
                        [{#ofp_port_stats.rx_packets, 1},
                         {#ofp_port_stats.rx_bytes, Bytes}]).
+
+-spec update_port_tx_counters(integer(), integer()) -> any().
+update_port_tx_counters(PortNum, Bytes) ->
+    ets:update_counter(linc_port_stats, PortNum,
+                       [{#ofp_port_stats.tx_packets, 1},
+                        {#ofp_port_stats.tx_bytes, Bytes}]).
 
 -spec get_port_pid(ofp_port_no()) -> pid() | bad_port.
 get_port_pid(PortNo) ->

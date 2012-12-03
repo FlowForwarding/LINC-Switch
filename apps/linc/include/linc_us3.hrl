@@ -162,14 +162,15 @@
          }).
 
 -record(ofs_pkt, {
-          in_port             :: ofp_port_no(),
-          fields              :: ofp_match(),
-          actions = []        :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>> :: binary(),
-          packet              :: pkt:packet(),
-          size                :: integer(),
-          queue_id = default  :: integer() | default,
-          table_id            :: integer(),
-          packet_in_reason    :: ofp_packet_in_reason()
+          in_port              :: ofp_port_no(),
+          fields               :: ofp_match(),
+          actions = []         :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>>  :: binary(),
+          packet               :: pkt:packet(),
+          size                 :: integer(),
+          queue_id = default   :: integer() | default,
+          table_id             :: integer(),
+          no_packet_in = false :: boolean(),
+          packet_in_reason     :: ofp_packet_in_reason()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

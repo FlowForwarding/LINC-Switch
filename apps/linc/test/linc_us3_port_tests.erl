@@ -35,7 +35,8 @@ port_test_() ->
     {foreach,
      fun setup/0,
      fun teardown/1,
-     [{"Port: port_mod", fun port_mod/0},
+     [
+      {"Port: port_mod", fun port_mod/0},
       {"Port: is_valid", fun is_valid/0},
       {"Port send: in_port", fun send_in_port/0},
       {"Port send: table", fun send_table/0},
@@ -58,14 +59,22 @@ port_test_() ->
      ]}.
 
 port_mod() ->
-    PortMod1 = #ofp_port_mod{port_no = 999},
+    BadPort = 999,
+    PortMod1 = #ofp_port_mod{port_no = BadPort},
     Error1 = {error, {bad_request, bad_port}},
     ?assertEqual(Error1, linc_us3_port:modify(PortMod1)),
 
-    PortMod2 = #ofp_port_mod{port_no = 1, hw_addr = <<0,0,0>>,
+    Port = 1,
+    BadHwAddr = <<2,2,2,2,2,2>>,
+    PortMod2 = #ofp_port_mod{port_no = Port, hw_addr = BadHwAddr},
+    ?assertEqual({error, {bad_request, bad_hw_addr}},
+                 linc_us3_port:modify(PortMod2)),
+
+    HwAddr = <<1,1,1,1,1,1>>,
+    PortMod3 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
                              config = [], mask = [],
                              advertise = [copper, autoneg]},
-    ?assertEqual(ok, linc_us3_port:modify(PortMod2)),
+    ?assertEqual(ok, linc_us3_port:modify(PortMod3)),
     ok.
 
 is_valid() ->
@@ -89,10 +98,11 @@ send_flood() ->
     ?assertEqual(bad_port, linc_us3_port:send(pkt(), flood)).
 
 send_all() ->
-    ?assertEqual(ok, linc_us3_port:send(pkt(), all)),
-    ?assertEqual(2, meck:num_calls(linc_us3_port_native, send, '_')).
+    ?assertEqual(ok, linc_us3_port:send(pkt(), all)).
+    %% ?assertEqual(2, meck:num_calls(linc_us3_port_native, send, '_')).
 
 send_controller() ->
+    ?assertEqual(ok, linc_us3_port:send(#ofp_port_status{}, controller)),
     ?assertEqual(ok, linc_us3_port:send(pkt(), controller)).
 
 send_local() ->
@@ -102,35 +112,77 @@ send_any() ->
     ?assertEqual(bad_port, linc_us3_port:send(pkt(), any)).
 
 send_port_number() ->
-    Pkt = pkt(),
-    ?assertEqual(ok, linc_us3_port:send(Pkt, 1)).
+    ?assertEqual(ok, linc_us3_port:send(pkt(), 1)).
 
 port_stats_request() ->
+    BadPort = 999,
+    StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},
+    ?assertEqual({error, {bad_request, bad_port}},
+                 linc_us3_port:get_stats(StatsRequest1)),
+
+    ValidPort = 1,
+    StatsRequest2 = #ofp_port_stats_request{port_no = ValidPort},
+    StatsReply2 = linc_us3_port:get_stats(StatsRequest2),
+    ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.stats)),
+
+    AllPorts = all,
+    StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
+    StatsReply3 = linc_us3_port:get_stats(StatsRequest3),
+    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.stats)),
+
     ok.
 
 queue_stats_request() ->
+    BadPort = 999,
+    BadQueue = 999,
+    ValidPort = 1,
+
+    StatsRequest1 = #ofp_queue_stats_request{port_no = BadPort,
+                                             queue_id = BadQueue},
+    StatsReply1 = linc_us3_port:get_queue_stats(StatsRequest1),
+    ?assertEqual({error, {bad_request, bad_port}}, StatsReply1),
+
+    StatsRequest2 = #ofp_queue_stats_request{port_no = ValidPort,
+                                             queue_id = BadQueue},
+    StatsReply2 = linc_us3_port:get_queue_stats(StatsRequest2),
+    ?assertEqual({error, {bad_request, bad_queue}}, StatsReply2),
+
     ok.
 
 config_port_down() ->
-    ok.
+    ?assertEqual([], linc_us3_port:get_config(1)),
+    ?assertEqual(ok, linc_us3_port:set_config(1, [port_down])),
+    ?assertEqual([port_down], linc_us3_port:get_config(1)).
 
 config_no_recv() ->
-    ok.
+    ?assertEqual([], linc_us3_port:get_config(1)),
+    ?assertEqual(ok, linc_us3_port:set_config(1, [no_recv])),
+    ?assertEqual([no_recv], linc_us3_port:get_config(1)).
 
 config_no_fwd() ->
-    ok.
+    ?assertEqual([], linc_us3_port:get_config(1)),
+    ?assertEqual(ok, linc_us3_port:set_config(1, [no_fwd])),
+    ?assertEqual([no_fwd], linc_us3_port:get_config(1)).
 
 config_no_pkt_in() ->
-    ok.
+    ?assertEqual([], linc_us3_port:get_config(1)),
+    ?assertEqual(ok, linc_us3_port:set_config(1, [no_pkt_in])),
+    ?assertEqual([no_pkt_in], linc_us3_port:get_config(1)).
 
 state_link_down() ->
-    ok.
+    ?assertEqual([live], linc_us3_port:get_state(1)),
+    ?assertEqual(ok, linc_us3_port:set_state(1, [link_down])),
+    ?assertEqual([link_down], linc_us3_port:get_state(1)).
 
 state_blocked() ->
-    ok.
+    ?assertEqual([live], linc_us3_port:get_state(1)),
+    ?assertEqual(ok, linc_us3_port:set_state(1, [blocked])),
+    ?assertEqual([blocked], linc_us3_port:get_state(1)).
 
 state_live() ->
-    ok.
+    ?assertEqual([live], linc_us3_port:get_state(1)),
+    ?assertEqual(ok, linc_us3_port:set_state(1, [live])),
+    ?assertEqual([live], linc_us3_port:get_state(1)).
 
 %% Fixtures --------------------------------------------------------------------
 

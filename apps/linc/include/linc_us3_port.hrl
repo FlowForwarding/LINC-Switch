@@ -1,3 +1,5 @@
+-define(PORT_SPEED, 5000). %% Port speed in kbps = 5Mbps
+
 -record(linc_port, {
           port_no             :: ofp_port_no(),
           pid                :: pid()

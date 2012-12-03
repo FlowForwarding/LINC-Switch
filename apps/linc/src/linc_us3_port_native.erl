@@ -46,7 +46,8 @@ tap(Interface, PortOpts) ->
             end,
             Fd = tuncer:getfd(Pid),
             Port = open_port({fd, Fd, Fd}, [binary]),
-            {Port, Pid};
+            HwAddr = get_hw_addr(Interface),
+            {Port, Pid, HwAddr};
         {error, Error} ->
             ?ERROR("Tuncer error ~p for interface ~p",
                    [Error, Interface]),
@@ -70,7 +71,8 @@ eth(Interface) ->
                             {unix, linux} ->
                                 linux_raw_socket(Interface)
                         end,
-    {Socket, IfIndex, Pid}.
+    HwAddr = get_hw_addr(Interface),
+    {Socket, IfIndex, Pid, HwAddr}.
 
 %% TODO: Add typespecs to procket to avoid:
 %% linc_us3_port_procket.erl:7: Function send/2 has no local return
@@ -135,3 +137,19 @@ linux_raw_socket(Interface) ->
     packet:promiscuous(Socket, Ifindex),
     ok = packet:bind(Socket, Ifindex),
     {Socket, Ifindex}.
+
+-spec get_hw_addr(string()) -> binary().
+get_hw_addr(Interface) ->
+    {ok, Ifs} = inet:getifaddrs(),
+    DefaultMAC = <<0,0,0,0,0,0>>,
+    case lists:keyfind(Interface, 1, Ifs) of
+        false ->
+            DefaultMAC;
+        {Interface, Opts} ->
+            case lists:keyfind(hwaddr, 1, Opts) of
+                false ->
+                    DefaultMAC;
+                {hwaddr, MAC} ->
+                    list_to_binary(MAC)
+            end
+    end.

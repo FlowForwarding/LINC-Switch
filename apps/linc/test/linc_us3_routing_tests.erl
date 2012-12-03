@@ -130,8 +130,7 @@ flow_entry(FlowId, Matches) ->
                       #flow_entry_counter{id = FlowId}),
     MatchFields = [#ofp_field{name = Type, value = Value}
                    || {Type, Value} <- Matches],
-    FlowEntry = #flow_entry{id = FlowId,
-                            match = #ofp_match{fields = MatchFields}}.
+    #flow_entry{id = FlowId, match = #ofp_match{fields = MatchFields}}.
     
 flow_table(TableId, FlowEntries, Config) ->
     TableConfig = #flow_table_config{id = TableId, config = Config},

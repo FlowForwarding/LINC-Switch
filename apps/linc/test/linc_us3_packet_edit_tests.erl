@@ -87,7 +87,6 @@ skip_header() ->
     FieldName = eth_type,
     Packet = [#ether{type = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
     NewPacket = [#ether{type = ?INIT_VAL}, #ether{type = ?NEW_VAL}],
-    Field = #ofp_field{name = FieldName, value = ?NEW_VAL},
     SkipCount = 1,
     EditFun = fun(T) ->
                       T#ether{type = ?NEW_VAL}

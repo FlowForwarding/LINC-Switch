@@ -67,7 +67,7 @@
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
-    linc_sup:start_backend_sup(),
+    linc_us3_sup:start_backend_sup(),
     linc_us3_port:initialize(),
     linc_us3_groups:create(),
     FlowState = linc_us3_flow:initialize(),

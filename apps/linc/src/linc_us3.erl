@@ -97,11 +97,10 @@ handle_message(MessageBody, State) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
 ofp_features_request(State, #ofp_features_request{}) ->
-    Ports =  [Port || #ofs_port{port = Port} <- []],
     FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
-                                        ports = Ports,
+                                        ports = linc_us3_port:get_ports(),
                                         n_tables = 255},
     {reply, FeaturesReply, State}.
 

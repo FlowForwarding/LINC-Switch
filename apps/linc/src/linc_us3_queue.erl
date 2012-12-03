@@ -26,6 +26,7 @@
          detach/1]).
 
 -include("linc_us3.hrl").
+-include("linc_us3_port.hrl").
 
 %% have history of 10 buckets and total length of one second
 -define(HIST_BUCKET_SIZE, 100).
@@ -38,9 +39,9 @@
 %%------------------------------------------------------------------------------
 
 start() ->
-    ofs_port_queue = ets:new(ofs_port_queue,
+    linc_port_queue = ets:new(linc_port_queue,
                              [named_table, public,
-                              {keypos, #ofs_port_queue.key},
+                              {keypos, #linc_port_queue.key},
                               {read_concurrency, true}]),
 
     QueueSup = {linc_us3_queue_sup, {linc_us3_queue_sup, start_link, []},
@@ -48,7 +49,7 @@ start() ->
     supervisor:start_child(linc_us3_sup, QueueSup).
 
 stop() ->
-    ets:delete(ofs_port_queue).
+    ets:delete(linc_port_queue).
 
 -spec start_link({ofp_port_no(), ofp_queue_id()},
                  integer(), integer(), integer(),
@@ -59,7 +60,7 @@ start_link({_, QueueNo} = MyKey, MinRateBps, MaxRateBps, PortRateBps,
     MinRate = bps_to_bphistlen(MinRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
     PortRate = bps_to_bphistlen(PortRateBps),
-    ets:insert(ThrottlingEts, #ofs_queue_throttling{queue_no = QueueNo,
+    ets:insert(ThrottlingEts, #linc_queue_throttling{queue_no = QueueNo,
                                                     min_rate = MinRate,
                                                     max_rate = MaxRate,
                                                     rate = 0}),
@@ -140,7 +141,7 @@ pause_len(OverTransfer, HistoryLenMs, MaxTransfer) ->
     OverTransfer * HistoryLenMs div MaxTransfer.
 
 max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts) ->
-    TotalRate = ets:foldl(fun(#ofs_queue_throttling{rate = Rate}, Acc) ->
+    TotalRate = ets:foldl(fun(#linc_queue_throttling{rate = Rate}, Acc) ->
                               Rate + Acc
                           end, 0, ThrottlingEts),
     FreeRate = PortRate - TotalRate,
@@ -152,7 +153,7 @@ max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts) ->
 update_transfer({_, QueueId}, ThrottlingEts, Rate) ->
     ets:update_element(ThrottlingEts,
                        QueueId,
-                       {#ofs_queue_throttling.rate, Rate}).
+                       {#linc_queue_throttling.rate, Rate}).
 
 bps_to_bphistlen(Bps) when is_integer(Bps) ->
     Bps * 1000 div ?HIST_LEN_MS;
@@ -162,9 +163,9 @@ bps_to_bphistlen(Special) when is_atom(Special) ->
 -spec update_port_transmitted_counters({ofp_port_no(), ofp_queue_id()},
                                        integer()) -> any().
 update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
-    try ets:update_counter(ofs_port_queue, Key,
-                           [{#ofs_port_queue.tx_packets, 1},
-                            {#ofs_port_queue.tx_bytes, Bytes}])
+    try ets:update_counter(linc_port_queue, Key,
+                           [{#linc_port_queue.tx_packets, 1},
+                            {#linc_port_queue.tx_bytes, Bytes}])
     catch
         E1:E2 ->
             ?ERROR("Queue ~p for port ~p doesn't exist because: ~p:~p "

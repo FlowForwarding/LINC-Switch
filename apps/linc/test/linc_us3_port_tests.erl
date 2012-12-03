@@ -36,6 +36,7 @@ port_test_() ->
      fun setup/0,
      fun teardown/1,
      [{"Port: port_mod", fun port_mod/0},
+      {"Port: is_valid", fun is_valid/0},
       {"Port send: in_port", fun send_in_port/0},
       {"Port send: table", fun send_table/0},
       {"Port send: normal", fun send_normal/0},
@@ -66,6 +67,10 @@ port_mod() ->
                              advertise = [copper, autoneg]},
     ?assertEqual(ok, linc_us3_port:modify(PortMod2)),
     ok.
+
+is_valid() ->
+    ?assertEqual(true, linc_us3_port:is_valid(1)),
+    ?assertEqual(false, linc_us3_port:is_valid(999)).
 
 send_in_port() ->
     Pkt = pkt(1),

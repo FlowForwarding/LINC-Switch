@@ -37,7 +37,8 @@
          get_queue_stats/1,
          get_state/1,
          set_state/2,
-         is_valid/1]).
+         is_valid/1,
+         get_ports/0]).
 
 -include("linc_us3.hrl").
 -include("linc_us3_port.hrl").
@@ -57,21 +58,21 @@
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start Open Flow port with provided configuration.
--spec start_link(list(ofs_port_config())) -> {ok, pid()} |
-                                             ignore |
-                                             {error, term()}.
+-spec start_link(list(linc_port_config())) -> {ok, pid()} |
+                                              ignore |
+                                              {error, term()}.
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 -spec initialize() -> ok.
 initialize() ->
     linc_ports = ets:new(linc_ports, [named_table, public,
-                                     {keypos, #ofs_port.number},
-                                     {read_concurrency, true}]),
+                                      {keypos, #linc_port.port_no},
+                                      {read_concurrency, true}]),
     linc_port_stats = ets:new(linc_port_stats,
-                         [named_table, public,
-                          {keypos, #ofp_port_stats.port_no},
-                          {read_concurrency, true}]),
+                              [named_table, public,
+                               {keypos, #ofp_port_stats.port_no},
+                               {read_concurrency, true}]),
     case application:get_env(linc, queues) of
         undefined ->
             no_queues;
@@ -86,9 +87,9 @@ initialize() ->
 
 -spec terminate() -> ok.
 terminate() ->
-    [ok = remove(PortNo) || #ofs_port{number = PortNo} <- list_ports()],
-    ets:delete(linc_ports),
-    ets:delete(linc_port_stats),
+    [ok = remove(PortNo) || PortNo <- get_all_port_no()],
+    true = ets:delete(linc_ports),
+    true = ets:delete(linc_port_stats),
     case application:get_env(linc, queues) of
         undefined ->
             ok;
@@ -122,8 +123,7 @@ send(#ofs_pkt{}, flood) ->
     %% not supprted by LINC
     bad_port;
 send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
-    [send(Pkt, PortNo)
-     || #ofs_port{number = PortNo} <- list_ports(), PortNo /= InPort],
+    [send(Pkt, PortNo) || PortNo <- get_all_port_no(), PortNo /= InPort],
     ok;
 send(#ofs_pkt{fields = Fields, packet = Packet,
               table_id = TableId, packet_in_reason = Reason},
@@ -157,7 +157,7 @@ get_stats(#ofp_port_stats_request{}) ->
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
 get_queue_stats(#ofp_queue_stats_request{}) ->
-    case ets:lookup(ofs_port_queue, {port_no, queue_id}) of
+    case ets:lookup(linc_port_queue, {port_no, queue_id}) of
         [] ->
             undefined;
         [Any] ->
@@ -175,20 +175,26 @@ set_state(_PortNo, _State) ->
 
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
-is_valid(OfsPort) ->
-    ets:member(linc_ports, OfsPort).
+is_valid(PortNo) ->
+    ets:member(linc_ports, PortNo).
+
+%% @doc Return list of all OFP ports present in the switch.
+-spec get_ports() -> [#ofp_port{}].
+get_ports() ->
+    %TODO change to calls to port gen_servers
+    ets:tab2list(linc_ports).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
 
 %% @private
-init({OfsPortNo, PortOpts}) ->
+init({PortNo, PortOpts}) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    State = #state{interface = Interface, ofs_port_no = OfsPortNo},
+    State = #state{interface = Interface, port = #ofp_port{port_no = PortNo}},
 
     case re:run(Interface, "^tap.*$", [{capture, none}]) of
         %% When switch connects to a tap interface, erlang receives file
@@ -200,10 +206,10 @@ init({OfsPortNo, PortOpts}) ->
                 {stop, shutdown} ->
                     {stop, shutdown};
                 {Port, Pid} ->
-                    State2 = State#state{port = Port, port_ref = Pid},
+                    State2 = State#state{erlang_port = Port, port_ref = Pid},
                     NewState = setup_port_and_queues(State2),
                     {ok, NewState}
-                end;
+            end;
         %% When switch connects to a hardware interface such as eth0
         %% then communication is handled by two channels:
         %% * receiving ethernet frames is done by libpcap wrapped-up by
@@ -222,14 +228,14 @@ init({OfsPortNo, PortOpts}) ->
 
 %% @private
 handle_call({port_mod, #ofp_port_mod{}}, _From, State) ->
-    %% TODO: [#ofs_port{hw_addr = OtherHWAddr}] ->
+    %% TODO: [#ofp_port{hw_addr = OtherHWAddr}] ->
     %%           {error, bad_hw_addr};
     {reply, ok, State}.
 
 %% @private
 handle_cast({send, #ofs_pkt{packet = Packet}},
             #state{socket = Socket,
-                   port = Port,
+                   erlang_port = Port,
                    ifindex = Ifindex} = State) ->
     Frame = pkt:encapsulate(Packet),
     case {Port, Ifindex} of
@@ -242,27 +248,27 @@ handle_cast({send, #ofs_pkt{packet = Packet}},
 
 %% @private
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
-            #state{ofs_port_no = OfsPortNo} = State) ->
-    handle_frame(Frame, OfsPortNo),
+            #state{port = #ofp_port{port_no = PortNo}} = State) ->
+    handle_frame(Frame, PortNo),
     {noreply, State};
-handle_info({Port, {data, Frame}}, #state{ofs_port_no = OfsPortNo,
-                                          port = Port} = State) ->
-    handle_frame(Frame, OfsPortNo),
+handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo},
+                                          erlang_port = Port} = State) ->
+    handle_frame(Frame, PortNo),
     {noreply, State};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
     ?ERROR("Port for interface ~p exited abnormally",
-                [Interface]),
+           [Interface]),
     {stop, normal, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
-terminate(_Reason, #state{ofs_port_no = PortNo} = State) ->
-    lists:foldl(fun(#ofs_port_queue{key = {_, QueueId}},
+terminate(_Reason, #state{port = #ofp_port{port_no = PortNo}} = State) ->
+    lists:foldl(fun(#linc_port_queue{key = {_, QueueId}},
                     StateAcc) ->
                         do_detach_queue(StateAcc, QueueId)
-                  end, State, get_queues(PortNo)),
+                end, State, get_queues(PortNo)),
     true = ets:delete(linc_ports, PortNo),
     true = ets:delete(linc_port_stats, PortNo),
     linc_us3_port_native:close(State).
@@ -275,14 +281,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%-----------------------------------------------------------------------------
 
--spec get_queues(ofp_port_no()) -> list(#ofs_port_queue{}).
+%% @doc Return list of all OFP port nuumbers present in the switch.
+-spec get_all_port_no() -> [integer()].
+get_all_port_no() ->
+    Ports = ets:tab2list(linc_ports),
+    lists:map(fun(#linc_port{port_no = PortNo}) ->
+                      PortNo
+              end, Ports).
+
+-spec get_queues(ofp_port_no()) -> list(#linc_port_queue{}).
 get_queues(PortNo) ->
     case application:get_env(linc, queues) of
         undefined ->
             [];
         {ok, _} ->
-            MatchSpec = #ofs_port_queue{key = {PortNo, '_'}, _ = '_'},
-            ets:match_object(ofs_port_queue, MatchSpec)
+            MatchSpec = #linc_port_queue{key = {PortNo, '_'}, _ = '_'},
+            ets:match_object(linc_port_queue, MatchSpec)
     end.
 
 do_send(Pkt, PortNo) ->
@@ -294,9 +308,9 @@ do_send(Pkt, PortNo) ->
     end.
 
 do_send_with_queue(Pkt, PortNo) ->
-    case ets:lookup(ofs_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
+    case ets:lookup(linc_port_queue, {PortNo, Pkt#ofs_pkt.queue_id}) of
         %% XXX: move no_fwd to ETS and check it
-        [#ofs_port_queue{queue_pid = Pid}] ->
+        [#linc_port_queue{queue_pid = Pid}] ->
             linc_us3_queue:send(Pid, Pkt);
         [] ->
             case ets:lookup(linc_ports, PortNo) of
@@ -305,7 +319,7 @@ do_send_with_queue(Pkt, PortNo) ->
             end
     end.
 
--spec add(ofs_port_type(), [ofs_port_config()]) -> pid() | error.
+-spec add(linc_port_type(), [linc_port_config()]) -> pid() | error.
 add(physical, Opts) ->
     case supervisor:start_child(linc_us3_port_sup, [Opts]) of
         {ok, Pid} ->
@@ -328,28 +342,18 @@ remove(PortNo) ->
         bad_port ->
             bad_port;
         Pid ->
-            supervisor:terminate_child(linc_us3_port_sup, Pid)
+            ok = supervisor:terminate_child(linc_us3_port_sup, Pid)
     end.
 
-%% @doc Return list of all OF ports present in the switch.
--spec list_ports() -> [#ofs_port{}].
-list_ports() ->
-    ets:tab2list(linc_ports).
-
 -spec setup_port_and_queues(#state{}) -> #state{}.
-setup_port_and_queues(#state{interface = Interface,
-                            ofs_port_no = OfsPortNo} = State) ->
-    OfsPort = #ofs_port{number = OfsPortNo,
-                        type = physical,
-                        pid = self(),
-                        iface = Interface,
-                        port = #ofp_port{port_no = OfsPortNo}},
-    ets:insert(linc_ports, OfsPort),
-    ets:insert(linc_port_stats, #ofp_port_stats{port_no = OfsPortNo}),
+setup_port_and_queues(#state{port = #ofp_port{port_no = PortNo}} = State) ->
+    Port = #linc_port{port_no = PortNo, pid = self()},
+    ets:insert(linc_ports, Port),
+    ets:insert(linc_port_stats, #ofp_port_stats{port_no = PortNo}),
     setup_queues(State).
 
 -spec setup_queues(#state{}) -> #state{}.
-setup_queues(#state{ofs_port_no = PortNo} = State) ->
+setup_queues(#state{port = #ofp_port{port_no = PortNo}} = State) ->
     case application:get_env(linc, queues) of
         undefined ->
             State;
@@ -358,29 +362,29 @@ setup_queues(#state{ofs_port_no = PortNo} = State) ->
             {rate, RateDesc} = lists:keyfind(rate, 1, QueueOpts),
             Rate = rate_desc_to_bps(RateDesc),
             {queues, Queues} = lists:keyfind(queues, 1, QueueOpts),
-
+            
             ThrottlingEts = ets:new(queue_throttling,
                                     [public,
                                      {read_concurrency, true},
                                      {keypos,
-                                      #ofs_queue_throttling.queue_no}]),
-
+                                      #linc_queue_throttling.queue_no}]),
+            
             State2 = State#state{rate_bps = Rate,
                                  throttling_ets = ThrottlingEts},
-
+            
             %% Add default queue with no min or max rate
             State3 = do_attach_queue(State2, default, []),
-
+            
             lists:foldl(fun({QueueId, QueueProps}, StateAcc) ->
                                 do_attach_queue(StateAcc,
                                                 QueueId,
                                                 QueueProps)
-                       end, State3, Queues)
+                        end, State3, Queues)
     end.
 
-handle_frame(Frame, OfsPortNo) ->
-    OFSPacket = linc_us3_packet_edit:binary_to_record(Frame, OfsPortNo),
-    update_port_received_counters(OfsPortNo, byte_size(Frame)),
+handle_frame(Frame, PortNo) ->
+    OFSPacket = linc_us3_packet_edit:binary_to_record(Frame, PortNo),
+    update_port_received_counters(PortNo, byte_size(Frame)),
     linc_us3_routing:spawn_route(OFSPacket).
 
 -spec update_port_received_counters(integer(), integer()) -> any().
@@ -394,15 +398,15 @@ get_port_pid(PortNo) ->
     case ets:lookup(linc_ports, PortNo) of
         [] ->
             bad_port;
-        [#ofs_port{pid = Pid}] ->
+        [#linc_port{pid = Pid}] ->
             Pid
     end.
 
--spec queue_stats_convert(#ofs_port_queue{}) -> ofp_queue_stats().
-queue_stats_convert(#ofs_port_queue{key = {PortNo, QueueId},
-                                    tx_bytes = TxBytes,
-                                    tx_packets = TxPackets,
-                                    tx_errors = TxErrors}) ->
+-spec queue_stats_convert(#linc_port_queue{}) -> ofp_queue_stats().
+queue_stats_convert(#linc_port_queue{key = {PortNo, QueueId},
+                                     tx_bytes = TxBytes,
+                                     tx_packets = TxPackets,
+                                     tx_errors = TxErrors}) ->
     #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
                      tx_packets = TxPackets, tx_errors = TxErrors}.
 
@@ -436,21 +440,23 @@ get_max_rate_bps(QueueProps, PortRateBps) ->
     end.
 
 do_attach_queue(#state{socket = Socket,
-                       ofs_port_no = OfsPortNo,
-                       port = Port,
+                       port = #ofp_port{port_no = PortNo},
+                       erlang_port = ErlangPort,
                        ifindex = Ifindex,
                        rate_bps = PortRateBps,
                        throttling_ets = ThrottlingEts} = State,
                 QueueId,
                 QueueProps) ->
-    Key = {OfsPortNo, QueueId},
-    case {Port, Ifindex} of
+    Key = {PortNo, QueueId},
+    case {ErlangPort, Ifindex} of
         {undefined, _} ->
             SendFun = fun(Frame) ->
                               linc_us3_port_native:send(Socket, Ifindex, Frame)
                       end;
         {_, undefined} ->
-            SendFun = fun(Frame) -> port_command(Port, Frame) end
+            SendFun = fun(Frame) ->
+                              port_command(ErlangPort, Frame)
+                      end
     end,
     MinRateBps = get_min_rate_bps(QueueProps, PortRateBps),
     MaxRateBps = get_max_rate_bps(QueueProps, PortRateBps),
@@ -460,20 +466,20 @@ do_attach_queue(#state{socket = Socket,
                                              PortRateBps,
                                              ThrottlingEts,
                                              SendFun),
-    ets:insert(ofs_port_queue, #ofs_port_queue{key = Key,
-                                               properties = QueueProps,
-                                               queue_pid = Pid}),
+    ets:insert(linc_port_queue, #linc_port_queue{key = Key,
+                                                 properties = QueueProps,
+                                                 queue_pid = Pid}),
     State.
 
-do_detach_queue(#state{ofs_port_no = OfsPortNo,
+do_detach_queue(#state{port = #ofp_port{port_no = PortNo},
                        throttling_ets = ThrottlingEts} = State,
                 QueueId) ->
-    case ets:lookup(ofs_port_queue, {OfsPortNo, QueueId}) of
-        [#ofs_port_queue{queue_pid = Pid}] ->
+    case ets:lookup(linc_port_queue, {PortNo, QueueId}) of
+        [#linc_port_queue{queue_pid = Pid}] ->
             linc_us3_queue:detach(Pid);
         [] ->
             ok
     end,
-    ets:delete(ofs_port_queue, {OfsPortNo, QueueId}),
+    ets:delete(linc_port_queue, {PortNo, QueueId}),
     ets:delete(ThrottlingEts, QueueId),
     State.

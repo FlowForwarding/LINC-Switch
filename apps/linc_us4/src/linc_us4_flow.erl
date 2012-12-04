@@ -26,6 +26,7 @@
          modify/1,
          get_flow_table/1,
          delete_where_group/1,
+         delete_where_meter/1,
          get_stats/1,
          get_aggregate_stats/1,
          get_table_config/1,
@@ -244,6 +245,12 @@ get_flow_table(TableId) ->
 -spec delete_where_group(GroupId :: integer()) -> ok.
 delete_where_group(GroupId) ->
     [delete_where_group(GroupId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    ok.
+
+%% @doc Delete all flow entries that are pointing to a given meter.
+-spec delete_where_meter(integer()) -> ok.
+delete_where_meter(_MeterId) ->
+    %% TODO: Implement!
     ok.
 
 %% @doc Get flow statistics.

@@ -45,6 +45,7 @@
 
 -include_lib("linc/include/linc.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
+-include("linc_us4.hrl").
 
 -define(SUPPORTED_BANDS, [drop,
                           dscp_remark,
@@ -72,12 +73,6 @@
           pkt_count = 0 :: integer(),
           byte_count = 0 :: integer(),
           install_ts = now() :: {integer(), integer(), integer()}
-         }).
-
-%% FIXME: Get from "linc_us4.hrl"
--define(MAX, (1 bsl 24)).
--record(ofs_pkt, {
-          size :: integer()
          }).
 
 -define(ETS, linc_meters).
@@ -116,8 +111,7 @@ modify(#ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
             end
     end;
 modify(#ofp_meter_mod{command = delete, meter_id = Id}) ->
-    %% FIXME:
-    %% linc_us4_flows:delete_where_meter(Id),
+    linc_us4_flow:delete_where_meter(Id),
     case get_meter_pid(Id) of
         undefined ->
             ok;
@@ -277,7 +271,7 @@ apply_band(Rate, Pkt, Bands) ->
                         drop;
                     #linc_meter_band{type = dscp_remark,
                                      prec_level = _Prec} ->
-                        %% FIXME:
+                        %% TODO:
                         %% NewPkt = linc_us4_packet:descrement_dscp(Pkt, Prec),
                         NewPkt = Pkt,
                         {continue, NewPkt};

@@ -49,7 +49,8 @@
          ofp_queue_stats_request/2,
          ofp_group_stats_request/2,
          ofp_group_desc_request/2,
-         ofp_group_features_request/2]).
+         ofp_group_features_request/2,
+         ofp_meter_mod/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -58,6 +59,9 @@
 
 -record(state, {flow_state}).
 -type state() :: #state{}.
+
+-type reply() :: {noreply, state()} |
+                 {reply, Reply :: ofp_message_body(), NewState :: state()}.
 
 %%%-----------------------------------------------------------------------------
 %%% Switch API
@@ -289,6 +293,16 @@ ofp_group_features_request(State,
                            #ofp_group_features_request{} = Request) ->
     Reply = linc_us4_groups:get_features(Request),
     {reply, Reply, State}.
+
+%% @doc Modify per-flow meter configuration.
+-spec ofp_meter_mod(state(), ofp_meter_mod()) -> reply().
+ofp_meter_mod(State, #ofp_meter_mod{} = MeterMod) ->
+    case linc_us4_meter:modify(MeterMod) of
+        noreply ->
+            {noreply, State};
+        {reply, Reply} ->
+            {reply, Reply, State}
+    end.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

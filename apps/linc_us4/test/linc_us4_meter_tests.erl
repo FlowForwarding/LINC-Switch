@@ -21,13 +21,9 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
+-include("linc_us4.hrl").
 
 -define(MOD, linc_us4_meter).
-
-%% FIXME: Replace with proper #ofs_pkt{} from linc_us4.hrl
--record(ofs_pkt, {
-          size :: integer()
-         }).
 
 %% Tests -----------------------------------------------------------------------
 

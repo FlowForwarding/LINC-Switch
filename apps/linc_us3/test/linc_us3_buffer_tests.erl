@@ -44,7 +44,7 @@ expiration() ->
     Pkt = #ofs_pkt{},
     BufferId = linc_us3_buffer:save_buffer(Pkt),
     ?assertMatch(#ofs_pkt{}, linc_us3_buffer:get_buffer(BufferId)),
-    timer:sleep(timer:seconds(3)),
+    timer:sleep(4100),
     ?assertEqual(not_found, linc_us3_buffer:get_buffer(BufferId)).
     
 

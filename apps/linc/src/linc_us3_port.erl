@@ -157,22 +157,23 @@ send(#ofs_pkt{}, any) ->
     %% Can not be used as an ingress port nor as an output port.
     bad_port;
 send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
-    case application:get_env(linc, queues) of
-        undefined ->
-            do_send(Pkt, PortNo);
-        {ok, _} ->
-            do_send_with_queue(Pkt, PortNo)
+    case get_port_pid(PortNo) of
+        bad_port ->
+            bad_port;
+        Pid ->
+            gen_server:cast(Pid, {send, Pkt})
     end.
 
 %% @doc Return port stats record for the given OF port.
--spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply().
+-spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply() |
+                                             ofp_error_msg().
 get_stats(#ofp_port_stats_request{port_no = all}) ->
     PortStats = ets:tab2list(linc_port_stats),
     #ofp_port_stats_reply{stats = PortStats};
 get_stats(#ofp_port_stats_request{port_no = PortNo}) ->
     case ets:lookup(linc_port_stats, PortNo) of
         [] ->
-            {error, {bad_request, bad_port}};
+            #ofp_error_msg{type = bad_request, code = bad_port};
         [#ofp_port_stats{}] = PortStats ->
             #ofp_port_stats_reply{stats = PortStats}
     end.
@@ -189,7 +190,7 @@ get_queue_stats(#ofp_queue_stats_request{port_no = PortNo,
                                          queue_id = QueueId}) ->
     case is_valid(PortNo) of
         false ->
-            {error, {bad_request, bad_port}};
+            #ofp_error_msg{type = bad_request, code = bad_port};
         true ->
             try
                 [LincPortQueue] = ets:lookup(linc_port_queue,
@@ -198,7 +199,7 @@ get_queue_stats(#ofp_queue_stats_request{port_no = PortNo,
                 #ofp_queue_stats_reply{stats = [QueueStats]}
             catch 
                 _:_ ->
-                    {error, {bad_request, bad_queue}}
+                    #ofp_error_msg{type = bad_request, code = bad_queue}
             end
     end.
 
@@ -275,8 +276,9 @@ init({PortNo, PortOpts}) ->
             case linc_us3_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
-                {Port, Pid, HwAddr} ->
-                    State2 = State#state{erlang_port = Port, port_ref = Pid,
+                {ErlangPort, Pid, HwAddr} ->
+                    State2 = State#state{erlang_port = ErlangPort,
+                                         port_ref = Pid,
                                          port = Port#ofp_port{hw_addr = HwAddr}},
                     NewState = setup_port_and_queues(State2),
                     {ok, NewState}
@@ -335,9 +337,10 @@ handle_call({set_port_config, NewPortConfig}, _From,
     {reply, ok, State#state{port = NewPort}}.
 
 %% @private
-handle_cast({send, #ofs_pkt{packet = Packet}},
+handle_cast({send, #ofs_pkt{packet = Packet, queue_id = QueueId}},
             #state{socket = Socket,
-                   port = #ofp_port{port_no = PortNo, config = PortConfig},
+                   port = #ofp_port{port_no = PortNo,
+                                    config = PortConfig},
                    erlang_port = Port,
                    ifindex = Ifindex} = State) ->
     case lists:member(no_fwd, PortConfig) of
@@ -346,11 +349,16 @@ handle_cast({send, #ofs_pkt{packet = Packet}},
         false ->
             Frame = pkt:encapsulate(Packet),
             update_port_tx_counters(PortNo, byte_size(Frame)),
-            case {Port, Ifindex} of
-                {undefined, _} ->
-                    linc_us3_port_native:send(Socket, Ifindex, Frame);
-                {_, undefined} ->
-                    port_command(Port, Frame)
+            case application:get_env(linc, queues) of
+                undefined ->
+                    case {Port, Ifindex} of
+                        {undefined, _} ->
+                            linc_us3_port_native:send(Socket, Ifindex, Frame);
+                        {_, undefined} ->
+                            port_command(Port, Frame)
+                    end;
+                {ok, _} ->
+                    send_with_queue(Frame, PortNo, QueueId)
             end
     end,
     {noreply, State}.
@@ -410,27 +418,12 @@ get_queues(PortNo) ->
             ets:match_object(linc_port_queue, MatchSpec)
     end.
 
-do_send(Pkt, PortNo) ->
-    case get_port_pid(PortNo) of
-        bad_port ->
-            bad_port;
-        Pid ->
-            gen_server:cast(Pid, {send, Pkt})
-    end.
-
-do_send_with_queue(Pkt, PortNo) ->
-    Key = {PortNo, Pkt#ofs_pkt.queue_id},
-    case ets:lookup(linc_port_queue, Key) of
-        %% XXX: move no_fwd to ETS and check it
+send_with_queue(Frame, PortNo, QueueId) ->
+    case ets:lookup(linc_port_queue, {PortNo, QueueId}) of
         [#linc_port_queue{queue_pid = Pid}] ->
-            linc_us3_queue:send(Pid, Pkt);
+            linc_us3_queue:send(Pid, Frame);
         [] ->
-            case ets:lookup(linc_ports, PortNo) of
-                [_] ->
-                    bad_queue;
-                [ ] ->
-                    bad_port
-            end
+            bad_queue
     end.
 
 -spec add(linc_port_type(), [linc_port_config()]) -> pid() | error.
@@ -618,7 +611,7 @@ maybe_buffer(action, Packet, no_buffer) ->
     {no_buffer,pkt:encapsulate(Packet)};
 maybe_buffer(action, Packet, Bytes) ->
     maybe_buffer(Packet, Bytes);
-maybe_buffer(table_miss, Packet, _Bytes) ->
+maybe_buffer(no_match, Packet, _Bytes) ->
     maybe_buffer(Packet, get_switch_config(miss_send_len));
 maybe_buffer(invalid_ttl, Packet, _Bytes) ->
     %% The spec does not specify how many bytes to include for invalid_ttl,

@@ -68,17 +68,17 @@
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
     linc_us3_sup:start_backend_sup(),
-    linc_us3_port:initialize(),
     linc_us3_groups:create(),
     FlowState = linc_us3_flow:initialize(),
+    linc_us3_port:initialize(),
     {ok, #state{flow_state = FlowState}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
 stop(#state{flow_state = FlowState}) ->
+    linc_us3_port:terminate(),
     linc_us3_flow:terminate(FlowState),
     linc_us3_groups:destroy(),
-    linc_us3_port:terminate(),
     ok.
 
 -spec handle_message(ofp_message_body(), state()) ->

@@ -27,7 +27,9 @@
          remove_all_flows/0,
          table_mod/0,
          group_mod/0,
+         port_mod/0,
          set_config/0,
+         role_request/0,
          %% Statistics
          desc_stats_request/0,
          flow_stats_request/0,
@@ -128,14 +130,14 @@ loop(Connections) ->
                      Error ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
-             end || Fun <- [table_mod,
-                            %% group_mod,
-                            set_config,
-                            features_request,
+             end || Fun <- [
                             echo_request,
+                            features_request,
                             get_config_request,
-                            barrier_request,
-                            queue_get_config_request,
+                            set_config,
+                            group_mod,
+                            port_mod,
+                            table_mod,
                             %% Stats
                             desc_stats_request,
                             flow_stats_request,
@@ -145,7 +147,11 @@ loop(Connections) ->
                             queue_stats_request,
                             group_stats_request,
                             group_desc_stats_request,
-                            group_features_stats_request
+                            group_features_stats_request,
+
+                            barrier_request,
+                            queue_get_config_request,
+                            role_request
                            ]],
             
             loop([{{Address, Port}, Socket, Pid} | Connections]);
@@ -343,6 +349,16 @@ group_mod() ->
                              watch_port = 1,
                              watch_group = 1,
                              actions = [#ofp_action_output{port = 2}]}]}).
+
+port_mod() ->
+    message(#ofp_port_mod{port_no = 1,
+                          hw_addr = <<0,17,0,0,17,17>>,
+                          config = [],
+                          mask = [],
+                          advertise = [fiber]}).
+
+role_request() ->
+    message(#ofp_role_request{role = nochange, generation_id = 1}).
 
 %%% Helpers --------------------------------------------------------------------
 

@@ -4,7 +4,7 @@ rel: compile
 	@./rebar generate -f
 	@./scripts/post_generate_hook
 
-compile: get-deps #update-deps
+compile: get-deps update-deps
 	@./rebar compile
 
 get-deps:

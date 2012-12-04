@@ -11,6 +11,7 @@
          {controllers, []},
          {backends,
           [{userspace, [{ports, []}]}]},
+         {backend, {linc_us3, []}},
          {of_config, disabled},
          {manufacturer_desc, <<"Dummy">>},
          {hardware_desc, <<"Dummy">>},

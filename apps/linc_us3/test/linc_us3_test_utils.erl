@@ -17,7 +17,7 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Utility module for nicer tests.
--module(linc_test_utils).
+-module(linc_us3_test_utils).
 
 -export([mock/1,
          unmock/1,

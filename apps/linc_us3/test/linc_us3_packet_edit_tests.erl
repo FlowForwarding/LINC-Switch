@@ -18,14 +18,14 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us3_packet_edit_tests).
 
--import(linc_test_utils, [mock/1,
-                          unmock/1,
-                          check_if_called/1,
-                          check_output_on_ports/0]).
+-import(linc_us3_test_utils, [mock/1,
+                              unmock/1,
+                              check_if_called/1,
+                              check_output_on_ports/0]).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("linc/include/linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
+-include("linc_us3.hrl").
 
 -define(MOCKED, []).
 -define(INIT_VAL, 100).
@@ -84,7 +84,6 @@ nested_header() ->
     set_field([{Packet, EditField, NewPacket}]).
 
 skip_header() ->
-    FieldName = eth_type,
     Packet = [#ether{type = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
     NewPacket = [#ether{type = ?INIT_VAL}, #ether{type = ?NEW_VAL}],
     SkipCount = 1,

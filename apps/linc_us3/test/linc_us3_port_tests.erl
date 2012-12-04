@@ -18,14 +18,14 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us3_port_tests).
 
--import(linc_test_utils, [mock/1,
-                          unmock/1,
-                          check_if_called/1,
-                          check_output_on_ports/0]).
+-import(linc_us3_test_utils, [mock/1,
+                              unmock/1,
+                              check_if_called/1,
+                              check_output_on_ports/0]).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("linc/include/linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
+-include("linc_us3.hrl").
 
 -define(MOCKED, [port_native]).
 
@@ -103,7 +103,7 @@ send_all() ->
 
 send_controller() ->
     ?assertEqual(ok, linc_us3_port:send(#ofp_port_status{}, controller)),
-    ?assertEqual(ok, linc_us3_port:send(pkt(controller,table_miss), controller)).
+    ?assertEqual(ok, linc_us3_port:send(pkt(controller,no_match), controller)).
 
 send_local() ->
     ?assertEqual(bad_port, linc_us3_port:send(pkt(), local)).
@@ -117,7 +117,7 @@ send_port_number() ->
 port_stats_request() ->
     BadPort = 999,
     StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},
-    ?assertEqual({error, {bad_request, bad_port}},
+    ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_port},
                  linc_us3_port:get_stats(StatsRequest1)),
 
     ValidPort = 1,
@@ -140,12 +140,14 @@ queue_stats_request() ->
     StatsRequest1 = #ofp_queue_stats_request{port_no = BadPort,
                                              queue_id = BadQueue},
     StatsReply1 = linc_us3_port:get_queue_stats(StatsRequest1),
-    ?assertEqual({error, {bad_request, bad_port}}, StatsReply1),
+    ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_port},
+                 StatsReply1),
 
     StatsRequest2 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = BadQueue},
     StatsReply2 = linc_us3_port:get_queue_stats(StatsRequest2),
-    ?assertEqual({error, {bad_request, bad_queue}}, StatsReply2),
+    ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_queue},
+                 StatsReply2),
 
     ok.
 

@@ -18,12 +18,12 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us3_instructions_tests).
 
--import(linc_test_utils, [mock/1,
-                          unmock/1,
-                          check_if_called/1]).
+-import(linc_us3_test_utils, [mock/1,
+                              unmock/1,
+                              check_if_called/1]).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("linc/include/linc_us3.hrl").
+-include("linc_us3.hrl").
 
 -define(MOCKED, [actions]).
 

@@ -18,16 +18,7 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_tests).
 
--import(linc_test_utils, [mock/1,
-                          unmock/1,
-                          check_if_called/1,
-                          check_output_on_ports/0]).
-
 -include_lib("eunit/include/eunit.hrl").
--include_lib("linc/include/linc_us3.hrl").
--include_lib("pkt/include/pkt.hrl").
-
--define(MOCKED, []).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -35,8 +26,9 @@ switch_setup_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Start/stop LINC switch w/o OF-Config subsystem", fun no_ofconfig/0},
-      {"Start/stop LINC switch with OF-Config subsystem", fun with_ofconfig/0}
+     [
+      %% {"Start/stop LINC switch w/o OF-Config subsystem", fun no_ofconfig/0},
+      %% {"Start/stop LINC switch with OF-Config subsystem", fun with_ofconfig/0}
      ]}.
 
 no_ofconfig() ->
@@ -63,14 +55,11 @@ setup() ->
     ok = application:start(syntax_tools),
     ok = application:start(compiler),
     ok = application:start(lager),
-    ok = lager:set_loglevel(lager_console_backend, error),
-    mock(?MOCKED).
+    ok = lager:set_loglevel(lager_console_backend, error).
 
 teardown(_) ->
     ok = application:stop(compiler),
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
-    ok = application:stop(lager),
-    unmock(?MOCKED).
-
+    ok = application:stop(lager).

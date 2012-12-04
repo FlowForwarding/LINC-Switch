@@ -578,7 +578,7 @@ group_delete_2(Id, ProcessedGroups) ->
 %% @internal
 %% @doc Iterates over groups table, filters out groups which refer to the
 %% group id 'Id' using cached field in #linc_group{} record
-group_find_groups_that_refer_to(Id, '$end_of_table', OrdSet) ->
+group_find_groups_that_refer_to(_Id, '$end_of_table', OrdSet) ->
     OrdSet;
 
 group_find_groups_that_refer_to(Id, EtsKey, OrdSet) ->

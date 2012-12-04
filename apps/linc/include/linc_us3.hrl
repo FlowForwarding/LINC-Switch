@@ -99,8 +99,8 @@
                                 ff
                                ]).
 -define(SUPPORTED_GROUP_CAPABILITIES, [select_weight,
-                                       select_liveness
-                                       %% chaining,
+                                       select_liveness,
+                                       chaining
                                        %% chaining-check
                                       ]).
 -define(SUPPORTED_METADATA_MATCH, <<-1:64>>).

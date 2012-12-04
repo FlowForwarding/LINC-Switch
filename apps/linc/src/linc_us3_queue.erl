@@ -40,9 +40,9 @@
 
 start() ->
     linc_port_queue = ets:new(linc_port_queue,
-                             [named_table, public,
-                              {keypos, #linc_port_queue.key},
-                              {read_concurrency, true}]),
+                              [named_table, public,
+                               {keypos, #linc_port_queue.key},
+                               {read_concurrency, true}]),
 
     QueueSup = {linc_us3_queue_sup, {linc_us3_queue_sup, start_link, []},
                 permanent, 5000, supervisor, [linc_us3_queue_sup]},
@@ -61,9 +61,9 @@ start_link({_, QueueNo} = MyKey, MinRateBps, MaxRateBps, PortRateBps,
     MaxRate = bps_to_bphistlen(MaxRateBps),
     PortRate = bps_to_bphistlen(PortRateBps),
     ets:insert(ThrottlingEts, #linc_queue_throttling{queue_no = QueueNo,
-                                                    min_rate = MinRate,
-                                                    max_rate = MaxRate,
-                                                    rate = 0}),
+                                                     min_rate = MinRate,
+                                                     max_rate = MaxRate,
+                                                     rate = 0}),
     Pid = proc_lib:spawn_link(fun() ->
                                       loop(MyKey,
                                            MinRate, MaxRate, PortRate,
@@ -71,9 +71,9 @@ start_link({_, QueueNo} = MyKey, MinRateBps, MaxRateBps, PortRateBps,
                               end),
     {ok, Pid}.
 
--spec send(pid(), #ofs_pkt{}) -> ok.
-send(Pid, Packet) ->
-    Pid ! {send, Packet},
+-spec send(pid(), binary()) -> ok.
+send(Pid, Frame) ->
+    Pid ! {send, Frame},
     ok.
 
 -spec detach(pid()) -> ok.
@@ -89,12 +89,11 @@ detach(Pid) ->
 loop({_OutPort, _OutQueue} = MyKey, MinRate, MaxRate, PortRate,
      ThrottlingEts, History, SendFun) ->
     receive
-        {send, #ofs_pkt{packet = Packet}} ->
-            Frame = pkt:encapsulate(Packet),
+        {send, Frame} ->
             NewHistory = sleep_and_send(MyKey, MinRate, MaxRate, PortRate,
                                         ThrottlingEts, History,
                                         SendFun, Frame),
-            update_port_transmitted_counters(MyKey, byte_size(Frame)),
+            update_queue_tx_counters(MyKey, byte_size(Frame)),
             loop(MyKey, MinRate, MaxRate, PortRate,
                  ThrottlingEts, NewHistory, SendFun);
         {cmd, From, detach} ->
@@ -142,7 +141,7 @@ pause_len(OverTransfer, HistoryLenMs, MaxTransfer) ->
 
 max_transfer(MinRate, MaxRate, PortRate, ThrottlingEts) ->
     TotalRate = ets:foldl(fun(#linc_queue_throttling{rate = Rate}, Acc) ->
-                              Rate + Acc
+                                  Rate + Acc
                           end, 0, ThrottlingEts),
     FreeRate = PortRate - TotalRate,
     InterestedCount = ets:info(ThrottlingEts, size),
@@ -160,9 +159,9 @@ bps_to_bphistlen(Bps) when is_integer(Bps) ->
 bps_to_bphistlen(Special) when is_atom(Special) ->
     Special.
 
--spec update_port_transmitted_counters({ofp_port_no(), ofp_queue_id()},
-                                       integer()) -> any().
-update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
+-spec update_queue_tx_counters({ofp_port_no(), ofp_queue_id()},
+                               integer()) -> any().
+update_queue_tx_counters({PortNum, Queue} = Key, Bytes) ->
     try ets:update_counter(linc_port_queue, Key,
                            [{#linc_port_queue.tx_packets, 1},
                             {#linc_port_queue.tx_bytes, Bytes}])
@@ -170,13 +169,4 @@ update_port_transmitted_counters({PortNum, Queue} = Key, Bytes) ->
         E1:E2 ->
             ?ERROR("Queue ~p for port ~p doesn't exist because: ~p:~p "
                    "cannot update queue stats", [Queue, PortNum, E1, E2])
-    end,
-    try
-        ets:update_counter(port_stats, PortNum,
-                           [{#ofp_port_stats.tx_packets, 1},
-                            {#ofp_port_stats.tx_bytes, Bytes}])
-    catch
-        E3:E4 ->
-            ?ERROR("Cannot update port stats for port ~p because of ~p ~p",
-                   [PortNum, E3, E4])
     end.

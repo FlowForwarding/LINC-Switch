@@ -18,10 +18,6 @@
 %% @copyright 2012 FlowForwarding.org
 %% @doc Header file for userspace implementation of OpenFlow switch.
 
--include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc.hrl").
-
 -define(SUPPORTED_ACTIONS, [output,
                             group,
                             set_queue,
@@ -116,8 +112,8 @@
 -type flow_id() :: {priority(),reference()}.
 
 -record(flow_table_config, {
-          id                 :: non_neg_integer(),
-          config = controller:: ofp_table_config()
+          id :: non_neg_integer(),
+          config :: undefined
          }).
 
 -record(flow_entry, {
@@ -148,9 +144,9 @@
          }).
 
 -record(linc_flow_table, {
-          id                   :: integer(),
-          entries = []         :: [#flow_entry{}],
-          config  = controller :: ofp_table_config()
+          id :: integer(),
+          entries = [] :: [#flow_entry{}],
+          config :: undefined
          }).
 
 -record(flow_table_counter, {

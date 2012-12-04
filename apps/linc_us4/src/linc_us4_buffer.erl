@@ -28,6 +28,9 @@
 %% Internal
 -export([expire_buffers/0]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc.hrl").
 -include("linc_us4.hrl").
 
 -record(linc_buffer, {id :: non_neg_integer(),

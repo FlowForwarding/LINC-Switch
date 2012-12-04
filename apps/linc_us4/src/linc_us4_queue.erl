@@ -25,6 +25,9 @@
          send/2,
          detach/1]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc.hrl").
 -include("linc_us4.hrl").
 -include("linc_us4_port.hrl").
 

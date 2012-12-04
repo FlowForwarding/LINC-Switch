@@ -38,8 +38,11 @@
 %% Internal exports
 -export([check_timers/0]).
 
--include("linc_us4.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
+-include("linc_us4.hrl").
 
 -define(MAX64, 16#FFFFFFFF). % Max countervalue for 64 bit counters
 -define(INSTRUCTIONS, [ofp_instruction_goto_table, ofp_instruction_write_metadata,

@@ -41,16 +41,19 @@
          ofp_set_config/2,
          ofp_barrier_request/2,
          ofp_queue_get_config_request/2,
-         ofp_desc_stats_request/2,
+         ofp_desc_request/2,
          ofp_flow_stats_request/2,
          ofp_aggregate_stats_request/2,
          ofp_table_stats_request/2,
          ofp_port_stats_request/2,
          ofp_queue_stats_request/2,
          ofp_group_stats_request/2,
-         ofp_group_desc_stats_request/2,
-         ofp_group_features_stats_request/2]).
+         ofp_group_desc_request/2,
+         ofp_group_features_request/2]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc.hrl").
 -include("linc_us4.hrl").
 
 -record(state, {flow_state}).
@@ -100,7 +103,6 @@ ofp_features_request(State, #ofp_features_request{}) ->
     FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
-                                        ports = linc_us4_port:get_ports(),
                                         n_tables = 255},
     {reply, FeaturesReply, State}.
 
@@ -194,7 +196,7 @@ ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
                                     {reply, ofp_message(), #state{}}.
 ofp_get_config_request(State, #ofp_get_config_request{}) ->
     ConfigReply = #ofp_get_config_reply{flags = [],
-                                        miss_send_len = ?OFPCML_NO_BUFFER},
+                                        miss_send_len = no_buffer},
     {reply, ConfigReply, State}.
 
 %% @doc Set switch configuration.
@@ -219,16 +221,16 @@ ofp_queue_get_config_request(State,
     {reply, QueueConfigReply, State}.
 
 %% @doc Get switch description statistics.
--spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
-                                    {reply, ofp_message(), #state{}}.
-ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
-    {reply, #ofp_desc_stats_reply{flags = [],
-                                  mfr_desc = get_env(manufacturer_desc),
-                                  hw_desc = get_env(hardware_desc),
-                                  sw_desc = get_env(software_desc),
-                                  serial_num = get_env(serial_number),
-                                  dp_desc = get_env(datapath_desc)
-                                 }, State}.
+-spec ofp_desc_request(state(), ofp_desc_request()) ->
+                              {reply, ofp_message(), #state{}}.
+ofp_desc_request(State, #ofp_desc_request{}) ->
+    {reply, #ofp_desc_reply{flags = [],
+                            mfr_desc = get_env(manufacturer_desc),
+                            hw_desc = get_env(hardware_desc),
+                            sw_desc = get_env(software_desc),
+                            serial_num = get_env(serial_number),
+                            dp_desc = get_env(datapath_desc)
+                           }, State}.
 
 %% @doc Get flow entry statistics.
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
@@ -273,18 +275,18 @@ ofp_group_stats_request(State, #ofp_group_stats_request{} = Request) ->
     {reply, Reply, State}.
 
 %% @doc Get group description statistics.
--spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
-                                          {reply, ofp_message(), #state{}}.
-ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{} = Request) ->
+-spec ofp_group_desc_request(state(), ofp_group_desc_request()) ->
+                                    {reply, ofp_message(), #state{}}.
+ofp_group_desc_request(State, #ofp_group_desc_request{} = Request) ->
     Reply = linc_us4_groups:get_desc(Request),
     {reply, Reply, State}.
 
 %% @doc Get group features statistics.
--spec ofp_group_features_stats_request(state(),
-                                       ofp_group_features_stats_request()) ->
-                                              {reply, ofp_message(), #state{}}.
-ofp_group_features_stats_request(State,
-                                 #ofp_group_features_stats_request{} = Request) ->
+-spec ofp_group_features_request(state(),
+                                 ofp_group_features_request()) ->
+                                        {reply, ofp_message(), #state{}}.
+ofp_group_features_request(State,
+                           #ofp_group_features_request{} = Request) ->
     Reply = linc_us4_groups:get_features(Request),
     {reply, Reply, State}.
 

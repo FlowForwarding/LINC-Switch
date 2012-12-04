@@ -17,19 +17,33 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Module for handling per-flow meters.
--module(linc_us4_meters).
+-module(linc_us4_meter).
+
+-behaviour(gen_server).
 
 %% API
--export([initialize/0,
-         terminate/0,
-         modify/1,
-         update_flow_count/2,
+-export([modify/1,
          apply/2,
+         update_flow_count/2,
          get_stats/1,
          get_config/1,
          get_features/0,
          is_valid/1]).
 
+%% Internal API
+-export([start/1,
+         stop/1,
+         start_link/1]).
+
+%% gen_server callbacks
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
+-include_lib("linc/include/linc.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 
 -define(SUPPORTED_BANDS, [drop,
@@ -53,116 +67,115 @@
           id :: integer(),
           rate_value :: kbps | pktps | {burst, kbps | pktps},
           stats = true :: boolean(),
-          bands :: [#linc_meter_band{}],
+          bands = [] :: [#linc_meter_band{}],
           flow_count = 0 :: integer(),
           pkt_count = 0 :: integer(),
           byte_count = 0 :: integer(),
           install_ts = now() :: {integer(), integer(), integer()}
          }).
 
--define(TAB, linc_meters).
-
 %% FIXME: Get from "linc_us4.hrl"
 -define(MAX, (1 bsl 24)).
+-record(ofs_pkt, {
+          size :: integer()
+         }).
+
+-define(ETS, linc_meters).
+-define(SUP, linc_us4_meter_sup).
 
 %%------------------------------------------------------------------------------
 %% API functions
 %%------------------------------------------------------------------------------
 
-%% @doc Setup meters.
--spec initialize() -> any().
-initialize() ->
-    ets:new(?TAB,
-            [named_table, public,
-             {keypos, #linc_meter.id},
-             {read_concurrency, true}]).
-
-%% @doc Cleanup after meters.
--spec terminate() -> any().
-terminate() ->
-    ets:delete(?TAB).
-
 %% @doc Add, modify or delete a meter.
--spec modify(#ofp_meter_mod{}) -> noreply | {reply, Reply :: ofp_message_body()}.
+-spec modify(#ofp_meter_mod{}) -> noreply |
+                                  {reply, Reply :: ofp_message_body()}.
 modify(#ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
-    case ets:lookup(?TAB, Id) of
-        [] ->
-            case add_meter(MeterMod) of
-                ok ->
+    case get_meter_pid(Id) of
+        undefined ->
+            case start(MeterMod) of
+                {ok, _Pid} ->
                     noreply;
                 {error, Code} ->
-                    {reply, #ofp_error_msg{type = meter_mod_failed,
-                                           code = Code}}
+                    {reply, error_msg(Code)}
             end;
-        _Else ->
-            {reply, #ofp_error_msg{type = meter_mod_failed,
-                                   code = meter_exists}}
+        _Pid ->
+            {reply, error_msg(meter_exists)}
     end;
 modify(#ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
-    case ets:lookup(?TAB, Id) of
-        [] ->
-            {reply, #ofp_error_msg{type = meter_mod_failed,
-                                   code = unknown_meter}};
-        _Else ->
-            case add_meter(MeterMod) of
-                ok ->
+    case get_meter_pid(Id) of
+        undefined ->
+            {reply, error_msg(unknown_meter)};
+        Pid ->
+            case start(MeterMod) of
+                {ok, _NewPid} ->
+                    stop(Pid),
                     noreply;
                 {error, Code} ->
-                    {reply, #ofp_error_msg{type = meter_mod_failed,
-                                           code = Code}}
+                    {reply, error_msg(Code)}
             end
     end;
 modify(#ofp_meter_mod{command = delete, meter_id = Id}) ->
     %% FIXME:
     %% linc_us4_flows:delete_where_meter(Id),
-    ets:delete(?TAB, Id),
+    case get_meter_pid(Id) of
+        undefined ->
+            ok;
+        Pid ->
+            stop(Pid)
+    end,
     noreply.
 
 %% @doc Update flow entry count associated with a meter.
 -spec update_flow_count(integer(), integer()) -> any().
 update_flow_count(Id, Incr) ->
-    ets:update_counter(?TAB, Id, {#linc_meter.flow_count, Incr}).
+    case get_meter_pid(Id) of
+        undefined ->
+            ?DEBUG("Updating flow count of an non existing meter ~p", [Id]);
+        Pid ->
+            gen_server:cast(Pid, {update_flow_count, Incr})
+    end.
 
 %% @doc Apply meter to a packet.
-%% FIXME:
-%% -spec apply(integer(), #ofs_pkt{}) -> {continue, NewPkt :: #ofs_pkt{}} | drop.
+-spec apply(integer(), #ofs_pkt{}) -> {continue, NewPkt :: #ofs_pkt{}} | drop.
 apply(Id, Pkt) ->
-    [#linc_meter{rate_value = Value,
-                 install_ts = Then,
-                 bands = Bands} = Meter] = ets:lookup(?TAB, Id),
-    Seconds = timer:now_diff(now(), Then) div 1000000,
-    Rate = case Value of
-               kbps ->
-                   #linc_meter{byte_count = Bytes} = Meter,
-                   ((Bytes * 8) div 1000) / Seconds;
-               pktps ->
-                   #linc_meter{pkt_count = Pkts} = Meter,
-                   Pkts / Seconds
-               %% TODO:
-               %% {burst, kbps} ->
-               %%     todo;
-               %% {burst, pktps} ->
-               %%     todo
-           end,
-    apply_band(Rate, Pkt, Bands).
+    case get_meter_pid(Id) of
+        undefined ->
+            ?DEBUG("Applying non existing meter ~p", [Id]),
+            drop;
+        Pid ->
+            gen_server:call(Pid, {apply, Pkt})
+    end.
 
 %% @doc Get meter statistics.
 -spec get_stats(integer() | all) -> Reply :: #ofp_meter_stats_reply{}.
 get_stats(all) ->
-    #ofp_meter_stats_reply{body = [export_stats(Meter)
-                                   || Meter <- ets:tab2list(?TAB)]};
+    Meters = [gen_server:call(Pid, get_state)
+              || {_, Pid} <- lists:keysort(1, ets:tab2list(?ETS))],
+    #ofp_meter_stats_reply{body = [export_stats(Meter) || Meter <- Meters]};
 get_stats(Id) when is_integer(Id) ->
-    #ofp_meter_stats_reply{body = [export_stats(Meter)
-                                   || Meter <- ets:lookup(?TAB, Id)]}.
+    case get_meter_pid(Id) of
+        undefined ->
+            #ofp_meter_stats_reply{body = []};
+        Pid ->
+            Meter = gen_server:call(Pid, get_state),
+            #ofp_meter_stats_reply{body = [export_stats(Meter)]}
+    end.
 
 %% @doc Get meter configuration.
 -spec get_config(integer() | all) -> Reply :: #ofp_meter_config_reply{}.
 get_config(all) ->
-    #ofp_meter_config_reply{body = [export_meter(Meter)
-                                    || Meter <- ets:tab2list(?TAB)]};
+    Meters = [gen_server:call(Pid, get_state)
+              || {_, Pid} <- lists:keysort(1, ets:tab2list(?ETS))],
+    #ofp_meter_config_reply{body = [export_meter(Meter) || Meter <- Meters]};
 get_config(Id) when is_integer(Id)  ->
-    #ofp_meter_config_reply{body = [export_meter(Meter)
-                                    || Meter <- ets:lookup(?TAB, Id)]}.
+    case get_meter_pid(Id) of
+        undefined ->
+            #ofp_meter_config_reply{body = []};
+        Pid ->
+            Meter = gen_server:call(Pid, get_state),
+            #ofp_meter_config_reply{body = [export_meter(Meter)]}
+    end.
 
 %% @doc Get meter features.
 -spec get_features() -> Reply :: #ofp_meter_features_reply{}.
@@ -176,12 +189,79 @@ get_features() ->
 %% @doc Check if meter with a given id exists.
 -spec is_valid(integer()) -> boolean().
 is_valid(Id) ->
-    case ets:lookup(?TAB, Id) of
-        [] ->
+    case get_meter_pid(Id) of
+        undefined ->
             false;
         _Else ->
             true
     end.
+
+%%------------------------------------------------------------------------------
+%% Internal API functions
+%%------------------------------------------------------------------------------
+
+start(MeterMod) ->
+    supervisor:start_child(?SUP, [MeterMod]).
+
+stop(Pid) ->
+    supervisor:terminate_child(?SUP, Pid).
+
+start_link(MeterMod) ->
+    gen_server:start_link(?MODULE, [MeterMod], []).
+
+%%------------------------------------------------------------------------------
+%% gen_server callbacks
+%%------------------------------------------------------------------------------
+
+init([#ofp_meter_mod{meter_id = Id} = MeterMod]) ->
+    process_flag(trap_exit, true),
+    case import_meter(MeterMod) of
+        {ok, State} ->
+            ets:insert(?ETS, {Id, self()}),
+            {ok, State};
+        {error, Code} ->
+            {stop, Code}
+    end.
+
+handle_call({apply, Pkt}, _From, #linc_meter{rate_value = Value,
+                                             pkt_count = Pkts,
+                                             byte_count = Bytes,
+                                             install_ts = Then,
+                                             bands = Bands} = State) ->
+    NewPkts = Pkts + 1,
+    NewBytes = Bytes + Pkt#ofs_pkt.size,
+    Seconds = timer:now_diff(now(), Then) div 1000000 + 1,
+    Rate = case Value of
+               kbps ->
+                   ((NewBytes * 8) div 1000) / Seconds;
+               pktps ->
+                   NewPkts / Seconds
+               %% TODO:
+               %% {burst, kbps} ->
+               %%     todo;
+               %% {burst, pktps} ->
+               %%     todo
+           end,
+    {Reply, NewBands} = apply_band(Rate, Pkt, Bands),
+    {reply, Reply, State#linc_meter{pkt_count = NewPkts,
+                                    byte_count = NewBytes,
+                                    bands = NewBands}};
+handle_call(get_state, _From, State) ->
+    {reply, State, State}.
+
+handle_cast({update_flow_count, Incr},
+            #linc_meter{flow_count = Flows} = State) ->
+    {noreply, State#linc_meter{flow_count = Flows + Incr}}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #linc_meter{id = Id}) ->
+    ets:delete_object(?ETS, {Id, self()}),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%------------------------------------------------------------------------------
 %% Internal functions
@@ -190,39 +270,55 @@ is_valid(Id) ->
 apply_band(Rate, Pkt, Bands) ->
     case find_the_right_band(Rate, Bands) of
         false ->
-            {continue, Pkt};
-        #linc_meter_band{type = drop} ->
-            drop;
-        #linc_meter_band{type = dscp_remark,
-                         prec_level = _Prec} ->
-            %% FIXME:
-            %% NewPkt = linc_us4_packet:descrement_dscp(Pkt, Prec),
-            NewPkt = Pkt,
-            {continue, NewPkt};
-        #linc_meter_band{type = experimenter,
-                         experimenter = _ExperimenterId} ->
-            %%
-            %% Put your EXPERIMENTER band code here
-            %%
-            {continue, Pkt}
+            {{continue, Pkt}, Bands};
+        N ->
+            R = case lists:nth(N, Bands) of
+                    #linc_meter_band{type = drop} ->
+                        drop;
+                    #linc_meter_band{type = dscp_remark,
+                                     prec_level = _Prec} ->
+                        %% FIXME:
+                        %% NewPkt = linc_us4_packet:descrement_dscp(Pkt, Prec),
+                        NewPkt = Pkt,
+                        {continue, NewPkt};
+                    #linc_meter_band{type = experimenter,
+                                     experimenter = _ExperimenterId} ->
+                        %%
+                        %% Put your EXPERIMENTER band code here
+                        %%
+                        {continue, Pkt}
+                end,
+            {R, update_band(N, Bands, Pkt#ofs_pkt.size)}
     end.
 
 find_the_right_band(Rate, Bands) ->
-    F = fun(Band, Acc) ->
-                HRate = Acc#linc_meter_band.rate,
+    F = fun(Band, {HRate, HighN, N}) ->
                 BRate = Band#linc_meter_band.rate,
                 case Rate > BRate andalso BRate > HRate of
                     true ->
-                        Band;
+                        {BRate, N, N + 1};
                     false ->
-                        Acc
+                        {HRate, HighN, N + 1}
                 end
         end,
-    lists:foldl(F, #linc_meter_band{rate = -1}, Bands).
+    case lists:foldl(F, {-1, 0, 1}, Bands) of
+        {-1, 0, _} ->
+            false;
+        {_, N, _} ->
+            N
+    end.
 
-add_meter(#ofp_meter_mod{meter_id = Id,
-                         flags = Flags,
-                         bands = Bands}) ->
+update_band(1, [Band | Bands], NewBytes) ->
+    #linc_meter_band{pkt_count = Pkts,
+                     byte_count = Bytes} = Band,
+    [Band#linc_meter_band{pkt_count = Pkts + 1,
+                          byte_count = Bytes + NewBytes} | Bands];
+update_band(N, [Band | Bands], Bytes) ->
+    [Band | update_band(N - 1, Bands, Bytes)].
+
+import_meter(#ofp_meter_mod{meter_id = Id,
+                            flags = Flags,
+                            bands = Bands}) ->
     case import_flags(Flags) of
         {true, {Value, Stats}} ->
             NewBands = [import_band(Value, Band) || Band <- Bands],
@@ -232,8 +328,7 @@ add_meter(#ofp_meter_mod{meter_id = Id,
                                            rate_value = Value,
                                            stats = Stats,
                                            bands = NewBands},
-                    ets:insert(?TAB, NewMeter),
-                    ok;
+                    {ok, NewMeter};
                 true ->
                     {error, bad_band}
             end;
@@ -308,7 +403,9 @@ import_band(Value, #ofp_meter_band_experimenter{rate = Rate,
                              experimenter = Exp};
         false ->
             error
-    end.
+    end;
+import_band(_, _) ->
+    error.
 
 export_stats(#linc_meter{id = Id,
                          stats = StatsEnabled,
@@ -385,3 +482,15 @@ export_values({burst, _}, Rate) ->
     {-1, Rate};
 export_values(_Else, Rate) ->
     {Rate, -1}.
+
+get_meter_pid(Id) ->
+    case ets:lookup(?ETS, Id) of
+        [] ->
+            undefined;
+        [{Id, Pid}] ->
+            Pid
+    end.
+
+error_msg(Code) ->
+    #ofp_error_msg{type = meter_mod_failed,
+                   code = Code}.

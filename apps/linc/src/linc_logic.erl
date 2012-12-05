@@ -36,7 +36,7 @@
          code_change/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include("linc.hrl").
+-include("linc_logger.hrl").
 
 -record(state, {
           connections = [] :: [{pid(), string(), integer()}],

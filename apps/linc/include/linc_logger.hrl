@@ -16,7 +16,7 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
-%% @doc Header file for OpenFlow switch application.
+%% @doc Header file for OpenFlow switch application with logger macros.
 
 %%------------------------------------------------------------------------------
 %% Logging macros

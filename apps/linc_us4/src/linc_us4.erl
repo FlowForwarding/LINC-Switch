@@ -100,15 +100,13 @@ handle_message(MessageBody, State) ->
 %%% Handling of messages
 %%%-----------------------------------------------------------------------------
 
-%% @doc Modify flow entry in the flow table.
--spec ofp_features_request(state(), ofp_features_request()) ->
-                          {noreply, #state{}} |
-                          {reply, ofp_message(), #state{}}.
 ofp_features_request(State, #ofp_features_request{}) ->
     FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
-                                        n_tables = 255},
+                                        n_tables = 255,
+                                        auxiliary_id = 0,
+                                        capabilities = ?CAPABILITIES},
     {reply, FeaturesReply, State}.
 
 %% @doc Modify flow entry in the flow table.

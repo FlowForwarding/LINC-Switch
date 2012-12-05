@@ -18,6 +18,14 @@
 %% @copyright 2012 FlowForwarding.org
 %% @doc Header file for userspace implementation of OpenFlow switch.
 
+-define(CAPABILITIES, [flow_stats,
+                       table_stats,
+                       port_stats,
+                       group_stats,
+                       %% ip_reasm,
+                       queue_stats
+                       %% port_blocked
+                      ]).
 -define(SUPPORTED_ACTIONS, [output,
                             group,
                             set_queue,

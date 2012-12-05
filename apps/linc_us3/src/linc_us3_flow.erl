@@ -234,7 +234,7 @@ modify(#ofp_flow_mod{command=delete_strict,
 %% @doc Get all entries in one flow table.
 -spec get_flow_table(TableId :: integer()) -> [FlowTableEntryRepresentation :: term()].
 get_flow_table(TableId) ->
-    ets:tab2list(flow_table_name(TableId)).
+    lists:reverse(ets:tab2list(flow_table_name(TableId))).
 
 %% @doc Delete all flow entries that are using a specific group.
 -spec delete_where_group(GroupId :: integer()) -> ok.

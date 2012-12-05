@@ -52,6 +52,7 @@ flow_mod_test_() ->
       ,{"Add 2 with overlapping flow, check_overlap", fun add_overlapping_flow_check_overlap/0}
       ,{"Add 2 with exact match, reset_counters", fun () -> add_exact_flow([reset_counts]) end}
       ,{"Add 2 with exact match, no reset_counters", fun () -> add_exact_flow([]) end}
+      ,{"Flow entry priority order", fun flow_priority_order/0}
       ,{"Modify flow, strict, no reset_counts", fun () -> modify_strict([]) end}
       ,{"Modify flow, strict, reset_counts", fun () -> modify_strict([reset_counts]) end}
       ,{"Modify flow, non-strict, cookie no match", fun modify_cookie_no_match/0}
@@ -290,11 +291,10 @@ add_non_overlapping_flows(Flags) ->
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
-    ?assertMatch([#flow_entry{match=Match1,
-                              instructions=Instructions1},
-                  #flow_entry{match=Match2,
-                              instructions=Instructions2}],
-                 linc_us4_flow:get_flow_table(TableId)).
+    [#flow_entry{match=GotMatch1, instructions=GotInstructions1},
+     #flow_entry{match=GotMatch2, instructions=GotInstructions2}]=linc_us4_flow:get_flow_table(TableId),
+    ?assertEqual(lists:sort([{Match1,Instructions1},{Match2, Instructions2}]),
+                 lists:sort([{GotMatch1,GotInstructions1},{GotMatch2, GotInstructions2}])).
 
 %% Add two overlapping, but not exact, flows, without the check_overlap flag set,
 %% this should succeed.
@@ -326,11 +326,15 @@ add_overlapping_flows() ->
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
-    ?assertMatch([#flow_entry{match=Match1,
-                              instructions=Instructions1},
-                  #flow_entry{match=Match2,
-                              instructions=Instructions2}],
-                 linc_us4_flow:get_flow_table(TableId)).
+    [#flow_entry{match=GotMatch1,
+                 instructions=GotInstructions1},
+     #flow_entry{match=GotMatch2,
+                 instructions=GotInstructions2}]
+        = linc_us4_flow:get_flow_table(TableId),
+    ?assertEqual(lists:sort([{Match1,Instructions1},
+                             {Match2, Instructions2}]),
+                 lists:sort([{GotMatch1,GotInstructions1},
+                             {GotMatch2, GotInstructions2}])).
 
 %% Add two overlapping, but not exact, flows, with the check_overlap flag set,
 %% this should fail.
@@ -434,6 +438,40 @@ add_exact_flow(Flags) ->
                          Stats)
     end.
 
+flow_priority_order() ->
+    TableId = 0,
+    %% Create flow_mod record
+    FlowModAdd1 = ofp_v3_utils:flow_add(
+                    [{table_id,TableId},
+                     {priority,100},
+                     {flags,[]}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{write_actions,[{output,15,1400}]}]),
+
+    FlowModAdd2 = ofp_v3_utils:flow_add(
+                    [{table_id,TableId},
+                     {priority,200},
+                     {flags,[]}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
+                    [{write_actions,[{output,5,1400}]}]),
+    %% Add flows
+    ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
+    ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd2)),
+
+    %% Check if the flows were added correctly...
+    #ofp_flow_mod{match=Match1,
+                  instructions=Instructions1} = FlowModAdd1,
+    #ofp_flow_mod{match=Match2,
+                  instructions=Instructions2} = FlowModAdd2,
+
+    ?assertMatch([#flow_entry{priority=200,
+                              match=Match2,
+                              instructions=Instructions2},
+                  #flow_entry{priority=100,
+                              match=Match1,
+                              instructions=Instructions1}],
+                 linc_us4_flow:get_flow_table(TableId)).
+    
 modify_strict(Flags) ->
     TableId = 4,
     Priority = 6,

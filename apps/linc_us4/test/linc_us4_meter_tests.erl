@@ -44,6 +44,8 @@ meters_test_() ->
         {"Add with pktps value", fun add_with_pktps/0},
         {"Add with no value (kbps default)", fun add_with_no_value/0},
         {"Add with both kbps and pktps", fun add_with_two_values/0},
+        {"Add with burst", fun add_with_burst/0},
+        {"Add with burst and pktps", fun add_with_burst_pktps/0},
         {"Modify", fun modify/0},
         {"Modify non-existing", fun modify_nonexisting/0},
         {"Modify with bad_flags", fun modify_bad_flags/0},
@@ -62,7 +64,9 @@ meters_test_() ->
         {"Apply meter, drop", fun apply_drop/0},
         {"Apply meter, dscp_remark", fun apply_dscp/0},
         {"Apply meter, experimenter", fun apply_experimenter/0},
-        {"Apply meter, pktps", fun apply_pktps/0}
+        {"Apply meter, pktps", fun apply_pktps/0},
+        {"Apply meter, burst/kbps", fun apply_burst_kbps/0},
+        {"Apply meter, burst/pktps", fun apply_burst_pktps/0}
        ]}}
     ].
 
@@ -153,6 +157,30 @@ add_bad_band() ->
                            code = bad_band},
     ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
     ?assertNot(?MOD:is_valid(1)).
+
+add_with_burst() ->
+    Bands = [#ofp_meter_band_drop{burst_size = 2}],
+    MeterMod = #ofp_meter_mod{command = add,
+                              flags = [kbps, burst, stats],
+                              meter_id = 1,
+                              bands = Bands},
+    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
+    ?assert(?MOD:is_valid(1)),
+    ExpectedConfig = meter_config([MeterMod]),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(1)),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(all)).
+
+add_with_burst_pktps() ->
+    Bands = [#ofp_meter_band_drop{burst_size = 1}],
+    MeterMod = #ofp_meter_mod{command = add,
+                              flags = [pktps, burst, stats],
+                              meter_id = 1,
+                              bands = Bands},
+    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
+    ?assert(?MOD:is_valid(1)),
+    ExpectedConfig = meter_config([MeterMod]),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(1)),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(all)).
 
 modify() ->
     add(),
@@ -311,6 +339,36 @@ apply_pktps() ->
     ?assertEqual(1000, Stats#ofp_meter_stats.byte_in_count),
     ?assertEqual(1, Drop#ofp_meter_band_stats.packet_band_count),
     ?assertEqual(500, Drop#ofp_meter_band_stats.byte_band_count).
+
+apply_burst_kbps() ->
+    add_with_burst(),
+
+    Pkt = #ofs_pkt{size = 10000},
+    ?assertEqual(drop, ?MOD:apply(1, Pkt)),
+
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    [Drop] = Stats#ofp_meter_stats.band_stats,
+    ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
+    ?assertEqual(10000, Stats#ofp_meter_stats.byte_in_count),
+    ?assertEqual(1, Drop#ofp_meter_band_stats.packet_band_count),
+    ?assertEqual(10000, Drop#ofp_meter_band_stats.byte_band_count).
+
+apply_burst_pktps() ->
+    add_with_burst_pktps(),
+
+    Pkt1 = #ofs_pkt{size = 100},
+    [?assertEqual(continue, element(1, ?MOD:apply(1, Pkt1)))
+     || _ <- lists:seq(1, 30)],
+
+    Pkt31 = #ofs_pkt{size = 200},
+    ?assertEqual(drop, ?MOD:apply(1, Pkt31)),
+
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    [Drop] = Stats#ofp_meter_stats.band_stats,
+    ?assertEqual(31, Stats#ofp_meter_stats.packet_in_count),
+    ?assertEqual(3200, Stats#ofp_meter_stats.byte_in_count),
+    ?assertEqual(1, Drop#ofp_meter_band_stats.packet_band_count),
+    ?assertEqual(200, Drop#ofp_meter_band_stats.byte_band_count).
 
 %% Fixtures --------------------------------------------------------------------
 

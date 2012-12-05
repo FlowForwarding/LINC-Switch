@@ -50,7 +50,7 @@
 -define(SUPPORTED_BANDS, [drop,
                           dscp_remark,
                           experimenter]).
--define(SUPPORTED_FLAGS, [%% burst,
+-define(SUPPORTED_FLAGS, [burst,
                           kbps,
                           pktps,
                           stats]).
@@ -69,6 +69,7 @@
           rate_value :: kbps | pktps | {burst, kbps | pktps},
           stats = true :: boolean(),
           bands = [] :: [#linc_meter_band{}],
+          burst_history = [] :: [{erlang:timestamp(), integer()}],
           flow_count = 0 :: integer(),
           pkt_count = 0 :: integer(),
           byte_count = 0 :: integer(),
@@ -77,6 +78,8 @@
 
 -define(ETS, linc_meters).
 -define(SUP, linc_us4_meter_sup).
+
+-define(BURST_TIME, timer:seconds(30)).
 
 %%------------------------------------------------------------------------------
 %% API functions
@@ -218,26 +221,30 @@ init([#ofp_meter_mod{meter_id = Id} = MeterMod]) ->
     end.
 
 handle_call({apply, Pkt}, _From, #linc_meter{rate_value = Value,
+                                             burst_history = Bursts,
                                              pkt_count = Pkts,
                                              byte_count = Bytes,
                                              install_ts = Then,
                                              bands = Bands} = State) ->
+    PktBytes = Pkt#ofs_pkt.size,
     NewPkts = Pkts + 1,
-    NewBytes = Bytes + Pkt#ofs_pkt.size,
-    Seconds = timer:now_diff(now(), Then) div 1000000 + 1,
+    NewBytes = Bytes + PktBytes,
+    Now = now(),
+    Seconds = timer:now_diff(Now, Then) div 1000000 + 1,
+    {NewBursts, {BBytes, BPkts}} = get_burst([{Now, PktBytes} | Bursts]),
     Rate = case Value of
                kbps ->
                    ((NewBytes * 8) div 1000) / Seconds;
                pktps ->
-                   NewPkts / Seconds
-               %% TODO:
-               %% {burst, kbps} ->
-               %%     todo;
-               %% {burst, pktps} ->
-               %%     todo
+                   NewPkts / Seconds;
+               {burst, kbps} ->
+                   (BBytes * 8) / ?BURST_TIME;
+               {burst, pktps} ->
+                   BPkts * 1000 / ?BURST_TIME
            end,
     {Reply, NewBands} = apply_band(Rate, Pkt, Bands),
-    {reply, Reply, State#linc_meter{pkt_count = NewPkts,
+    {reply, Reply, State#linc_meter{burst_history = NewBursts,
+                                    pkt_count = NewPkts,
                                     byte_count = NewBytes,
                                     bands = NewBands}};
 handle_call(get_state, _From, State) ->
@@ -309,6 +316,20 @@ update_band(1, [Band | Bands], NewBytes) ->
                           byte_count = Bytes + NewBytes} | Bands];
 update_band(N, [Band | Bands], Bytes) ->
     [Band | update_band(N - 1, Bands, Bytes)].
+
+get_burst([{Now, PktBytes} | Bursts]) ->
+    get_burst(Now, Bursts, [{Now, PktBytes}], {PktBytes, 1}).
+
+get_burst(_, [], Bursts, Stats) ->
+    {lists:reverse(Bursts), Stats};
+get_burst(Now, [{Ts, AddBytes} | Rest], Bursts, {Bytes, Pkts}) ->
+    case timer:now_diff(Now, Ts) div 1000 < ?BURST_TIME of
+        true ->
+            get_burst(Now, Rest, [{Ts, AddBytes} | Bursts],
+                      {Bytes + AddBytes, Pkts + 1});
+        false ->
+            get_burst(Now, [], Bursts, {Bytes, Pkts})
+    end.
 
 import_meter(#ofp_meter_mod{meter_id = Id,
                             flags = Flags,

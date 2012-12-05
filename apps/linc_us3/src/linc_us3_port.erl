@@ -247,8 +247,10 @@ is_valid(PortNo) ->
 %% @doc Return list of all OFP ports present in the switch.
 -spec get_ports() -> [#ofp_port{}].
 get_ports() ->
-    %TODO change to calls to port gen_servers
-    ets:tab2list(linc_ports).
+    ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
+                      Port = gen_server:call(Pid, get_port),
+                      [Port | Ports]
+              end, [], linc_ports).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks

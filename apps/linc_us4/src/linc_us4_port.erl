@@ -267,6 +267,7 @@ init({PortNo, PortOpts}) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
     Port = #ofp_port{port_no = PortNo,
+                     name = list_to_binary("Port" ++ integer_to_list(PortNo)),
                      config = [], state = [live],
                      curr = [other], advertised = [other],
                      supported = [other], peer = [other],

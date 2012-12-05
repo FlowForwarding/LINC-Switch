@@ -263,6 +263,7 @@ init({PortNo, PortOpts}) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
     Port = #ofp_port{port_no = PortNo,
+                     name = list_to_binary("Port" ++ integer_to_list(PortNo)),
                      config = [], state = [live],
                      curr = [other], advertised = [other],
                      supported = [other], peer = [other],
@@ -317,6 +318,8 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {{error, {bad_request, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
+handle_call(get_port, _From, #state{port = Port} = State) ->
+    {reply, Port, State};
 handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->
     {reply, PortState, State};

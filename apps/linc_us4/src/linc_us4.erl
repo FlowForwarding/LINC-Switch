@@ -45,6 +45,7 @@
          ofp_flow_stats_request/2,
          ofp_aggregate_stats_request/2,
          ofp_table_stats_request/2,
+         ofp_port_desc_request/2,
          ofp_port_stats_request/2,
          ofp_queue_stats_request/2,
          ofp_group_stats_request/2,
@@ -57,7 +58,7 @@
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
--include_lib("linc/include/linc.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 
 -record(state, {flow_state}).
@@ -255,6 +256,13 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
                                      {reply, ofp_message(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
     Reply = linc_us4_flow:get_table_stats(Request),
+    {reply, Reply, State}.
+
+%% @doc Get port description.
+-spec ofp_port_desc_request(state(), ofp_port_desc_request()) ->
+                                   {reply, ofp_message(), #state{}}.
+ofp_port_desc_request(State, #ofp_port_desc_request{}) ->
+    Reply = linc_us4_port:get_desc(),
     {reply, Reply, State}.
 
 %% @doc Get port statistics.

@@ -25,7 +25,6 @@
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
@@ -50,8 +49,9 @@ port_test_() ->
       {"Port send: local", fun send_local/0},
       {"Port send: any", fun send_any/0},
       {"Port send: port number", fun send_port_number/0},
-      {"Port stats: port_stats_request", fun port_stats_request/0},
-      {"Port stats: queue_stats_request", fun queue_stats_request/0},
+      {"Port multipart: port_desc_request", fun port_desc_request/0},
+      {"Port multipart: port_stats_request", fun port_stats_request/0},
+      {"Port multipart: queue_stats_request", fun queue_stats_request/0},
       {"Port config: port_down", fun config_port_down/0},
       {"Port config: no_recv", fun config_no_recv/0},
       {"Port config: no_fwd", fun config_no_fwd/0},
@@ -116,6 +116,13 @@ send_any() ->
 
 send_port_number() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(), 1)).
+
+port_desc_request() ->
+    DescList = linc_us4_port:get_desc(),
+    ?assert(length(DescList) =/= 0),
+    lists:map(fun(E) ->
+                      ?assertMatch(#ofp_port{}, E)
+              end, DescList).
 
 port_stats_request() ->
     BadPort = 999,

@@ -35,6 +35,7 @@
          modify/1,
          send/2,
 
+         get_desc/0,
          get_stats/1,
          get_queue_stats/1,
 
@@ -44,12 +45,11 @@
          get_config/1,
          set_config/2,
 
-         is_valid/1,
-         get_ports/0]).
+         is_valid/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 -include("linc_us4_port.hrl").
 
@@ -167,25 +167,33 @@ send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
             gen_server:cast(Pid, {send, Pkt})
     end.
 
+%% @doc Return list of all OFP ports present in the switch.
+-spec get_desc() -> list(ofp_port()).
+get_desc() ->
+    ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
+                      Port = gen_server:call(Pid, get_port),
+                      [Port | Ports]
+              end, [], linc_ports).
+
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply() |
                                              ofp_error_msg().
 get_stats(#ofp_port_stats_request{port_no = all}) ->
     PortStats = ets:tab2list(linc_port_stats),
-    #ofp_port_stats_reply{stats = PortStats};
+    #ofp_port_stats_reply{body = PortStats};
 get_stats(#ofp_port_stats_request{port_no = PortNo}) ->
     case ets:lookup(linc_port_stats, PortNo) of
         [] ->
             #ofp_error_msg{type = bad_request, code = bad_port};
         [#ofp_port_stats{}] = PortStats ->
-            #ofp_port_stats_reply{stats = PortStats}
+            #ofp_port_stats_reply{body = PortStats}
     end.
 
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
-get_queue_stats(#ofp_queue_stats_request{port_no = all, queue_id = all}) ->
+get_queue_stats(#ofp_queue_stats_request{port_no = any, queue_id = all}) ->
     #ofp_queue_stats_reply{};
-get_queue_stats(#ofp_queue_stats_request{port_no = all, queue_id = _QueueId}) ->
+get_queue_stats(#ofp_queue_stats_request{port_no = any, queue_id = _QueueId}) ->
     #ofp_queue_stats_reply{};
 get_queue_stats(#ofp_queue_stats_request{port_no = _PortNo, queue_id = all}) ->
     #ofp_queue_stats_reply{};
@@ -199,7 +207,7 @@ get_queue_stats(#ofp_queue_stats_request{port_no = PortNo,
                 [LincPortQueue] = ets:lookup(linc_port_queue,
                                              {PortNo, QueueId}),
                 QueueStats = queue_stats_convert(LincPortQueue),
-                #ofp_queue_stats_reply{stats = [QueueStats]}
+                #ofp_queue_stats_reply{body = [QueueStats]}
             catch 
                 _:_ ->
                     #ofp_error_msg{type = bad_request, code = bad_queue}
@@ -246,12 +254,6 @@ set_config(PortNo, PortConfig) ->
 -spec is_valid(ofp_port_no()) -> boolean().
 is_valid(PortNo) ->
     ets:member(linc_ports, PortNo).
-
-%% @doc Return list of all OFP ports present in the switch.
--spec get_ports() -> [#ofp_port{}].
-get_ports() ->
-    %TODO change to calls to port gen_servers
-    ets:tab2list(linc_ports).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks
@@ -318,6 +320,8 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {{error, {bad_request, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
+handle_call(get_port, _From, #state{port = Port} = State) ->
+    {reply, Port, State};
 handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->
     {reply, PortState, State};

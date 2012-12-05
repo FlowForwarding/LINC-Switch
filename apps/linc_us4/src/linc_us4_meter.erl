@@ -442,7 +442,7 @@ export_stats(#linc_meter{id = Id,
                      packet_in_count = Pkts,
                      byte_in_count = Bytes,
                      duration_sec = MicroDuration div 1000000,
-                     duration_nsec = MicroDuration * 1000,
+                     duration_nsec = (MicroDuration rem 1000) * 1000,
                      band_stats = BandStats}.
 
 export_band_stats(true, #linc_meter_band{pkt_count = Pkts,

@@ -168,12 +168,13 @@ send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
     end.
 
 %% @doc Return list of all OFP ports present in the switch.
--spec get_desc() -> list(ofp_port()).
+-spec get_desc() -> ofp_port_desc_reply().
 get_desc() ->
-    ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
-                      Port = gen_server:call(Pid, get_port),
-                      [Port | Ports]
-              end, [], linc_ports).
+    L = ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
+                          Port = gen_server:call(Pid, get_port),
+                          [Port | Ports]
+                  end, [], linc_ports),
+    #ofp_port_desc_reply{body = L}.
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply() |

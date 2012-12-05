@@ -24,7 +24,7 @@
                               check_output_on_ports/0]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
@@ -118,11 +118,13 @@ send_port_number() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(), 1)).
 
 port_desc_request() ->
-    DescList = linc_us4_port:get_desc(),
-    ?assert(length(DescList) =/= 0),
+    Desc = linc_us4_port:get_desc(),
+    ?assertMatch(#ofp_port_desc_reply{}, Desc),
+    Body = Desc#ofp_port_desc_reply.body,
+    ?assert(length(Body) =/= 0),
     lists:map(fun(E) ->
                       ?assertMatch(#ofp_port{}, E)
-              end, DescList).
+              end, Body).
 
 port_stats_request() ->
     BadPort = 999,
@@ -133,12 +135,12 @@ port_stats_request() ->
     ValidPort = 1,
     StatsRequest2 = #ofp_port_stats_request{port_no = ValidPort},
     StatsReply2 = linc_us4_port:get_stats(StatsRequest2),
-    ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.stats)),
+    ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.body)),
 
     AllPorts = all,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
     StatsReply3 = linc_us4_port:get_stats(StatsRequest3),
-    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.stats)),
+    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)),
 
     ok.
 

@@ -43,7 +43,7 @@
          terminate/2,
          code_change/3]).
 
--include_lib("linc/include/linc.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include("linc_us4.hrl").
 

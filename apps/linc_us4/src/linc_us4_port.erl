@@ -624,7 +624,7 @@ maybe_buffer(invalid_ttl, Packet, _Bytes) ->
 maybe_buffer(Packet, no_buffer) ->
     {no_buffer, pkt:encapsulate(Packet)};
 maybe_buffer(Packet, Bytes) ->
-    BufferId = linc_us4_buffer:save_buffer(Packet),
+    BufferId = linc_buffer:save_buffer(Packet),
     {BufferId, truncate_packet(Packet,Bytes)}.
 
 truncate_packet(Packet,Bytes) -> 

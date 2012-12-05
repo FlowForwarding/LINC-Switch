@@ -16,13 +16,12 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
--module(linc_us4_buffer_tests).
+-module(linc_buffer_tests).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("linc/include/linc.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include("linc_us4.hrl").
 
 %% Tests -----------------------------------------------------------------------
 
@@ -36,27 +35,27 @@ flow_mod_test_() ->
      ]}.
 
 get_empty() ->
-    ?assertEqual(not_found, linc_us4_buffer:get_buffer(1)).
+    ?assertEqual(not_found, linc_buffer:get_buffer(1)).
 
 save_and_get() ->
-    Pkt = #ofs_pkt{},
-    BufferId = linc_us4_buffer:save_buffer(Pkt),
-    ?assertMatch(#ofs_pkt{}, linc_us4_buffer:get_buffer(BufferId)).
+    Pkt = {test,some,more},
+    BufferId = linc_buffer:save_buffer(Pkt),
+    ?assertMatch(Pkt, linc_buffer:get_buffer(BufferId)).
 
 expiration() ->
-    Pkt = #ofs_pkt{},
-    BufferId = linc_us4_buffer:save_buffer(Pkt),
-    ?assertMatch(#ofs_pkt{}, linc_us4_buffer:get_buffer(BufferId)),
+    Pkt = {test, some, more},
+    BufferId = linc_buffer:save_buffer(Pkt),
+    ?assertMatch(Pkt, linc_buffer:get_buffer(BufferId)),
     timer:sleep(4100),
-    ?assertEqual(not_found, linc_us4_buffer:get_buffer(BufferId)).
+    ?assertEqual(not_found, linc_buffer:get_buffer(BufferId)).
     
 
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
-    linc_us4_buffer:initialize().
+    linc_buffer:initialize().
 
 teardown(State) ->
-    linc_us4_buffer:terminate(State).
+    linc_buffer:terminate(State).
 
 %% Helpers ---------------------------------------------------------------------

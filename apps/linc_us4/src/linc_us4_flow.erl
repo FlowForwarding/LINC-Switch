@@ -130,7 +130,7 @@ modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
     case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
         ok ->
             %% TODO: packet_out
-            case linc_us4_buffer:get_buffer(BufferId) of
+            case linc_buffer:get_buffer(BufferId) of
                 #ofs_pkt{}=OfsPkt ->
                     linc_us4_actions:apply_list(OfsPkt,
                                                 [#ofp_action_output{port=table}]);

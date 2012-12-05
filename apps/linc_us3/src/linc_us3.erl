@@ -173,7 +173,7 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
     {noreply, State};
 ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
                                       actions = Actions}) ->
-    case linc_us3_buffer:get_buffer(BufferId) of
+    case linc_buffer:get_buffer(BufferId) of
         #ofs_pkt{}=OfsPkt ->
             linc_us3_actions:apply_list(OfsPkt, Actions);
         not_found ->

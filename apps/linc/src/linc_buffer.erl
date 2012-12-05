@@ -17,7 +17,7 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Module for handling flows.
--module(linc_us3_buffer).
+-module(linc_buffer).
 
 %% API
 -export([initialize/0,
@@ -28,11 +28,9 @@
 %% Internal
 -export([expire_buffers/0]).
 
--include("linc_us3.hrl").
-
 -record(linc_buffer, {id :: non_neg_integer(),
                       expires :: erlang:timestamp(),
-                      packet :: #ofs_pkt{}}).
+                      packet :: term()}).
 
 -record(linc_buffer_id, {key :: key,
                          id_num :: non_neg_integer()}).
@@ -72,7 +70,7 @@ terminate(#state{tref=Tref}) ->
 
 %% @doc Save a packet.
 %% @end
--spec save_buffer(#ofs_pkt{}) -> non_neg_integer().
+-spec save_buffer(term()) -> non_neg_integer().
 save_buffer(Packet) ->
     Id = next_id(),
     ets:insert(linc_buffers, #linc_buffer{id = Id,
@@ -82,7 +80,7 @@ save_buffer(Packet) ->
 
 %% @doc Retreive a packet. If the packet has already been expired 
 %% not_found is returned.
--spec get_buffer(non_neg_integer()) -> #ofs_pkt{} | not_found.
+-spec get_buffer(non_neg_integer()) -> term() | not_found.
 get_buffer(BufferId) ->
     case ets:lookup(linc_buffers,BufferId) of
         [#linc_buffer{packet=Packet}] ->

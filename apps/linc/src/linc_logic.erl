@@ -87,10 +87,10 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendOpts} = State) ->
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
-    {ok, BackendState} = BackendMod:start(BackendOpts),
+    {ok, Version, BackendState} = BackendMod:start(BackendOpts),
 
     {ok, Controllers} = application:get_env(linc, controllers),
-    Opts = [{controlling_process, self()}, {version, 3}],
+    Opts = [{controlling_process, self()}, {version, Version}],
     [ofp_channel:open(Host, Port, Opts) || {Host, Port} <- Controllers],
 
     {noreply, State#state{backend_state = BackendState}};

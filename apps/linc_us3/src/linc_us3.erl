@@ -71,7 +71,7 @@ start(_Opts) ->
     linc_us3_groups:create(),
     FlowState = linc_us3_flow:initialize(),
     linc_us3_port:initialize(),
-    {ok, #state{flow_state = FlowState}}.
+    {ok, 3, #state{flow_state = FlowState}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().

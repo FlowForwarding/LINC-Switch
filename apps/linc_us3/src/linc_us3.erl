@@ -101,7 +101,8 @@ ofp_features_request(State, #ofp_features_request{}) ->
                                         datapath_id = 0,
                                         n_buffers = 0,
                                         ports = linc_us3_port:get_ports(),
-                                        n_tables = 255},
+                                        n_tables = 255,
+                                        capabilities = ?CAPABILITIES},
     {reply, FeaturesReply, State}.
 
 %% @doc Modify flow entry in the flow table.

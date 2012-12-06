@@ -91,7 +91,14 @@ handle_info(timeout, #state{backend_mod = BackendMod,
 
     {ok, Controllers} = application:get_env(linc, controllers),
     Opts = [{controlling_process, self()}, {version, Version}],
-    [ofp_channel:open(Host, Port, Opts) || {Host, Port} <- Controllers],
+    Ctrls = [case Ctrl of
+                 {Host, Port} ->
+                     {Host, Port, Opts};
+                 {Host, Port, Conns} ->
+                     NewOpts = [{auxiliary_connections, Conns - 1} | Opts],
+                     {Host, Port, NewOpts}
+             end || Ctrl <- Controllers],
+    [ofp_channel:open(Host, Port, Opt) || {Host, Port, Opt} <- Ctrls],
 
     {noreply, State#state{backend_state = BackendState}};
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},

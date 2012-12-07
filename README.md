@@ -33,7 +33,7 @@ Erlang
 ------
 
 To use LINC you need to have an Erlang runtime installed on your
-machine. Required version is **R15B01** or later.
+machine. Required version is **R15B**.
 
 ### Install from sources
 

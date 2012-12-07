@@ -190,6 +190,9 @@ state_live() ->
 
 setup() ->
     mock(?MOCKED),
+    application:unset_env(linc, queues),
+    application:unset_env(linc, backends),
+    linc_us3_sup:start_link(),
     catch linc_us3_port_sup:start_link(),
     UserspaceBackend = {userspace, [{ports, [{1, [{interface, "dummy1"}]},
                                              {2, [{interface, "dummy2"}]}

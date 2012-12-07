@@ -181,39 +181,20 @@ get_desc() ->
                                              ofp_error_msg().
 get_stats(#ofp_port_stats_request{port_no = all}) ->
     PortStats = ets:tab2list(linc_port_stats),
-    #ofp_port_stats_reply{body = PortStats};
+    #ofp_port_stats_reply{body = convert_duration(PortStats)};
 get_stats(#ofp_port_stats_request{port_no = PortNo}) ->
     case ets:lookup(linc_port_stats, PortNo) of
         [] ->
             #ofp_error_msg{type = bad_request, code = bad_port};
         [#ofp_port_stats{}] = PortStats ->
-            #ofp_port_stats_reply{body = PortStats}
+            #ofp_port_stats_reply{body = convert_duration(PortStats)}
     end.
 
 %% @doc Return queue stats for the given OF port and queue id.
 -spec get_queue_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
-get_queue_stats(#ofp_queue_stats_request{port_no = any, queue_id = all}) ->
-    #ofp_queue_stats_reply{};
-get_queue_stats(#ofp_queue_stats_request{port_no = any, queue_id = _QueueId}) ->
-    #ofp_queue_stats_reply{};
-get_queue_stats(#ofp_queue_stats_request{port_no = _PortNo, queue_id = all}) ->
-    #ofp_queue_stats_reply{};
 get_queue_stats(#ofp_queue_stats_request{port_no = PortNo,
                                          queue_id = QueueId}) ->
-    case is_valid(PortNo) of
-        false ->
-            #ofp_error_msg{type = bad_request, code = bad_port};
-        true ->
-            try
-                [LincPortQueue] = ets:lookup(linc_port_queue,
-                                             {PortNo, QueueId}),
-                QueueStats = queue_stats_convert(LincPortQueue),
-                #ofp_queue_stats_reply{body = [QueueStats]}
-            catch 
-                _:_ ->
-                    #ofp_error_msg{type = bad_request, code = bad_queue}
-            end
-    end.
+    match_queue(PortNo, QueueId).
 
 -spec get_state(ofp_port_no()) -> [ofp_port_state()].
 get_state(PortNo) ->
@@ -253,7 +234,9 @@ set_config(PortNo, PortConfig) ->
 
 %% @doc Test if a port exists.
 -spec is_valid(ofp_port_no()) -> boolean().
-is_valid(PortNo) ->
+is_valid(PortNo) when is_atom(PortNo)->
+    true;
+is_valid(PortNo) when is_integer(PortNo)->
     ets:member(linc_ports, PortNo).
 
 %%%-----------------------------------------------------------------------------
@@ -465,7 +448,8 @@ remove(PortNo) ->
 setup_port_and_queues(#state{port = #ofp_port{port_no = PortNo}} = State) ->
     Port = #linc_port{port_no = PortNo, pid = self()},
     ets:insert(linc_ports, Port),
-    ets:insert(linc_port_stats, #ofp_port_stats{port_no = PortNo}),
+    ets:insert(linc_port_stats, #ofp_port_stats{port_no = PortNo,
+                                                duration_sec = erlang:now()}),
     setup_queues(State).
 
 -spec setup_queues(#state{}) -> #state{}.
@@ -474,28 +458,32 @@ setup_queues(#state{port = #ofp_port{port_no = PortNo}} = State) ->
         undefined ->
             State;
         {ok, Ports} ->
-            {PortNo, QueueOpts} = lists:keyfind(PortNo, 1, Ports),
-            {rate, RateDesc} = lists:keyfind(rate, 1, QueueOpts),
-            Rate = rate_desc_to_bps(RateDesc),
-            {queues, Queues} = lists:keyfind(queues, 1, QueueOpts),
-            
-            ThrottlingEts = ets:new(queue_throttling,
-                                    [public,
-                                     {read_concurrency, true},
-                                     {keypos,
-                                      #linc_queue_throttling.queue_no}]),
-            
-            State2 = State#state{rate_bps = Rate,
-                                 throttling_ets = ThrottlingEts},
-            
-            %% Add default queue with no min or max rate
-            State3 = do_attach_queue(State2, default, []),
-            
-            lists:foldl(fun({QueueId, QueueProps}, StateAcc) ->
-                                do_attach_queue(StateAcc,
-                                                QueueId,
-                                                QueueProps)
-                        end, State3, Queues)
+            case lists:keyfind(PortNo, 1, Ports) of
+                false ->
+                    State;
+                {PortNo, QueueOpts} ->
+                    {rate, RateDesc} = lists:keyfind(rate, 1, QueueOpts),
+                    Rate = rate_desc_to_bps(RateDesc),
+                    {queues, Queues} = lists:keyfind(queues, 1, QueueOpts),
+                    
+                    ThrottlingEts = ets:new(queue_throttling,
+                                            [public,
+                                             {read_concurrency, true},
+                                             {keypos,
+                                              #linc_queue_throttling.queue_no}]),
+                    
+                    State2 = State#state{rate_bps = Rate,
+                                         throttling_ets = ThrottlingEts},
+                    
+                    %% Add default queue with no min or max rate
+                    State3 = do_attach_queue(State2, default, []),
+                    
+                    lists:foldl(fun({QueueId, QueueProps}, StateAcc) ->
+                                        do_attach_queue(StateAcc,
+                                                        QueueId,
+                                                        QueueProps)
+                                end, State3, Queues)
+            end
     end.
 
 handle_frame(Frame, PortNo, PortConfig) ->
@@ -534,13 +522,40 @@ get_port_pid(PortNo) ->
             Pid
     end.
 
--spec queue_stats_convert(#linc_port_queue{}) -> ofp_queue_stats().
-queue_stats_convert(#linc_port_queue{key = {PortNo, QueueId},
-                                     tx_bytes = TxBytes,
-                                     tx_packets = TxPackets,
-                                     tx_errors = TxErrors}) ->
-    #ofp_queue_stats{port_no = PortNo, queue_id = QueueId, tx_bytes = TxBytes,
-                     tx_packets = TxPackets, tx_errors = TxErrors}.
+-spec convert_duration(list(#ofp_port_stats{})) -> list(#ofp_port_stats{}).
+convert_duration(PortStatsList) ->
+    lists:map(fun(#ofp_port_stats{duration_sec = DSec} = PortStats) ->
+                      MicroDuration = timer:now_diff(erlang:now(), DSec),
+                      Sec = microsec_to_sec(MicroDuration),
+                      NSec = microsec_to_nsec(MicroDuration),
+                      PortStats#ofp_port_stats{duration_sec = Sec,
+                                               duration_nsec = NSec}
+              end, PortStatsList).
+
+-spec queue_stats_convert([#linc_port_queue{}]) -> [ofp_queue_stats()].
+queue_stats_convert(Queues) ->
+    lists:map(fun(#linc_port_queue{key = {PortNo, QueueId},
+                                   tx_bytes = TxBytes,
+                                   tx_packets = TxPackets,
+                                   tx_errors = TxErrors,
+                                   install_time = Time}) ->
+                      MicroDuration = timer:now_diff(erlang:now(), Time),
+                      DSec = microsec_to_sec(MicroDuration),
+                      DNSec = microsec_to_nsec(MicroDuration),
+                      #ofp_queue_stats{port_no = PortNo,
+                                       queue_id = QueueId,
+                                       tx_bytes = TxBytes,
+                                       tx_packets = TxPackets,
+                                       tx_errors = TxErrors,
+                                       duration_sec = DSec,
+                                       duration_nsec = DNSec}
+              end, Queues).
+
+microsec_to_sec(Micro) ->
+    Micro div 1000000.
+
+microsec_to_nsec(Micro) ->
+    (Micro rem 1000) * 1000.
 
 rate_desc_to_bps(Bps) when is_integer(Bps) ->
     Bps;
@@ -600,7 +615,8 @@ do_attach_queue(#state{socket = Socket,
                                              SendFun),
     ets:insert(linc_port_queue, #linc_port_queue{key = Key,
                                                  properties = QueueProps,
-                                                 queue_pid = Pid}),
+                                                 queue_pid = Pid,
+                                                 install_time = erlang:now()}),
     State.
 
 do_detach_queue(#state{port = #ofp_port{port_no = PortNo},
@@ -647,4 +663,34 @@ get_switch_config(miss_send_len) ->
     %%TODO: get this from the switch configuration
     no_buffer.
 
+match_queue(any, all) ->
+    match_queue(any, '_', '_');
+match_queue(any, QueueMatch) ->
+    match_queue(any, '_', QueueMatch);
+match_queue(PortNo, all) ->
+    match_queue(PortNo, PortNo, '_');
+match_queue(PortMatch, QueueMatch) ->
+    match_queue(PortMatch, PortMatch, QueueMatch).
+
+match_queue(PortNo, PortMatch, QueueMatch) ->
+    case is_valid(PortNo) of
+        false ->
+            #ofp_error_msg{type = bad_request, code = bad_port};
+        true ->
+            MatchSpec = #linc_port_queue{key = {PortMatch, QueueMatch},
+                                         _ = '_'},
+            case ets:match_object(linc_port_queue, MatchSpec) of
+                [] ->
+                    #ofp_error_msg{type = bad_request, code = bad_queue};
+                L ->
+                    DefaultQueues = fun(#linc_port_queue{key = {_, default}}) ->
+                                            false;
+                                       (_) ->
+                                            true
+                                    end,
+                    Queues = lists:filter(DefaultQueues, L),
+                    QueueStats = queue_stats_convert(Queues),
+                    #ofp_queue_stats_reply{body = QueueStats}
+            end
+    end.
 

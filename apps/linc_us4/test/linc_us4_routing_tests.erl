@@ -101,7 +101,7 @@ match_empty_matches() ->
     TableConfig = drop,
     flow_table(TableId, FlowEntries, TableConfig),
 
-    %% Match on the first flow entry in the first flow table
+    %% Match on the second flow entry in the first flow table
     MatchFieldsPkt = [{ipv4_dst, zxc}, {ipv4_src, qwe}],
     Pkt = pkt(MatchFieldsPkt),
     ?assertEqual({match, 0, Flow2}, linc_us4_routing:route(Pkt)).

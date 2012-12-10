@@ -83,11 +83,11 @@ initialize() ->
                               [named_table, public,
                                {keypos, #ofp_port_stats.port_no},
                                {read_concurrency, true}]),
-    case application:get_env(linc, queues) of
-        undefined ->
-            no_queues;
-        {ok, _} ->
-            linc_us4_queue:start()
+    case queues_enabled() of
+        true ->
+            linc_us4_queue:start();
+        false ->
+            ok
     end,
     {ok, BackendOpts} = application:get_env(linc, backends),
     {userspace, UserspaceOpts} = lists:keyfind(userspace, 1, BackendOpts),
@@ -100,11 +100,11 @@ terminate() ->
     [ok = remove(PortNo) || PortNo <- get_all_port_no()],
     true = ets:delete(linc_ports),
     true = ets:delete(linc_port_stats),
-    case application:get_env(linc, queues) of
-        undefined ->
-            ok;
-        {ok, _} ->
-            linc_us4_queue:stop()
+    case queues_enabled() of
+        true ->
+            linc_us4_queue:stop();
+        false ->
+            ok
     end.
 
 %% @doc Change config of the given OF port according to the provided port mod.
@@ -341,15 +341,15 @@ handle_cast({send, #ofs_pkt{packet = Packet, queue_id = QueueId}},
         false ->
             Frame = pkt:encapsulate(Packet),
             update_port_tx_counters(PortNo, byte_size(Frame)),
-            case application:get_env(linc, queues) of
-                undefined ->
+            case queues_enabled() of
+                false ->
                     case {Port, Ifindex} of
                         {undefined, _} ->
                             linc_us4_port_native:send(Socket, Ifindex, Frame);
                         {_, undefined} ->
                             port_command(Port, Frame)
                     end;
-                {ok, _} ->
+                true ->
                     send_with_queue(Frame, PortNo, QueueId)
             end
     end,
@@ -402,10 +402,10 @@ get_all_port_no() ->
 
 -spec get_queues(ofp_port_no()) -> list(#linc_port_queue{}).
 get_queues(PortNo) ->
-    case application:get_env(linc, queues) of
-        undefined ->
+    case queues_enabled() of
+        false ->
             [];
-        {ok, _} ->
+        true ->
             MatchSpec = #linc_port_queue{key = {PortNo, '_'}, _ = '_'},
             ets:match_object(linc_port_queue, MatchSpec)
     end.
@@ -677,20 +677,33 @@ match_queue(PortNo, PortMatch, QueueMatch) ->
         false ->
             #ofp_error_msg{type = bad_request, code = bad_port};
         true ->
-            MatchSpec = #linc_port_queue{key = {PortMatch, QueueMatch},
-                                         _ = '_'},
-            case ets:match_object(linc_port_queue, MatchSpec) of
-                [] ->
-                    #ofp_error_msg{type = bad_request, code = bad_queue};
-                L ->
-                    DefaultQueues = fun(#linc_port_queue{key = {_, default}}) ->
-                                            false;
-                                       (_) ->
-                                            true
-                                    end,
-                    Queues = lists:filter(DefaultQueues, L),
-                    QueueStats = queue_stats_convert(Queues),
-                    #ofp_queue_stats_reply{body = QueueStats}
+            case queues_enabled() of
+                true ->
+                    MatchSpec = #linc_port_queue{key = {PortMatch, QueueMatch},
+                                                 _ = '_'},
+                    case ets:match_object(linc_port_queue, MatchSpec) of
+                        [] ->
+                            #ofp_error_msg{type = bad_request,
+                                           code = bad_queue};
+                        L ->
+                            F = fun(#linc_port_queue{key = {_, default}}) ->
+                                        false;
+                                   (_) ->
+                                        true
+                                end,
+                            Queues = lists:filter(F, L),
+                            QueueStats = queue_stats_convert(Queues),
+                            #ofp_queue_stats_reply{body = QueueStats}
+                    end;
+                false ->
+                    #ofp_error_msg{type = bad_request, code = bad_queue}
             end
     end.
 
+queues_enabled() ->
+    case application:get_env(linc, queues) of
+        undefined ->
+            false;
+        {ok, _} ->
+            true
+    end.

@@ -73,11 +73,15 @@ action_set_output() ->
     ?assertEqual({output, ?INIT_VAL, Pkt}, Output).
 
 actions_test_() ->
-    {setup,
+    {foreach,
      fun setup/0,
      fun teardown/1,
      [%% Required actions
       {"Action Output", fun action_output/0},
+      {"Action Output: controller with reason 'action'",
+       fun action_output_controller_action/0},
+      {"Action Output: controller with reason 'no_match'",
+       fun action_output_controller_nomatch/0},
       {"Action Group", fun action_group/0},
       {"Action Experimenter", fun action_experimenter/0},
       %% Optional actions
@@ -101,6 +105,25 @@ actions_test_() ->
 action_output() ->
     Pkt = #ofs_pkt{},
     Port = 500,
+    Action = #ofp_action_output{port = Port},
+    ?assertEqual({Pkt, [{output, Port, Pkt}]},
+                 linc_us4_actions:apply_list(Pkt, [Action])),
+    ?assert(check_if_called({linc_us4_port, send, 2})),
+    ?assertEqual([{Pkt, Port}], check_output_on_ports()).
+
+action_output_controller_action() ->
+    Pkt = #ofs_pkt{},
+    Port = controller,
+    Action = #ofp_action_output{port = Port},
+    ?assertEqual({Pkt, [{output, Port, Pkt}]},
+                 linc_us4_actions:apply_list(Pkt, [Action])),
+    ?assert(check_if_called({linc_us4_port, send, 2})),
+    ?assertEqual([{Pkt#ofs_pkt{packet_in_reason = action}, Port}],
+                 check_output_on_ports()).
+
+action_output_controller_nomatch() ->
+    Pkt = #ofs_pkt{packet_in_reason = no_match},
+    Port = controller,
     Action = #ofp_action_output{port = Port},
     ?assertEqual({Pkt, [{output, Port, Pkt}]},
                  linc_us4_actions:apply_list(Pkt, [Action])),

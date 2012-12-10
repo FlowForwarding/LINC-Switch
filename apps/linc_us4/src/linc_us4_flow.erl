@@ -110,7 +110,7 @@ get_table_config(TableId) ->
         [#flow_table_config{config=Config}] ->
             Config;
         [] ->
-            controller
+            drop
     end.
 
 %% @doc Handle a flow_mod request from a controller. This may add/modify/delete one or
@@ -855,7 +855,6 @@ modify_flow(TableId, #flow_entry{id=Id,instructions=PrevInstructions},
             %% Do nothing
             ok
     end.
-
 
 %%============================================================================
 %% Various counter functions

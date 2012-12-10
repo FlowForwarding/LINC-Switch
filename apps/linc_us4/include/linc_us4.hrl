@@ -119,9 +119,13 @@
 -type priority() :: non_neg_integer().
 -type flow_id() :: {priority(),reference()}.
 
+-type linc_table_config() :: continue
+                           | drop
+                           | controller.
+
 -record(flow_table_config, {
           id :: non_neg_integer(),
-          config :: undefined
+          config = drop :: linc_table_config()
          }).
 
 -record(flow_entry, {
@@ -166,16 +170,16 @@
          }).
 
 -record(ofs_pkt, {
-          in_port              :: ofp_port_no(),
-          fields               :: ofp_match(),
-          actions = []         :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>>  :: binary(),
-          packet               :: pkt:packet(),
-          size                 :: integer(),
-          queue_id = default   :: integer() | default,
-          table_id             :: integer(),
-          no_packet_in = false :: boolean(),
-          packet_in_reason     :: ofp_packet_in_reason(),
-          packet_in_bytes      :: ofp_packet_in_bytes()
+          in_port                     :: ofp_port_no(),
+          fields = []                 :: ofp_match(),
+          actions = []                :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>>         :: binary(),
+          packet = []                 :: pkt:packet(),
+          size                        :: integer(),
+          queue_id = default          :: integer() | default,
+          table_id                    :: integer(),
+          no_packet_in = false        :: boolean(),
+          packet_in_reason            :: ofp_packet_in_reason(),
+          packet_in_bytes = no_buffer :: ofp_packet_in_bytes()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

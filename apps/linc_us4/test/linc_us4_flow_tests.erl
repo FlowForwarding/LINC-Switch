@@ -1141,12 +1141,12 @@ table_mod_test_() ->
      ]}.
 
 get_default_table_config() ->
-    ?assertEqual(controller, linc_us4_flow:get_table_config(2)).
+    ?assertEqual(drop, linc_us4_flow:get_table_config(2)).
 
 set_table_config() ->
-    ?assertEqual(controller, linc_us4_flow:get_table_config(2)),
-    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
-    ?assertEqual(drop, linc_us4_flow:get_table_config(2)).
+    ?assertEqual(drop, linc_us4_flow:get_table_config(2)),
+    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=controller})), 
+    ?assertEqual(controller, linc_us4_flow:get_table_config(2)).
 
 set_all_table_config() ->
     ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 

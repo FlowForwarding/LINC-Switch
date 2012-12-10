@@ -57,7 +57,8 @@ route(Pkt, TableId) ->
     FlowEntries = linc_us4_flow:get_flow_table(TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
         {match, #flow_entry{id = FlowId,
-                            instructions = Instructions}, Pkt2} ->
+                            instructions = Instructions}} ->
+            Pkt2 = Pkt#ofs_pkt{table_id = TableId},
             case linc_us4_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
                     linc_us4_actions:apply_set(Pkt3),
@@ -65,7 +66,30 @@ route(Pkt, TableId) ->
                 {{goto, NextTableId}, Pkt3} ->
                     route(Pkt3, NextTableId)
             end;
-        {table_miss, Pkt2} ->
+        {match, table_miss, #flow_entry{id = FlowId,
+                                        instructions = Instructions}} ->
+            Pkt2 = Pkt#ofs_pkt{packet_in_reason = no_match,
+                               table_id = TableId},
+            case linc_us4_instructions:apply(Pkt2, Instructions) of
+                {stop, Pkt3} ->
+                    linc_us4_actions:apply_set(Pkt3),
+                    {match, TableId, FlowId};
+                {{goto, NextTableId}, Pkt3} ->
+                    route(Pkt3, NextTableId)
+            end;
+        %% In OpenFlow Protocol 1.3.1 there is no explicit table config setting,
+        %% but OFP 1.3.1 specification on page 12 says:
+        %% ---
+        %% If the table-miss flow entry does not exist, by default packets
+        %% unmatched by flow entries are dropped (discarded). A switch
+        %% configuration, for example using the OpenFlow Configuration Protocol,
+        %% may override this default and specify another behaviour.
+        %% ---
+        %% Thus we still support table miss logic where no flow entries are 
+        %% present in the flow table.
+        table_miss ->
+            Pkt2 = Pkt#ofs_pkt{packet_in_reason = no_match,
+                               table_id = TableId},
             case linc_us4_flow:get_table_config(TableId) of
                 drop ->
                     {table_miss, drop};
@@ -79,20 +103,28 @@ route(Pkt, TableId) ->
     end.
 
 -spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
-                        -> {match, #flow_entry{}, #ofs_pkt{}} |
-                           {table_miss, #ofs_pkt{}}.
+                        -> {match, #flow_entry{}} |
+                           table_miss.
 match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
     case match_flow_entry(Pkt, TableId, FlowEntry) of
         nomatch ->
             match_flow_entries(Pkt, TableId, Rest);
-        {match, FlowEntry} ->
-            {match, FlowEntry, Pkt#ofs_pkt{table_id = TableId}}
+        {match, table_miss} ->
+            {match, table_miss, FlowEntry};
+        match ->
+            {match, FlowEntry}
     end;
-match_flow_entries(Pkt, TableId, []) ->
+match_flow_entries(_Pkt, TableId, []) ->
     linc_us4_flow:update_lookup_counter(TableId),
-    {table_miss, Pkt#ofs_pkt{table_id = TableId, packet_in_reason = no_match}}.
+    table_miss.
 
 -spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+match_flow_entry(_Pkt, _TableId, #flow_entry{priority = 0,
+                                           match = #ofp_match{fields = []}}) ->
+    {match, table_miss};
+match_flow_entry(_Pkt, _TableId,
+                 #flow_entry{match = #ofp_match{fields = []}}) ->
+    match;
 match_flow_entry(Pkt, TableId, FlowEntry) ->
     case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
                       FlowEntry#flow_entry.match#ofp_match.fields) of
@@ -102,7 +134,7 @@ match_flow_entry(Pkt, TableId, FlowEntry) ->
             linc_us4_flow:update_match_counters(TableId,
                                                 FlowEntry#flow_entry.id,
                                                 Pkt#ofs_pkt.size),
-            {match, FlowEntry}
+            match
     end.
 
 -spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().

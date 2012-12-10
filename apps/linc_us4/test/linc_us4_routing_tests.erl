@@ -68,7 +68,9 @@ match() ->
     flow_table(TableId, FlowEntries, TableConfig),
 
     %% Match on the second flow entry in the first flow table
-    MatchFieldsPkt = [{ipv4_dst, ghi}, {ipv4_src, jkl}],
+    MatchFieldsPkt = [{ipv4_dst, ghi},
+                      {ipv4_src, jkl},
+                      {not_in_match, shouldnt_be_used}],
     Pkt = pkt(MatchFieldsPkt),
     ?assertEqual({match, 0, Flow2}, linc_us4_routing:route(Pkt)).
 

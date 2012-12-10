@@ -82,7 +82,7 @@
                                  mpls_label,
                                  mpls_tc]).
 -define(SUPPORTED_WILDCARDS, ?SUPPORTED_MATCH_FIELDS).
--define(SUPPORTED_WRITE_SETFIELDS, []).
+-define(SUPPORTED_WRITE_SETFIELDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
                                  write_metadata,

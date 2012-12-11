@@ -26,25 +26,21 @@ switch_setup_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-      %% {"Start/stop LINC switch w/o OF-Config subsystem", fun no_ofconfig/0},
-      %% {"Start/stop LINC switch with OF-Config subsystem", fun with_ofconfig/0}
-     ]}.
+     [{"Start/stop LINC common logic", fun logic/0}]}.
 
-no_ofconfig() ->
-    application:set_env(linc, of_config, disabled),
-    application:set_env(linc, backend, {linc_us3, []}),
+logic() ->
+    %% As a logic backend we choose stub module 'linc_backend' from linc/test
+    %% directory. It is required because Meck won't mock modules that don't
+    %% exist.
+    Backend = linc_backend,
+    application:load(linc),
+    application:set_env(linc, backend, {Backend, []}),
+    meck:new(Backend),
+    meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
+    meck:expect(Backend, stop, fun(_) -> ok end),
     ?assertEqual(ok, application:start(linc)),
-    ?assertEqual(ok, application:stop(linc)).
-
-with_ofconfig() ->
-    %% Default sshd port is 830 and requires root or cap_net_admin capability 
-    %% on the beam to open the port, thus we change it to value above 1024.
-    application:set_env(enetconf, sshd_port, 1830),
-    application:set_env(linc, of_config, enabled),
-    application:set_env(linc, backend, {linc_us3, []}),
-    ?assertEqual(ok, application:start(linc)),
-    ?assertEqual(ok, application:stop(linc)).
+    ?assertEqual(ok, application:stop(linc)),
+    meck:unload(Backend).
 
 %% Fixtures --------------------------------------------------------------------
 

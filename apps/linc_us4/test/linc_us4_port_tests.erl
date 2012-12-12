@@ -81,6 +81,7 @@ port_mod() ->
     ok.
 
 is_valid() ->
+    ?assertEqual(true, linc_us4_port:is_valid(any)),
     ?assertEqual(true, linc_us4_port:is_valid(1)),
     ?assertEqual(false, linc_us4_port:is_valid(999)).
 
@@ -140,12 +141,10 @@ port_stats_request() ->
     ?assertEqual(0, PortStats2#ofp_port_stats.duration_sec),
     ?assertNot(PortStats2#ofp_port_stats.duration_nsec == 0),
 
-    AllPorts = all,
+    AllPorts = any,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
     StatsReply3 = linc_us4_port:get_stats(StatsRequest3),
-    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)),
-
-    ok.
+    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)).
 
 queue_stats_request() ->
     BadPort = 999,

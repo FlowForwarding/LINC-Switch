@@ -179,7 +179,7 @@ get_desc() ->
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(ofp_port_stats_request()) -> ofp_port_stats_reply() |
                                              ofp_error_msg().
-get_stats(#ofp_port_stats_request{port_no = all}) ->
+get_stats(#ofp_port_stats_request{port_no = any}) ->
     PortStats = ets:tab2list(linc_port_stats),
     #ofp_port_stats_reply{body = convert_duration(PortStats)};
 get_stats(#ofp_port_stats_request{port_no = PortNo}) ->

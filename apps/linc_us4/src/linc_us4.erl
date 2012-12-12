@@ -22,7 +22,8 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([]).
+-export([start_ofconfig/0,
+         stop_ofconfig/0]).
 
 %% gen_switch callbacks
 -export([start/1,
@@ -68,6 +69,29 @@
 %%% Switch API
 %%%-----------------------------------------------------------------------------
 
+start_ofconfig() ->
+    case application:get_env(linc, of_config) of
+        {ok, enabled} ->
+            start_dependency(ssh),
+            start_dependency(enetconf),
+            linc_us4_ofconfig:start();
+        _ ->
+            ok
+    end.
+
+stop_ofconfig() ->
+    %% Don't stop dependent applications (ssh, enetconf) even when they were 
+    %% started by the corresponding start_ofconfig/0 function.
+    %% Rationale: stop_ofconfig/0 is called from the context of
+    %% application:stop(linc) and subsequent attempt to stop another application
+    %% while the first one is still stopping results in a deadlock.
+    case application:get_env(linc, of_config) of
+        {ok, enabled} ->
+            linc_us4_ofconfig:stop();
+        _ ->
+            ok
+    end.
+
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
 %%%-----------------------------------------------------------------------------
@@ -76,6 +100,7 @@
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
     linc_us4_sup:start_backend_sup(),
+    start_ofconfig(),
     linc_us4_groups:create(),
     FlowState = linc_us4_flow:initialize(),
     linc_us4_port:initialize(),
@@ -84,6 +109,7 @@ start(_Opts) ->
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
 stop(#state{flow_state = FlowState}) ->
+    stop_ofconfig(),
     linc_us4_port:terminate(),
     linc_us4_flow:terminate(FlowState),
     linc_us4_groups:destroy(),
@@ -334,3 +360,14 @@ get_datapath_mac() ->
     %% Make sure MAC /= 0
     [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
     list_to_binary(MAC).
+
+start_dependency(App) ->
+    case application:start(App) of
+        ok ->
+            ok;
+        {error, {already_started, ssh}} ->
+            ok;
+        {error, _} = Error  ->
+            ?ERROR("Starting ~p application failed because: ~p",
+                   [App, Error])
+    end.

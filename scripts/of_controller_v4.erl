@@ -18,6 +18,7 @@
 
 %% Message generators
 -export([hello/0,
+         table_miss_flow_mod/0,
          get_config_request/0,
          echo_request/0,
          echo_request/1,
@@ -105,7 +106,7 @@ accept(Parent, LSocket) ->
     Pid = spawn_link(fun() ->
                              {ok, EncodedHello} = of_protocol:encode(hello()),
                              gen_tcp:send(Socket, EncodedHello),
-                             {ok, Parser} = ofp_parser:new(),
+                             {ok, Parser} = ofp_parser:new(4),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
                                             socket = Socket,
@@ -130,6 +131,7 @@ loop(Connections) ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
              end || Fun <- [
+                            table_miss_flow_mod,
                             echo_request,
                             features_request,
                             get_config_request,
@@ -354,6 +356,14 @@ port_mod() ->
 
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).
+
+table_miss_flow_mod() ->
+    Action = #ofp_action_output{port = controller},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action]},
+    message(#ofp_flow_mod{table_id = 0,
+                          command = add,
+                          priority = 0,
+                          instructions = [Instruction]}).
 
 %%% Helpers --------------------------------------------------------------------
 

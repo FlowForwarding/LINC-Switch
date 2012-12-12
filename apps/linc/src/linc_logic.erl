@@ -103,7 +103,7 @@ handle_info(timeout, #state{backend_mod = BackendMod,
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
-    ?DEBUG("Received message from the controller: ~p", [Message#ofp_message.type]),
+    ?DEBUG("Received message from the controller: ~p", [Message]),
     NewBState = case Backend:handle_message(MessageBody, BackendState) of
                     {noreply, NewState} ->
                         NewState;

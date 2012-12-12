@@ -106,7 +106,7 @@ accept(Parent, LSocket) ->
     Pid = spawn_link(fun() ->
                              {ok, EncodedHello} = of_protocol:encode(hello()),
                              gen_tcp:send(Socket, EncodedHello),
-                             {ok, Parser} = ofp_parser:new(),
+                             {ok, Parser} = ofp_parser:new(3),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
                                             socket = Socket,

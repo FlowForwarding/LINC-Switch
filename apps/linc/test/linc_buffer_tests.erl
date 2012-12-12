@@ -19,7 +19,6 @@
 -module(linc_buffer_tests).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% Tests -----------------------------------------------------------------------

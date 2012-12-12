@@ -114,11 +114,13 @@ handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
                         NewState
                 end,
     {noreply, State#state{backend_state = NewBState}};
-handle_info({ofp_connected, _Pid, Version}, State) ->
-    ?INFO("Connected to controller using OFP v~p", [Version]),
+handle_info({ofp_connected, _Pid, {Host, Port, Id, Version}}, State) ->
+    ?INFO("Connected to controller ~s:~p/~p using OFP v~p",
+          [Host, Port, Id, Version]),
     {noreply, State};
-handle_info({ofp_closed, _Pid, Reason}, State) ->
-    ?INFO("Connection to controller closed because of ~p", [Reason]),
+handle_info({ofp_closed, _Pid, {Host, Port, Id, Reason}}, State) ->
+    ?INFO("Connection to controller ~s:~p/~p closed because of ~p",
+          [Host, Port, Id, Reason]),
     {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.

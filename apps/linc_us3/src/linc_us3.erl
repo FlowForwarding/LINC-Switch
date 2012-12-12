@@ -181,9 +181,7 @@ ofp_group_mod(State, #ofp_group_mod{} = GroupMod) ->
     case linc_us3_groups:modify(GroupMod) of
         ok ->
             {noreply, State};
-        {error, Type, Code} ->
-            ErrorMsg = #ofp_error_msg{type = Type,
-                                      code = Code},
+        {error, ErrorMsg} ->
             {reply, ErrorMsg, State}
     end.
 

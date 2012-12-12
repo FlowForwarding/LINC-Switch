@@ -94,9 +94,8 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     Ctrls = [case Ctrl of
                  {Host, Port} ->
                      {Host, Port, Opts};
-                 {Host, Port, Conns} ->
-                     NewOpts = [{auxiliary_connections, Conns - 1} | Opts],
-                     {Host, Port, NewOpts}
+                 {Host, Port, SysOpts} ->
+                     {Host, Port, Opts ++ SysOpts}
              end || Ctrl <- Controllers],
     [ofp_channel:open(Host, Port, Opt) || {Host, Port, Opt} <- Ctrls],
 

@@ -127,7 +127,7 @@ loop(Connections) ->
                  case of_protocol:encode(Msg) of
                      {ok, EncodedMessage} ->
                          ok = gen_tcp:send(Socket, EncodedMessage);
-                     Error ->
+                     _Error ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
              end || Fun <- [

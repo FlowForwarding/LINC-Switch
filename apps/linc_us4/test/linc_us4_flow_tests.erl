@@ -18,12 +18,12 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us4_flow_tests).
 
--include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include("linc_us4.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc_us4/include/linc_us4.hrl").
 
--define(MOCKED, [group,port]).
+-define(MOCKED, [group,port,meter]).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -41,6 +41,8 @@ flow_mod_test_() ->
       ,{"Invalid out port", fun invalid_out_port/0}
       ,{"Valid out group", fun valid_out_group/0}
       ,{"Invalid out group", fun invalid_out_group/0}
+      ,{"Invalid meter", fun invalid_meter/0}
+      ,{"Valid meter", fun valid_meter/0}
       ,{"Duplicate instruction type", fun dupl_instruction/0}
       ,{"Set field incompatible with match", fun incompatible_set_field/0}
       ,{"Add 1 flow, no check_overlap", fun () -> add_flow(0, []) end}
@@ -66,11 +68,12 @@ flow_mod_test_() ->
       ,{"Delete flow, outgroup match", fun delete_outgroup_match/0}
       ,{"Delete flow, all tables", fun delete_all_tables/0}
       ,{"Delete where group", fun delete_where_group/0}
+      ,{"Delete where meter", fun delete_where_meter/0}
      ]}.
 
 bad_table_id() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,all},
                     {priority,5},
                     {flags,[]}],
@@ -82,7 +85,7 @@ bad_table_id() ->
 
 duplicate_field() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,0},
                     {priority,5},
                     {flags,[]}],
@@ -162,7 +165,7 @@ prerequisite_field_missing() ->
 
 %% Goto a table with smaller table_id
 goto_backwards() ->
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,5},
                     {priority,5},
                     {flags,[]}],
@@ -172,7 +175,7 @@ goto_backwards() ->
 
 valid_out_port() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,0},
                     {priority,5},
                     {flags,[]}],
@@ -182,7 +185,7 @@ valid_out_port() ->
 
 invalid_out_port() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,0},
                     {priority,5},
                     {flags,[]}],
@@ -193,7 +196,7 @@ invalid_out_port() ->
 
 valid_out_group() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,0},
                     {priority,5},
                     {flags,[]}],
@@ -204,7 +207,7 @@ valid_out_group() ->
 
 invalid_out_group() ->
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,0},
                     {priority,5},
                     {flags,[]}],
@@ -213,10 +216,32 @@ invalid_out_group() ->
     ?assertEqual({error,{bad_action,bad_out_group}},
                  linc_us4_flow:modify(FlowModAdd)).
 
+invalid_meter() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v4_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{meter,9}]),
+    ?assertEqual({error,{bad_instruction,unsup_inst}},
+                 linc_us4_flow:modify(FlowModAdd)).
+
+valid_meter() ->
+    %% Create flow_mod record
+    FlowModAdd = ofp_v4_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port,6}],
+                   [{meter,4}]),
+    ?assertEqual(ok,
+                 linc_us4_flow:modify(FlowModAdd)).
+
 dupl_instruction() ->
     %% FIXME: The spec 1.2 does not specify an error for this case.
     %% So for now we return this {bad_instruction, unknown_inst}.
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,5},
                     {priority,5},
                     {flags,[]}],
@@ -227,7 +252,7 @@ dupl_instruction() ->
     
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,5},
                     {priority,5},
                     {flags,[]}],
@@ -239,7 +264,7 @@ incompatible_set_field() ->
 add_flow(TableId, Flags) ->
     Priority=5,
     %% Create flow_mod record
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,TableId},
                     {priority,Priority},
                     {flags,Flags}],
@@ -267,14 +292,14 @@ add_non_overlapping_flows(Flags) ->
     TableId = 2,
     Priority=5,
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{output,15,1400}]}]),
 
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
@@ -302,14 +327,14 @@ add_overlapping_flows() ->
     Priority=5,
     Flags = [],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,7>>,<<0,0,0,0,0,15>>}],
                     [{write_actions,[{output,15,1400}]}]),
 
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
@@ -342,14 +367,14 @@ add_overlapping_flow_check_overlap() ->
     Priority=5,
     Flags = [check_overlap,send_flow_rem],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>,<<0,0,0,0,0,16#0F>>}],
                     [{write_actions,[{output,15,1400}]}]),
 
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
@@ -378,7 +403,7 @@ add_exact_flow(Flags) ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
@@ -387,7 +412,7 @@ add_exact_flow(Flags) ->
                    ),
 
     Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,Flags}],
@@ -440,14 +465,14 @@ add_exact_flow(Flags) ->
 flow_priority_order() ->
     TableId = 0,
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,100},
                      {flags,[]}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{output,15,1400}]}]),
 
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,200},
                      {flags,[]}],
@@ -478,7 +503,7 @@ modify_strict(Flags) ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -487,7 +512,7 @@ modify_strict(Flags) ->
                    ),
 
     Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowMod = ofp_v3_utils:flow_modify(
+    FlowMod = ofp_v4_utils:flow_modify(
                 modify_strict,
                 [{table_id,TableId},
                  {priority,Priority},
@@ -537,7 +562,7 @@ modify_cookie_no_match() ->
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {cookie,<<2:64>>},
                      {priority,Priority},
@@ -546,7 +571,7 @@ modify_cookie_no_match() ->
                     [{write_actions,[{output,15,1400}]}]
                    ),
 
-    FlowMod = ofp_v3_utils:flow_modify(
+    FlowMod = ofp_v4_utils:flow_modify(
                 modify,
                 [{table_id,TableId},
                  {cookie,<<4:64>>},
@@ -578,7 +603,7 @@ modify_cookie_match() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
                      {priority,Priority},
@@ -588,7 +613,7 @@ modify_cookie_match() ->
                    ),
 
     Instructions2 = [{write_actions,[{output,32,1400}]}],
-    FlowModAdd2 = ofp_v3_utils:flow_modify(
+    FlowModAdd2 = ofp_v4_utils:flow_modify(
                     modify,
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
@@ -619,7 +644,7 @@ delete_strict() ->
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -627,7 +652,7 @@ delete_strict() ->
                     [{write_actions,[{output,15,1400}]}]
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete_strict,
                 [{table_id,TableId},
                  {priority,Priority},
@@ -650,7 +675,7 @@ delete_cookie_no_match() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {cookie,<<2:64>>},
                      {priority,Priority},
@@ -659,7 +684,7 @@ delete_cookie_no_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete,
                 [{table_id,TableId},
                  {cookie,<<4:64>>},
@@ -691,7 +716,7 @@ delete_cookie_match() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
                      {priority,Priority},
@@ -700,7 +725,7 @@ delete_cookie_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                     delete,
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
@@ -727,7 +752,7 @@ delete_send_flow_rem() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
                      {priority,Priority},
@@ -736,7 +761,7 @@ delete_send_flow_rem() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                     delete,
                     [{table_id,TableId},
                      {cookie,<<4:64>>},
@@ -766,7 +791,7 @@ delete_outport_no_match() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -774,7 +799,7 @@ delete_outport_no_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete,
                 [{table_id,TableId},
                  {priority,Priority},
@@ -803,7 +828,7 @@ delete_outport_match() ->
 
     Instructions1 = [{write_actions,[{output,15,1400}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -811,7 +836,7 @@ delete_outport_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                     delete,
                     [{table_id,TableId},
                      {priority,Priority},
@@ -836,7 +861,7 @@ delete_outgroup_no_match() ->
 
     Instructions1 = [{write_actions,[{group,3}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -844,7 +869,7 @@ delete_outgroup_no_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete,
                 [{table_id,TableId},
                  {priority,Priority},
@@ -873,7 +898,7 @@ delete_outgroup_match() ->
 
     Instructions1 = [{write_actions,[{group,3}]}],
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId},
                      {priority,Priority},
                      {flags,[]}],
@@ -881,7 +906,7 @@ delete_outgroup_match() ->
                     Instructions1
                    ),
 
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete,
                 [{table_id,TableId},
                  {priority,Priority},
@@ -902,12 +927,12 @@ delete_outgroup_match() ->
 
 delete_all_tables() ->
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{output,15,1400}]}]),
 
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{output,15,1400}]}]),
@@ -921,7 +946,7 @@ delete_all_tables() ->
     ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(2)),
 
     %% Delete all flows
-    FlowDel = ofp_v3_utils:flow_delete(
+    FlowDel = ofp_v4_utils:flow_delete(
                 delete,
                 [{table_id,all},
                  {flags,[]}],
@@ -933,11 +958,11 @@ delete_all_tables() ->
 
 delete_where_group() ->    
     %% Create flow_mod record
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,4}]}]),
@@ -951,6 +976,31 @@ delete_where_group() ->
 
     %% Delete all referencing group 3
     ?assertEqual(ok, linc_us4_flow:delete_where_group(3)),
+
+    ?assertMatch([#flow_entry{match=Match2,
+                              instructions=Instructions2}],
+                 linc_us4_flow:get_flow_table(1)).
+
+delete_where_meter() ->    
+    %% Create flow_mod record
+    FlowModAdd1 = ofp_v4_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{meter,4}]),
+    FlowModAdd2 = ofp_v4_utils:flow_add(
+                    [{table_id,1}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
+                    [{meter,5}]),
+
+    %% Add flows
+    ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
+    ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd2)),
+
+    #ofp_flow_mod{match=Match2,
+                  instructions=Instructions2} = FlowModAdd2,
+
+    %% Delete all referencing meter 4
+    ?assertEqual(ok, linc_us4_flow:delete_where_meter(4)),
 
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
@@ -981,7 +1031,7 @@ update_lookup_counter() ->
 
 update_match_counter() ->
     TableId = 5,
-    FlowModAdd = ofp_v3_utils:flow_add(
+    FlowModAdd = ofp_v4_utils:flow_add(
                    [{table_id,TableId},
                     {priority,4},
                     {flags,[]}],
@@ -1013,48 +1063,48 @@ update_bad_match_counter() ->
     ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
 
 empty_flow_stats() ->
-    StatsReq = ofp_v3_utils:flow_stats(
+    StatsReq = ofp_v4_utils:flow_stats(
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
-    ?assertEqual(#ofp_flow_stats_reply{stats=[]}, linc_us4_flow:get_stats(StatsReq)).
+    ?assertEqual(#ofp_flow_stats_reply{body=[]}, linc_us4_flow:get_stats(StatsReq)).
 
 flow_stats_1_table() ->
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,2}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd2)),
-    StatsReq = ofp_v3_utils:flow_stats(
+    StatsReq = ofp_v4_utils:flow_stats(
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
-    ?assertMatch(#ofp_flow_stats_reply{stats=[#ofp_flow_stats{}]},
+    ?assertMatch(#ofp_flow_stats_reply{body=[#ofp_flow_stats{}]},
                  linc_us4_flow:get_stats(StatsReq)).
 
 flow_stats_all_tables() ->
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd2)),
-    StatsReq = ofp_v3_utils:flow_stats(
+    StatsReq = ofp_v4_utils:flow_stats(
                  [{table_id, all}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
-    ?assertMatch(#ofp_flow_stats_reply{stats=[#ofp_flow_stats{},
+    ?assertMatch(#ofp_flow_stats_reply{body=[#ofp_flow_stats{},
                                               #ofp_flow_stats{}]},
                  linc_us4_flow:get_stats(StatsReq)).
 
 empty_aggr_stats() ->
-    StatsReq = ofp_v3_utils:aggr_stats(
+    StatsReq = ofp_v4_utils:aggr_stats(
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=0,
@@ -1064,12 +1114,12 @@ empty_aggr_stats() ->
 
 aggr_stats_1_table() ->
     TableId = 1,
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,TableId}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,TableId}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,1,8>>}],
                     [{write_actions,[{group,3}]}]),
@@ -1087,7 +1137,7 @@ aggr_stats_1_table() ->
                                                          FlowId2,
                                                          PacketSize)),
     %% This will only match one of the flows
-    StatsReq = ofp_v3_utils:aggr_stats(
+    StatsReq = ofp_v4_utils:aggr_stats(
                  [{table_id, TableId}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=1,
@@ -1096,12 +1146,12 @@ aggr_stats_1_table() ->
                  linc_us4_flow:get_aggregate_stats(StatsReq)).
 
 aggr_stats_all_tables() ->
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
-    FlowModAdd2 = ofp_v3_utils:flow_add(
+    FlowModAdd2 = ofp_v4_utils:flow_add(
                     [{table_id,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
@@ -1119,7 +1169,7 @@ aggr_stats_all_tables() ->
                                                          FlowId2,
                                                          PacketSize)),
     %% This will matchboth flows
-    StatsReq = ofp_v3_utils:aggr_stats(
+    StatsReq = ofp_v4_utils:aggr_stats(
                  [{table_id, all}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=2,
@@ -1128,34 +1178,8 @@ aggr_stats_all_tables() ->
                  linc_us4_flow:get_aggregate_stats(StatsReq)).
 
 empty_table_stats() ->
-    ?assertMatch(#ofp_table_stats_reply{stats=[#ofp_table_stats{}|_]},
+    ?assertMatch(#ofp_table_stats_reply{body=[#ofp_table_stats{}|_]},
                  linc_us4_flow:get_table_stats(#ofp_table_stats_request{})).
-
-table_mod_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Get default value", fun get_default_table_config/0}
-      ,{"Set config", fun set_table_config/0}
-      ,{"Set all config", fun set_all_table_config/0}
-     ]}.
-
-get_default_table_config() ->
-    ?assertEqual(drop, linc_us4_flow:get_table_config(2)).
-
-set_table_config() ->
-    ?assertEqual(drop, linc_us4_flow:get_table_config(2)),
-    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=controller})), 
-    ?assertEqual(controller, linc_us4_flow:get_table_config(2)).
-
-set_all_table_config() ->
-    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
-    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=2,config=drop})), 
-    ?assertEqual(ok, linc_us4_flow:table_mod(#ofp_table_mod{table_id=all,
-                                                            config=continue})), 
-    ?assertEqual(continue, linc_us4_flow:get_table_config(2)),
-    ?assertEqual(continue, linc_us4_flow:get_table_config(3)),
-    ?assertEqual(continue, linc_us4_flow:get_table_config(4)).
 
 timer_test_() ->
     {foreach,
@@ -1166,7 +1190,7 @@ timer_test_() ->
      ]}.
 
 idle_timeout() ->
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1},
                     {idle_timeout,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
@@ -1182,7 +1206,7 @@ idle_timeout() ->
     ?assertEqual([], linc_us4_flow:get_flow_table(1)).
 
 hard_timeout() ->
-    FlowModAdd1 = ofp_v3_utils:flow_add(
+    FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1},
                     {hard_timeout,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],

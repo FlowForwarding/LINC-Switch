@@ -16,33 +16,58 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
--module(linc_tests).
+-module(linc_us4_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
 %% Tests -----------------------------------------------------------------------
 
+-define(TIMEOUT, 100).
+
 switch_setup_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Start/stop LINC common logic", fun logic/0}]}.
+     [
+      {"Start/stop LINC v4 switch backend w/o OF-Config subsystem",
+       fun no_ofconfig/0},
+      {"Start/stop LINC v4 switch backend with OF-Config subsystem",
+       fun with_ofconfig/0}
+     ]}.
 
-logic() ->
-    %% As a logic backend we choose stub module 'linc_backend' from linc/test
-    %% directory. It is required because Meck won't mock modules that don't
-    %% exist.
-    Backend = linc_backend,
+no_ofconfig() ->
+    add_logic_path(),
+
     application:load(linc),
-    application:set_env(linc, backend, {Backend, []}),
-    meck:new(Backend),
-    meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
-    meck:expect(Backend, stop, fun(_) -> ok end),
-    ?assertEqual(ok, application:start(linc)),
-    ?assertEqual(ok, application:stop(linc)),
-    meck:unload(Backend).
+    application:set_env(linc, of_config, disabled),
+    application:set_env(linc, backend, {linc_us4, []}),
+
+    [begin
+         ?assertEqual(ok, application:start(linc)),
+         timer:sleep(?TIMEOUT),
+         ?assertEqual(ok, application:stop(linc))
+     end || _ <- [lists:seq(1,10)]].
+
+with_ofconfig() ->
+    add_logic_path(),
+    %% Default sshd port is 830 and requires root or cap_net_admin capability 
+    %% on the beam to open the port, thus we change it to value above 1024.
+
+    application:load(linc),
+    application:set_env(enetconf, sshd_port, 1830),
+    application:set_env(linc, of_config, enabled),
+    application:set_env(linc, backend, {linc_us4, []}),    
+
+    [begin
+         ?assertEqual(ok, application:start(linc)),
+         timer:sleep(?TIMEOUT),
+         ?assertEqual(ok, application:stop(linc))
+     end || _ <- [lists:seq(1,10)]].
 
 %% Fixtures --------------------------------------------------------------------
+
+add_logic_path() ->
+    true = code:add_path("../../linc/ebin").
 
 setup() ->
     error_logger:tty(false),

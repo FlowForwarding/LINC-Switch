@@ -3,7 +3,7 @@
 %%% @doc OpenFlow 1.2 Controller.
 %%% @end
 %%%-----------------------------------------------------------------------------
--module(of_controller).
+-module(of_controller_v4).
 
 -compile([{parse_transform, lager_transform}]).
 
@@ -18,6 +18,7 @@
 
 %% Message generators
 -export([hello/0,
+         table_miss_flow_mod/0,
          get_config_request/0,
          echo_request/0,
          echo_request/1,
@@ -25,25 +26,24 @@
          queue_get_config_request/0,
          features_request/0,
          remove_all_flows/0,
-         table_mod/0,
          group_mod/0,
          port_mod/0,
          set_config/0,
          role_request/0,
-         %% Statistics
-         desc_stats_request/0,
+
+         desc_request/0,
          flow_stats_request/0,
          aggregate_stats_request/0,
          table_stats_request/0,
          port_stats_request/0,
          queue_stats_request/0,
          group_stats_request/0,
-         group_desc_stats_request/0,
-         group_features_stats_request/0
+         group_desc_request/0,
+         group_features_request/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("pkt/include/pkt.hrl").
 
 -record(cstate, {
@@ -106,7 +106,7 @@ accept(Parent, LSocket) ->
     Pid = spawn_link(fun() ->
                              {ok, EncodedHello} = of_protocol:encode(hello()),
                              gen_tcp:send(Socket, EncodedHello),
-                             {ok, Parser} = ofp_parser:new(3),
+                             {ok, Parser} = ofp_parser:new(4),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
                                             socket = Socket,
@@ -131,23 +131,23 @@ loop(Connections) ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
              end || Fun <- [
+                            table_miss_flow_mod,
                             echo_request,
                             features_request,
                             get_config_request,
                             set_config,
-                            group_mod,
+                            %% group_mod,
                             port_mod,
-                            table_mod,
 
-                            desc_stats_request,
-                            flow_stats_request,
-                            aggregate_stats_request,
-                            table_stats_request,
+                            desc_request,
+                            %% flow_stats_request,
+                            %% aggregate_stats_request,
+                            %% table_stats_request,
                             port_stats_request,
                             queue_stats_request,
-                            group_stats_request,
-                            group_desc_stats_request,
-                            group_features_stats_request,
+                            %% group_stats_request,
+                            %% group_desc_request,
+                            %% group_features_request,
 
                             queue_get_config_request,
                             role_request,
@@ -303,8 +303,8 @@ barrier_request() ->
 queue_get_config_request() ->
     message(#ofp_queue_get_config_request{port = any}).
 
-desc_stats_request() ->
-    message(#ofp_desc_stats_request{}).
+desc_request() ->
+    message(#ofp_desc_request{}).
 
 flow_stats_request() ->
     message(#ofp_flow_stats_request{table_id = all}).
@@ -324,17 +324,14 @@ queue_stats_request() ->
 group_stats_request() ->
     message(#ofp_group_stats_request{group_id = all}).
 
-group_desc_stats_request() ->
-    message(#ofp_group_desc_stats_request{}).
+group_desc_request() ->
+    message(#ofp_group_desc_request{}).
 
-group_features_stats_request() ->
-    message(#ofp_group_features_stats_request{}).
+group_features_request() ->
+    message(#ofp_group_features_request{}).
 
 remove_all_flows() ->
     message(#ofp_flow_mod{command = delete}).
-
-table_mod() ->
-    message(#ofp_table_mod{config = controller}).
 
 set_config() ->
     message(#ofp_set_config{miss_send_len = 16#ffff}).
@@ -360,10 +357,18 @@ port_mod() ->
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).
 
+table_miss_flow_mod() ->
+    Action = #ofp_action_output{port = controller},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action]},
+    message(#ofp_flow_mod{table_id = 0,
+                          command = add,
+                          priority = 0,
+                          instructions = [Instruction]}).
+
 %%% Helpers --------------------------------------------------------------------
 
 message(Body) ->
-    #ofp_message{version = 3,
+    #ofp_message{version = 4,
                  xid = get_xid(),
                  body = Body}.
 
@@ -375,7 +380,7 @@ get_xid() ->
 %%%-----------------------------------------------------------------------------
 
 parse_tcp(Socket, Parser, Data) ->
-    lager:debug("Received TCP data from ~p: ~p", [Socket, Data]),
+    lager:info("Received TCP data from ~p: ~p", [Socket, Data]),
     inet:setopts(Socket, [{active, once}]),
     {ok, NewParser, Messages} = ofp_parser:parse(Parser, Data),
     lists:foreach(fun(Message) ->

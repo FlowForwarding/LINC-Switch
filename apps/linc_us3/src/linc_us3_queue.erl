@@ -49,7 +49,8 @@ start() ->
     supervisor:start_child(linc_us3_sup, QueueSup).
 
 stop() ->
-    ets:delete(linc_port_queue).
+    ets:delete(linc_port_queue),
+    ok.
 
 -spec start_link({ofp_port_no(), ofp_queue_id()},
                  integer(), integer(), integer(),

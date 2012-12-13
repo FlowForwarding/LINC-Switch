@@ -25,6 +25,9 @@
          send/2,
          detach/1]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 -include("linc_us4_port.hrl").
 
@@ -49,7 +52,8 @@ start() ->
     supervisor:start_child(linc_us4_sup, QueueSup).
 
 stop() ->
-    ets:delete(linc_port_queue).
+    true = ets:delete(linc_port_queue),
+    ok.
 
 -spec start_link({ofp_port_no(), ofp_queue_id()},
                  integer(), integer(), integer(),

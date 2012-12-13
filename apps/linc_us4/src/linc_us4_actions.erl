@@ -23,6 +23,9 @@
 -export([apply_set/1,
          apply_list/2]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
 
@@ -32,7 +35,9 @@
 -type action_list_output() :: {NewPkt :: ofs_pkt(),
                                SideEffects :: list(side_effect())}.
 
--type action_set_output() :: side_effect() | {drop, ofs_pkt()} | {error, term()}.
+-type action_set_output() :: side_effect()
+                           | {drop, ofs_pkt()}
+                           | {error, term()}.
 
 %%------------------------------------------------------------------------------
 %% @doc Applies set of actions to the packet.
@@ -50,14 +55,14 @@ apply_set(#ofs_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
         {#ofs_pkt{}, [SideEffect]} ->
             SideEffect;
-        {error,_Reason}=Error ->
+        {error, _Reason} = Error ->
             Error
     end;
 apply_set(#ofs_pkt{actions = [Action | Rest]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
-        {#ofs_pkt{}=NewPkt, []} ->
+        {#ofs_pkt{} = NewPkt, []} ->
             apply_set(NewPkt#ofs_pkt{actions = Rest});
-        {error,_Reason}=Error ->
+        {error, _Reason} = Error ->
             Error
     end.
 
@@ -71,7 +76,14 @@ apply_list(Pkt, Actions) ->
 -spec apply_list(Pkt :: ofs_pkt(),
                  Actions :: list(ofp_action()),
                  SideEffects :: side_effect()) -> action_list_output().
-apply_list(Pkt, [#ofp_action_output{port = controller, max_len = MaxLen} | Rest], SideEffects) ->
+apply_list(#ofs_pkt{packet_in_reason = no_match} = Pkt,
+           [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
+           SideEffects) ->
+    linc_us4_port:send(Pkt#ofs_pkt{packet_in_bytes = MaxLen}, controller),
+    apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
+apply_list(Pkt,
+           [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
+           SideEffects) ->
     linc_us4_port:send(Pkt#ofs_pkt{packet_in_reason = action, 
                                    packet_in_bytes = MaxLen}, controller),
     apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);

@@ -42,6 +42,15 @@ mock([logic | Rest]) ->
                              ok
                      end),
     mock(Rest);
+mock([meter | Rest]) ->
+    ok = meck:new(linc_us4_meter),
+    ok = meck:expect(linc_us4_meter, is_valid,
+                     fun (X) when X<8 ->
+                             true;
+                         (_) ->
+                             false
+                     end),
+    mock(Rest);
 mock([port | Rest]) ->
     ok = meck:new(linc_us4_port),
     ok = meck:expect(linc_us4_port, send,
@@ -117,6 +126,9 @@ unmock([flow | Rest]) ->
     unmock(Rest);
 unmock([logic | Rest]) ->
     ok = meck:unload(linc_logic),
+    unmock(Rest);
+unmock([meter | Rest]) ->
+    ok = meck:unload(linc_us4_meter),
     unmock(Rest);
 unmock([port | Rest]) ->
     ok = meck:unload(linc_us4_port),

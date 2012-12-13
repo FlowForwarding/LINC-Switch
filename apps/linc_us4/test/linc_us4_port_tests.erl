@@ -23,6 +23,8 @@
                               check_if_called/1,
                               check_output_on_ports/0]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
@@ -47,8 +49,9 @@ port_test_() ->
       {"Port send: local", fun send_local/0},
       {"Port send: any", fun send_any/0},
       {"Port send: port number", fun send_port_number/0},
-      {"Port stats: port_stats_request", fun port_stats_request/0},
-      {"Port stats: queue_stats_request", fun queue_stats_request/0},
+      {"Port multipart: port_desc_request", fun port_desc_request/0},
+      {"Port multipart: port_stats_request", fun port_stats_request/0},
+      {"Port multipart: queue_stats_request", fun queue_stats_request/0},
       {"Port config: port_down", fun config_port_down/0},
       {"Port config: no_recv", fun config_no_recv/0},
       {"Port config: no_fwd", fun config_no_fwd/0},
@@ -78,6 +81,7 @@ port_mod() ->
     ok.
 
 is_valid() ->
+    ?assertEqual(true, linc_us4_port:is_valid(any)),
     ?assertEqual(true, linc_us4_port:is_valid(1)),
     ?assertEqual(false, linc_us4_port:is_valid(999)).
 
@@ -114,6 +118,15 @@ send_any() ->
 send_port_number() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(), 1)).
 
+port_desc_request() ->
+    Desc = linc_us4_port:get_desc(),
+    ?assertMatch(#ofp_port_desc_reply{}, Desc),
+    Body = Desc#ofp_port_desc_reply.body,
+    ?assert(length(Body) =/= 0),
+    lists:map(fun(E) ->
+                      ?assertMatch(#ofp_port{}, E)
+              end, Body).
+
 port_stats_request() ->
     BadPort = 999,
     StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},
@@ -123,18 +136,20 @@ port_stats_request() ->
     ValidPort = 1,
     StatsRequest2 = #ofp_port_stats_request{port_no = ValidPort},
     StatsReply2 = linc_us4_port:get_stats(StatsRequest2),
-    ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.stats)),
+    ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.body)),
+    [PortStats2] = StatsReply2#ofp_port_stats_reply.body,
+    ?assertEqual(0, PortStats2#ofp_port_stats.duration_sec),
+    ?assertNot(PortStats2#ofp_port_stats.duration_nsec == 0),
 
-    AllPorts = all,
+    AllPorts = any,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
     StatsReply3 = linc_us4_port:get_stats(StatsRequest3),
-    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.stats)),
-
-    ok.
+    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)).
 
 queue_stats_request() ->
     BadPort = 999,
     BadQueue = 999,
+    ValidQueue = 1,
     ValidPort = 1,
 
     StatsRequest1 = #ofp_queue_stats_request{port_no = BadPort,
@@ -149,7 +164,31 @@ queue_stats_request() ->
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_queue},
                  StatsReply2),
 
-    ok.
+    StatsRequest3 = #ofp_queue_stats_request{port_no = ValidPort,
+                                             queue_id = ValidQueue},
+    StatsReply3 = linc_us4_port:get_queue_stats(StatsRequest3),
+    ?assertMatch(#ofp_queue_stats_reply{}, StatsReply3),
+    [QueueStats] = StatsReply3#ofp_queue_stats_reply.body,
+    ?assertEqual(0, QueueStats#ofp_queue_stats.duration_sec),
+    ?assertNot(QueueStats#ofp_queue_stats.duration_nsec == 0),
+
+    StatsRequest4 = #ofp_queue_stats_request{port_no = ValidPort,
+                                             queue_id = all},
+    StatsReply4 = linc_us4_port:get_queue_stats(StatsRequest4),
+    ?assertMatch(#ofp_queue_stats_reply{}, StatsReply4),
+    ?assertEqual(2, length(StatsReply4#ofp_queue_stats_reply.body)),
+
+    StatsRequest5 = #ofp_queue_stats_request{port_no = any,
+                                             queue_id = 1},
+    StatsReply5 = linc_us4_port:get_queue_stats(StatsRequest5),
+    ?assertMatch(#ofp_queue_stats_reply{}, StatsReply5),
+    ?assertEqual(1, length(StatsReply5#ofp_queue_stats_reply.body)),
+
+    StatsRequest6 = #ofp_queue_stats_request{port_no = any,
+                                             queue_id = all},
+    StatsReply6 = linc_us4_port:get_queue_stats(StatsRequest6),
+    ?assertMatch(#ofp_queue_stats_reply{}, StatsReply6),
+    ?assertEqual(2, length(StatsReply6#ofp_queue_stats_reply.body)).
 
 config_port_down() ->
     ?assertEqual([], linc_us4_port:get_config(1)),
@@ -190,11 +229,19 @@ state_live() ->
 
 setup() ->
     mock(?MOCKED),
+    application:unset_env(linc, queues),
+    application:unset_env(linc, backends),
+    linc_us4_sup:start_link(),
     catch linc_us4_port_sup:start_link(),
+    Queues = [{1, [{rate, {100, kbps}},
+                   {queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
+                             {2, [{min_rate, 100}, {max_rate, 100}]}
+                            ]}]}],
     UserspaceBackend = {userspace, [{ports, [{1, [{interface, "dummy1"}]},
                                              {2, [{interface, "dummy2"}]}
                                             ]}]},
     application:set_env(linc, backends, [UserspaceBackend]),
+    application:set_env(linc, queues, Queues),
     ok = linc_us4_port:initialize().
 
 teardown(_) ->

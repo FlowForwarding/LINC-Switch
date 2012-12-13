@@ -104,6 +104,8 @@ match_flow_entry(Pkt, TableId, FlowEntry) ->
 
 -spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
 fields_match(PktFields, FlowFields) ->
+    %% Returns true if FlowFields is an empty list - expected behaviour as this
+    %% means that flow entries with no match fields will match any packet.
     lists:all(fun(FlowField) ->
                       lists:any(fun(PktField) ->
                                         two_fields_match(PktField, FlowField)

@@ -32,46 +32,73 @@
 %% Tests -----------------------------------------------------------------------
 
 routing_test_() ->
-    {setup,
+    {foreach,
      fun setup/0,
      fun teardown/1,
-     [{"Routing: match on Flow Table entry", fun match/0},
-      {"Routing: match on next Flow Table because of Goto instruction", fun goto/0},
+     [{"Routing: match on Flow Table entry",
+       fun match/0},
+      {"Routing: match on Flow Table entry with highest priority",
+       fun match_priority/0},
+      {"Routing: match on Flow Table entry with empty match list",
+       fun match_empty_matches/0},
+      {"Routing: match on next Flow Table because of Goto instruction",
+       fun goto/0},
       {"Routing: table miss - continue to next table", fun miss_continue/0},
       {"Routing: table miss - send to controller", fun miss_controller/0},
       {"Routing: table miss - drop packet", fun miss_drop/0},
-      {"Routing: match fields with masks", fun mask_match/0}
+      {"Routing: match fields with masks", fun mask_match/0},
+      {"Routing: spawn new route process", fun spawn_route/0}
      ]}.
 
-mask_match() ->
-    [begin
-         Field1 = #ofp_field{value = V1},
-         Field2 = #ofp_field{value = V2, has_mask = true, mask = Mask},
-         ?assertEqual(Result, linc_us3_routing:two_fields_match(Field1, Field2))
-     end || {V1, V2, Mask, Result} <- [{<<>>, <<>>, <<>>, true},
-                                       {<<7,7,7>>, <<7,7,7>>, <<1,1,1>>, true},
-                                       {<<7,7,7>>, <<7,7,8>>, <<1,1,1>>, false},
-                                       {<<7,7,7>>, <<7,7,8>>, <<1,1,0>>, true}
-                                      ]].
-
 match() ->
+    Flow1 = 200,
+    Flow2 = 100,
     MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
     MatchFieldsFlow2 = [{ipv4_dst, ghi}, {ipv4_src, jkl}],
     TableId = 0,
-    FlowEntries = [flow_entry(f1, MatchFieldsFlow1),
-                   flow_entry(f2, MatchFieldsFlow2)],
+    FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1),
+                   flow_entry(Flow2, MatchFieldsFlow2)],
     TableConfig = drop,
     flow_table(TableId, FlowEntries, TableConfig),
-    
-    %% Match on the first flow entry in the first flow table
-    MatchFieldsPkt1 = [{ipv4_dst, abc}, {ipv4_src, def}],
-    Pkt1 = pkt(MatchFieldsPkt1),
-    ?assertEqual({match, 0, f1}, linc_us3_routing:route(Pkt1)),
 
     %% Match on the second flow entry in the first flow table
-    MatchFieldsPkt2 = [{ipv4_dst, ghi}, {ipv4_src, jkl}],
-    Pkt2 = pkt(MatchFieldsPkt2),
-    ?assertEqual({match, 0, f2}, linc_us3_routing:route(Pkt2)).
+    MatchFieldsPkt = [{ipv4_dst, ghi},
+                      {ipv4_src, jkl},
+                      {not_in_match, shouldnt_be_used}],
+    Pkt = pkt(MatchFieldsPkt),
+    ?assertEqual({match, 0, Flow2}, linc_us3_routing:route(Pkt)).
+
+match_priority() ->
+    Flow1 = 200,
+    Flow2 = 100,
+    MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
+    MatchFieldsFlow2 = [{ipv4_dst, abc}, {ipv4_src, def}],
+    TableId = 0,
+    FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1),
+                   flow_entry(Flow2, MatchFieldsFlow2)],
+    TableConfig = drop,
+    flow_table(TableId, FlowEntries, TableConfig),
+
+    %% Match on the first flow entry in the first flow table
+    MatchFieldsPkt = [{ipv4_dst, abc}, {ipv4_src, def}],
+    Pkt = pkt(MatchFieldsPkt),
+    ?assertEqual({match, 0, Flow1}, linc_us3_routing:route(Pkt)).
+
+match_empty_matches() ->
+    Flow1 = 200,
+    Flow2 = 100,
+    MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
+    MatchFieldsFlow2 = [],
+    TableId = 0,
+    FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1),
+                   flow_entry(Flow2, MatchFieldsFlow2)],
+    TableConfig = drop,
+    flow_table(TableId, FlowEntries, TableConfig),
+
+    %% Match on the second flow entry in the first flow table
+    MatchFieldsPkt = [{ipv4_dst, zxc}, {ipv4_src, qwe}],
+    Pkt = pkt(MatchFieldsPkt),
+    ?assertEqual({match, 0, Flow2}, linc_us3_routing:route(Pkt)).
 
 goto() ->
     MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
@@ -113,6 +140,29 @@ miss_drop() ->
          miss_no_flow_entries(TableConfig, MissError),
          miss_no_matching_flow_entry(TableConfig, MissError)
      end || {TableConfig, MissError} <- [{drop, drop}]].
+
+mask_match() ->
+    [begin
+         Field1 = #ofp_field{value = V1},
+         Field2 = #ofp_field{value = V2, has_mask = true, mask = Mask},
+         ?assertEqual(Result, linc_us3_routing:two_fields_match(Field1, Field2))
+     end || {V1, V2, Mask, Result} <- [{<<>>, <<>>, <<>>, true},
+                                       {<<7,7,7>>, <<7,7,7>>, <<1,1,1>>, true},
+                                       {<<7,7,7>>, <<7,7,8>>, <<1,1,1>>, false},
+                                       {<<7,7,7>>, <<7,7,8>>, <<1,1,0>>, true}
+                                      ]].
+
+spawn_route() ->
+    Flow1 = 0,
+    MatchFieldsFlow1 = [],
+    TableId = 0,
+    FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1)],
+    TableConfig = drop,
+    flow_table(TableId, FlowEntries, TableConfig),
+
+    MatchFieldsPkt = [],
+    Pkt = pkt(MatchFieldsPkt),
+    ?assert(is_pid(linc_us3_routing:spawn_route(Pkt))).
 
 %% Fixtures --------------------------------------------------------------------
 

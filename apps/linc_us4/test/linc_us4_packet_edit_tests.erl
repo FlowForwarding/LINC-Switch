@@ -23,6 +23,8 @@
                               check_if_called/1,
                               check_output_on_ports/0]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").

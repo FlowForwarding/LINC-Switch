@@ -59,18 +59,12 @@
 %%------------------------------------------------------------------------------
 
 start() ->
-    ok = application:start(ssh),
-    ok = application:start(enetconf),
-
-    OFConfig = {linc_ofconfig, {linc_ofconfig, start_link, []},
-                permanent, 5000, worker, [linc_ofconfig]},
-    supervisor:start_child(linc_sup, OFConfig).
+    OFConfig = {linc_us3_ofconfig, {linc_us3_ofconfig, start_link, []},
+                permanent, 5000, worker, [linc_us3_ofconfig]},
+    supervisor:start_child(linc_us3_sup, OFConfig).
 
 stop() ->
-    ok = supervisor:terminate_child(linc_sup, linc_ofconfig),
-    ok = supervisor:delete_child(linc_sup, linc_ofconfig),
-    ok = application:stop(enetconf),
-    ok = application:stop(ssh).
+    ok.
 
 %% @private
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.

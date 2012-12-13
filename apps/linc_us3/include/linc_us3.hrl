@@ -20,8 +20,16 @@
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 
+-define(CAPABILITIES, [flow_stats,
+                       table_stats,
+                       port_stats,
+                       group_stats,
+                       %% ip_reasm,
+                       queue_stats
+                       %% port_blocked
+                      ]).
 -define(SUPPORTED_ACTIONS, [output,
                             group,
                             set_queue,

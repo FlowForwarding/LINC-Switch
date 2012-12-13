@@ -26,9 +26,9 @@
          modify/1,
          get_flow_table/1,
          delete_where_group/1,
+         delete_where_meter/1,
          get_stats/1,
          get_aggregate_stats/1,
-         get_table_config/1,
          get_table_stats/1,
          update_lookup_counter/1,
          update_match_counters/3,
@@ -38,8 +38,11 @@
 %% Internal exports
 -export([check_timers/0]).
 
--include("linc_us4.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
+-include("linc_us4.hrl").
 
 -define(MAX64, 16#FFFFFFFF). % Max countervalue for 64 bit counters
 -define(INSTRUCTIONS, [ofp_instruction_goto_table, ofp_instruction_write_metadata,
@@ -89,25 +92,10 @@ terminate(#state{tref=Tref}) ->
     ok.
 
 %% @doc Handle ofp_table_mod request
+%% In version 1.3 This doesn't do anything anymore.
 -spec table_mod(#ofp_table_mod{}) -> ok.
-table_mod(#ofp_table_mod{table_id = all, config = Config}) ->
-    [set_table_config(Table,Config)||Table<-lists:seq(0, ?OFPTT_MAX)],
-    ok;
-table_mod(#ofp_table_mod{table_id = TableId, config = Config}) ->
-    set_table_config(TableId,Config),
+table_mod(#ofp_table_mod{}) ->
     ok.
-
-set_table_config(Table,Config) ->
-    ets:insert(flow_table_config,#flow_table_config{id=Table,config=Config}).
-
--spec get_table_config(TableId :: integer()) -> drop | controller | continue.
-get_table_config(TableId) ->
-    case ets:lookup(flow_table_config,TableId) of
-        [#flow_table_config{config=Config}] ->
-            Config;
-        [] ->
-            controller
-    end.
 
 %% @doc Handle a flow_mod request from a controller. This may add/modify/delete one or
 %% more flows.
@@ -125,8 +113,7 @@ modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
     %% packet starting in flow_table=0.
     case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
         ok ->
-            %% TODO: packet_out
-            case linc_us4_buffer:get_buffer(BufferId) of
+            case linc_buffer:get_buffer(BufferId) of
                 #ofs_pkt{}=OfsPkt ->
                     linc_us4_actions:apply_list(OfsPkt,
                                                 [#ofp_action_output{port=table}]);
@@ -235,12 +222,18 @@ modify(#ofp_flow_mod{command=delete_strict,
 %% @doc Get all entries in one flow table.
 -spec get_flow_table(TableId :: integer()) -> [FlowTableEntryRepresentation :: term()].
 get_flow_table(TableId) ->
-    ets:tab2list(flow_table_name(TableId)).
+    lists:reverse(ets:tab2list(flow_table_name(TableId))).
 
 %% @doc Delete all flow entries that are using a specific group.
 -spec delete_where_group(GroupId :: integer()) -> ok.
 delete_where_group(GroupId) ->
     [delete_where_group(GroupId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    ok.
+
+%% @doc Delete all flow entries that are pointing to a given meter.
+-spec delete_where_meter(integer()) -> ok.
+delete_where_meter(MeterId) ->
+    [delete_where_meter(MeterId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
 %% @doc Get flow statistics.
@@ -257,7 +250,7 @@ get_stats(#ofp_flow_stats_request{table_id = all,
                             Match,
                             OutPort,
                             OutGroup) || TableId <- lists:seq(0, ?OFPTT_MAX)],
-    #ofp_flow_stats_reply{stats = lists:concat(Stats)};    
+    #ofp_flow_stats_reply{body = lists:concat(Stats)};    
 
 get_stats(#ofp_flow_stats_request{table_id = TableId,
                                   out_port = OutPort,
@@ -267,7 +260,7 @@ get_stats(#ofp_flow_stats_request{table_id = TableId,
                                   match = #ofp_match{fields=Match}}) ->
     %%TODO
     Stats = get_flow_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup),
-    #ofp_flow_stats_reply{stats = Stats}.
+    #ofp_flow_stats_reply{body = Stats}.
 
 %% @doc Get aggregate statistics.
 -spec get_aggregate_stats(#ofp_aggregate_stats_request{}) -> #ofp_aggregate_stats_reply{}.
@@ -309,7 +302,7 @@ get_aggregate_stats(#ofp_aggregate_stats_request{
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
-    #ofp_table_stats_reply{stats=get_table_stats()}.
+    #ofp_table_stats_reply{body=get_table_stats()}.
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
@@ -523,12 +516,12 @@ validate_match_and_instructions(TableId, Match, Instructions) ->
 validate_match(Fields) ->
     validate_match(Fields, []).
 
-validate_match([#ofp_field{name=Name}=Field|Fields], Previous) ->
-    case is_supported_field(Name) of
+validate_match([#ofp_field{class=Class,name=Name}=Field|Fields], Previous) ->
+    case is_supported_field(Class,Name) of
         false ->
             {error,{bad_match,bad_field}};
         true ->
-            case check_duplicate_fields(Name, Previous) of
+            case check_duplicate_fields(Class, Name, Previous) of
                 true ->
                     {error,{bad_match,dup_field}};
                 false ->
@@ -549,18 +542,20 @@ validate_match([],_Previous) ->
     ok.
 
 %% Check that a field is supported.
-%% Currently all fields are assumed to be supported
-%% TODO
-is_supported_field(_Name) ->
-    true.
+%% Currently all openflow_basic fields are assumed to be supported
+%% No experimenter fields are supported
+is_supported_field(openflow_basic,_Name) ->
+    true;
+is_supported_field(_Class, _Name) ->
+    false.
 
 %% Check that the field is not duplicated
-check_duplicate_fields(Name, Previous) ->
-    lists:keymember(Name, #ofp_field.name, Previous).
+check_duplicate_fields(Class, Name, Previous) ->
+    [x] == [x|| #ofp_field{class=C,name=N} <- Previous, C==Class, N==Name].
 
 %% Check that all prerequisite fields are present and have apropiate values
-check_prerequisites(#ofp_field{name=Name},Previous) ->
-    case prerequisite_for(Name) of
+check_prerequisites(#ofp_field{class=Class,name=Name},Previous) ->
+    case prerequisite_for(Class, Name) of
         [] ->
             true;
         PreReqs ->
@@ -570,86 +565,86 @@ check_prerequisites(#ofp_field{name=Name},Previous) ->
     end.
 
 %% Get the prerequisite fields and values for a field
-prerequisite_for(in_phy_port) ->
+prerequisite_for(openflow_basic, in_phy_port) ->
     [in_port];
-prerequisite_for(vlan_pcp) ->
+prerequisite_for(openflow_basic, vlan_pcp) ->
     %% this needs work
-    [{vlan_vid,none}];
-prerequisite_for(ip_dscp) ->
-    [{eth_type,16#800},{eth_type,16#86dd}];
-prerequisite_for(ip_ecn) ->
-    [{eth_type,16#800},{eth_type,16#86dd}];
-prerequisite_for(ip_proto) ->
-    [{eth_type,<<16#800:16>>},{eth_type,<<16#86dd:16>>}];
-prerequisite_for(ipv4_src) ->
-    [{eth_type,16#800}];
-prerequisite_for(ipv4_dst) ->
-    [{eth_type,16#800}];
-prerequisite_for(tcp_src) ->
-    [{ip_proto,6}];
-prerequisite_for(tcp_dst) ->
-    [{ip_proto,6}];
-prerequisite_for(udp_src) ->
-    [{ip_proto,17}];
-prerequisite_for(udp_dst) ->
-    [{ip_proto,17}];
-prerequisite_for(sctp_src) ->
-    [{ip_proto,132}];
-prerequisite_for(sctp_dst) ->
-    [{ip_proto,132}];
-prerequisite_for(icmpv4_type) ->
-    [{ip_proto,1}];
-prerequisite_for(icmpv4_code) ->
-    [{ip_proto,1}];
-prerequisite_for(arp_op) ->
-    [{eth_type,16#806}];
-prerequisite_for(arp_spa) ->
-    [{eth_type,16#806}];
-prerequisite_for(arp_tpa) ->
-    [{eth_type,16#806}];
-prerequisite_for(arp_sha) ->
-    [{eth_type,16#806}];
-prerequisite_for(arp_tha) ->
-    [{eth_type,16#806}];
-prerequisite_for(ipv6_src) ->
-    [{eth_type,16#86dd}];
-prerequisite_for(ipv6_dst) ->
-    [{eth_type,16#86dd}];
-prerequisite_for(ipv6_flabel) ->
-    [{eth_type,16#86dd}];
-prerequisite_for(icmpv6_type) ->
-    [{ip_proto,58}];
-prerequisite_for(icmpv6_code) ->
-    [{ip_proto,58}];
-prerequisite_for(ipv6_nd_target) ->
-    [{icmpv6_type,135},{icmpv6_type,136}];
-prerequisite_for(ipv6_nd_sll) ->
-    [{icmpv6_type,135}];
-prerequisite_for(ipv6_nd_tll) ->
-    [{icmpv6_type,136}];
-prerequisite_for(mpls_label) ->
-    [{eth_type,16#8847},{eth_type,16#8848}];
-prerequisite_for(mpls_tc) ->
-    [{eth_type,16#8847},{eth_type,16#8848}];
-prerequisite_for(mpls_bos) ->
-    [{eth_type,16#8847},{eth_type,16#8848}];
-prerequisite_for(pbb_isid) ->
-    [{eth_type,16#88E7}];
-prerequisite_for(ipv6_exthdr) ->
-    [{eth_type,16#86dd}];
-prerequisite_for(_) ->
+    [{{openflow_basic,vlan_vid},none}];
+prerequisite_for(openflow_basic, ip_dscp) ->
+    [{{openflow_basic,eth_type},16#800},{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, ip_ecn) ->
+    [{{openflow_basic,eth_type},16#800},{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, ip_proto) ->
+    [{{openflow_basic,eth_type},<<16#800:16>>},{{openflow_basic,eth_type},<<16#86dd:16>>}];
+prerequisite_for(openflow_basic, ipv4_src) ->
+    [{{openflow_basic,eth_type},16#800}];
+prerequisite_for(openflow_basic, ipv4_dst) ->
+    [{{openflow_basic,eth_type},16#800}];
+prerequisite_for(openflow_basic, tcp_src) ->
+    [{{openflow_basic,ip_proto},6}];
+prerequisite_for(openflow_basic, tcp_dst) ->
+    [{{openflow_basic,ip_proto},6}];
+prerequisite_for(openflow_basic, udp_src) ->
+    [{{openflow_basic,ip_proto},17}];
+prerequisite_for(openflow_basic, udp_dst) ->
+    [{{openflow_basic,ip_proto},17}];
+prerequisite_for(openflow_basic, sctp_src) ->
+    [{{openflow_basic,ip_proto},132}];
+prerequisite_for(openflow_basic, sctp_dst) ->
+    [{{openflow_basic,ip_proto},132}];
+prerequisite_for(openflow_basic, icmpv4_type) ->
+    [{{openflow_basic,ip_proto},1}];
+prerequisite_for(openflow_basic, icmpv4_code) ->
+    [{{openflow_basic,ip_proto},1}];
+prerequisite_for(openflow_basic, arp_op) ->
+    [{{openflow_basic,eth_type},16#806}];
+prerequisite_for(openflow_basic, arp_spa) ->
+    [{{openflow_basic,eth_type},16#806}];
+prerequisite_for(openflow_basic, arp_tpa) ->
+    [{{openflow_basic,eth_type},16#806}];
+prerequisite_for(openflow_basic, arp_sha) ->
+    [{{openflow_basic,eth_type},16#806}];
+prerequisite_for(openflow_basic, arp_tha) ->
+    [{{openflow_basic,eth_type},16#806}];
+prerequisite_for(openflow_basic, ipv6_src) ->
+    [{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, ipv6_dst) ->
+    [{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, ipv6_flabel) ->
+    [{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, icmpv6_type) ->
+    [{{openflow_basic,ip_proto},58}];
+prerequisite_for(openflow_basic, icmpv6_code) ->
+    [{{openflow_basic,ip_proto},58}];
+prerequisite_for(openflow_basic, ipv6_nd_target) ->
+    [{{openflow_basic,icmpv6_type},135},{{openflow_basic,icmpv6_type},136}];
+prerequisite_for(openflow_basic, ipv6_nd_sll) ->
+    [{{openflow_basic,icmpv6_type},135}];
+prerequisite_for(openflow_basic, ipv6_nd_tll) ->
+    [{{openflow_basic,icmpv6_type},136}];
+prerequisite_for(openflow_basic, mpls_label) ->
+    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+prerequisite_for(openflow_basic, mpls_tc) ->
+    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+prerequisite_for(openflow_basic, mpls_bos) ->
+    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+prerequisite_for(openflow_basic, pbb_isid) ->
+    [{{openflow_basic,eth_type},16#88E7}];
+prerequisite_for(openflow_basic, ipv6_exthdr) ->
+    [{{openflow_basic,eth_type},16#86dd}];
+prerequisite_for(openflow_basic, _) ->
     [].
 
-test_prereq({vlan_pcp,_Value},Previous) ->
+test_prereq({{openflow_basic,vlan_pcp},_Value},Previous) ->
     case lists:keyfind(vlan_pcp, #ofp_field.name,Previous) of
         #ofp_field{value=Value} when Value/=none ->
             true;
         _ ->
             false
     end;
-test_prereq({Field,Value},Previous) ->
-    case lists:keyfind(Field, #ofp_field.name,Previous) of
-        #ofp_field{value=Value} ->
+test_prereq({{Class,Name},Value},Previous) ->
+    case [Field || #ofp_field{class=C,name=N}=Field <- Previous, C==Class, N==Name] of
+        [#ofp_field{value=Value}] ->
             true;
         _ ->
             false
@@ -708,6 +703,14 @@ do_validate_instructions(TableId, [Instruction|Instructions], Match) ->
 do_validate_instructions(_TableId, [], _Match) ->
     ok.
 
+validate_instruction(TableId, #ofp_instruction_meter{meter_id=MeterId}, _Match) ->
+    case linc_us4_meter:is_valid(MeterId) of
+        true ->
+            ok;
+        false ->
+            %% There is not suitable error code
+            {error,{bad_instruction,unsup_inst}}
+    end;
 validate_instruction(TableId, #ofp_instruction_goto_table{table_id=NextTable}, _Match)
   when is_integer(TableId), TableId<NextTable, TableId<?OFPTT_MAX ->
     ok;
@@ -724,10 +727,10 @@ validate_instruction(_TableId, #ofp_instruction_apply_actions{actions=Actions}, 
 validate_instruction(_TableId, #ofp_instruction_clear_actions{}, _Match) ->
     ok;
 validate_instruction(_TableId, #ofp_instruction_experimenter{}, _Match) ->
-    ok;
+    {error,{bad_instruction,unknown_inst}};
 validate_instruction(_TableId, _Unknown, _Match) ->
     %% unknown instruction
-    {error,{bad_instruction,unknown_inst,_Unknown}}.
+    {error,{bad_instruction,unknown_inst}}.
 
 %% unsupported instruction {error,{bad_instruction,unsup_inst}},
 
@@ -798,7 +801,7 @@ validate_action(#ofp_action_set_field{field=Field}, Match) ->
             {error,{bad_action,bad_argument}}
     end;
 validate_action(#ofp_action_experimenter{}, _Match) ->
-    {error,{bad_action,bad_experimenter}}.
+    {error,{bad_action,bad_type}}.
 
 %% Check that field value is in the allowed domain
 %% TODO
@@ -846,7 +849,6 @@ modify_flow(TableId, #flow_entry{id=Id,instructions=PrevInstructions},
             %% Do nothing
             ok
     end.
-
 
 %%============================================================================
 %% Various counter functions
@@ -931,18 +933,6 @@ get_table_stats1(TableId) ->
         = ets:lookup(flow_table_counters, TableId),
     #ofp_table_stats{
        table_id = TableId,
-       name = list_to_binary(io_lib:format("Flow Table 0x~2.16.0b", [TableId])),
-       match = ?SUPPORTED_MATCH_FIELDS,
-       wildcards = ?SUPPORTED_WILDCARDS,
-       write_actions = ?SUPPORTED_WRITE_ACTIONS,
-       apply_actions = ?SUPPORTED_APPLY_ACTIONS,
-       write_setfields = ?SUPPORTED_WRITE_SETFIELDS,
-       apply_setfields = ?SUPPORTED_APPLY_SETFIELDS,
-       metadata_match = ?SUPPORTED_METADATA_MATCH, %<<-1:64>>,
-       metadata_write = ?SUPPORTED_METADATA_WRITE, %<<-1:64>>,
-       instructions = ?SUPPORTED_INSTRUCTIONS,
-       config = get_table_config(TableId),
-       max_entries = ?MAX_FLOW_TABLE_ENTRIES,
        active_count = ets:info(flow_table_name(TableId),size),
        lookup_count = Lookups,
        matched_count = Matches}.
@@ -1158,6 +1148,19 @@ delete_where_group(GroupId, TableId) ->
                       end
               end, ok, flow_table_name(TableId)).
 
+%% Remove all flows that use MeterId.
+delete_where_meter(MeterId, TableId) ->
+    ets:foldl(fun (#flow_entry{instructions=Instructions}=FlowEntry, Acc) ->
+                      case meter_match(MeterId, Instructions) of
+                          true ->
+                              delete_flow(TableId, FlowEntry, group_delete);
+                          false ->
+                              Acc
+                      end
+              end, ok, flow_table_name(TableId)).
+
+meter_match(MeterId, Instructions) ->
+    [MeterId] == [Id || #ofp_instruction_meter{meter_id=Id} <- Instructions, Id==MeterId].
 
 increment_group_ref_count(Instructions) ->
     update_group_ref_count(Instructions, 1).

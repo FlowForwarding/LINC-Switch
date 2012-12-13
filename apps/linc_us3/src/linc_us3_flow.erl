@@ -125,8 +125,7 @@ modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
     %% packet starting in flow_table=0.
     case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
         ok ->
-            %% TODO: packet_out
-            case linc_us3_buffer:get_buffer(BufferId) of
+            case linc_buffer:get_buffer(BufferId) of
                 #ofs_pkt{}=OfsPkt ->
                     linc_us3_actions:apply_list(OfsPkt,
                                                 [#ofp_action_output{port=table}]);
@@ -235,7 +234,7 @@ modify(#ofp_flow_mod{command=delete_strict,
 %% @doc Get all entries in one flow table.
 -spec get_flow_table(TableId :: integer()) -> [FlowTableEntryRepresentation :: term()].
 get_flow_table(TableId) ->
-    ets:tab2list(flow_table_name(TableId)).
+    lists:reverse(ets:tab2list(flow_table_name(TableId))).
 
 %% @doc Delete all flow entries that are using a specific group.
 -spec delete_where_group(GroupId :: integer()) -> ok.

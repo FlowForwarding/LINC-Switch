@@ -20,7 +20,8 @@
           properties     :: [ofp_queue_property()] | '_',
           tx_bytes   = 0 :: integer()              | '_',
           tx_packets = 0 :: integer()              | '_',
-          tx_errors  = 0 :: integer()              | '_'
+          tx_errors  = 0 :: integer()              | '_',
+          install_time   :: erlang:timestamp()     | '_'
          }).
 
 -record(linc_queue_throttling, {

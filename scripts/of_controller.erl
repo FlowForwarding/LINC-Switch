@@ -106,7 +106,7 @@ accept(Parent, LSocket) ->
     Pid = spawn_link(fun() ->
                              {ok, EncodedHello} = of_protocol:encode(hello()),
                              gen_tcp:send(Socket, EncodedHello),
-                             {ok, Parser} = ofp_parser:new(),
+                             {ok, Parser} = ofp_parser:new(3),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
                                             socket = Socket,
@@ -127,7 +127,7 @@ loop(Connections) ->
                  case of_protocol:encode(Msg) of
                      {ok, EncodedMessage} ->
                          ok = gen_tcp:send(Socket, EncodedMessage);
-                     Error ->
+                     _Error ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
              end || Fun <- [
@@ -138,7 +138,7 @@ loop(Connections) ->
                             group_mod,
                             port_mod,
                             table_mod,
-                            %% Stats
+
                             desc_stats_request,
                             flow_stats_request,
                             aggregate_stats_request,
@@ -149,9 +149,9 @@ loop(Connections) ->
                             group_desc_stats_request,
                             group_features_stats_request,
 
-                            barrier_request,
                             queue_get_config_request,
-                            role_request
+                            role_request,
+                            barrier_request
                            ]],
             
             loop([{{Address, Port}, Socket, Pid} | Connections]);

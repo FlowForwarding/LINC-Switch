@@ -31,22 +31,9 @@
 %% @doc Starts the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
-    {ok, Pid} = linc_sup:start_link(),
-
-    case application:get_env(linc, of_config) of
-        {ok, enabled} ->
-            linc_ofconfig:start();
-        _ ->
-            ok
-    end,
-    {ok, Pid}.
+    linc_sup:start_link().
 
 %% @doc Stops the application.
 -spec stop(any()) -> ok.
 stop(_State) ->
-    case application:get_env(linc, of_config) of
-        {ok, enabled} ->
-            linc_ofconfig:stop();
-        _ ->
-            ok
-    end.
+    ok.

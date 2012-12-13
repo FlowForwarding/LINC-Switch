@@ -22,6 +22,9 @@
 -export([ofp_field/2,
          packet_fields/1]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
 

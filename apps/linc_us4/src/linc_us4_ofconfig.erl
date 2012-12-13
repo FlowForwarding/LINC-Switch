@@ -44,7 +44,10 @@
          handle_unlock/2,
          handle_get/2]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("of_config/include/of_config.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 
 -record(ofconfig, {
@@ -59,18 +62,12 @@
 %%------------------------------------------------------------------------------
 
 start() ->
-    ok = application:start(ssh),
-    ok = application:start(enetconf),
-
-    OFConfig = {linc_ofconfig, {linc_ofconfig, start_link, []},
-                permanent, 5000, worker, [linc_ofconfig]},
-    supervisor:start_child(linc_sup, OFConfig).
+    OFConfig = {linc_us4_ofconfig, {linc_us4_ofconfig, start_link, []},
+                transient, 50, worker, [linc_us4_ofconfig]},
+    supervisor:start_child(linc_us4_sup, OFConfig).
 
 stop() ->
-    ok = supervisor:terminate_child(linc_sup, linc_ofconfig),
-    ok = supervisor:delete_child(linc_sup, linc_ofconfig),
-    ok = application:stop(enetconf),
-    ok = application:stop(ssh).
+    ok.
 
 %% @private
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -104,7 +101,6 @@ handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
     {reply, {ok, EncodedConfig}, State};
 handle_call({edit_config, _SessionId, running, {xml, Config}}, _From, State) ->
     Decoded = of_config:decode(Config),
-    io:format("Decoded: ~p~n", [Decoded]),
 
     [Switch0] = Decoded#capable_switch.logical_switches,
     Controllers = Switch0#logical_switch.controllers,

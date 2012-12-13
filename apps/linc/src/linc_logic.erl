@@ -36,7 +36,7 @@
          code_change/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include("linc.hrl").
+-include("linc_logger.hrl").
 
 -record(state, {
           connections = [] :: [{pid(), string(), integer()}],
@@ -87,17 +87,23 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendOpts} = State) ->
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
-    {ok, BackendState} = BackendMod:start(BackendOpts),
+    {ok, Version, BackendState} = BackendMod:start(BackendOpts),
 
     {ok, Controllers} = application:get_env(linc, controllers),
-    Opts = [{controlling_process, self()}, {version, 3}],
-    [ofp_channel:open(Host, Port, Opts) || {Host, Port} <- Controllers],
+    Opts = [{controlling_process, self()}, {version, Version}],
+    Ctrls = [case Ctrl of
+                 {Host, Port} ->
+                     {Host, Port, Opts};
+                 {Host, Port, SysOpts} ->
+                     {Host, Port, Opts ++ SysOpts}
+             end || Ctrl <- Controllers],
+    [ofp_channel:open(Host, Port, Opt) || {Host, Port, Opt} <- Ctrls],
 
     {noreply, State#state{backend_state = BackendState}};
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
-    ?DEBUG("Received message from the controller: ~p", [Message#ofp_message.type]),
+    ?DEBUG("Received message from the controller: ~p", [Message]),
     NewBState = case Backend:handle_message(MessageBody, BackendState) of
                     {noreply, NewState} ->
                         NewState;
@@ -107,11 +113,13 @@ handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
                         NewState
                 end,
     {noreply, State#state{backend_state = NewBState}};
-handle_info({ofp_connected, _Pid, Version}, State) ->
-    ?INFO("Connected to controller using OFP v~p", [Version]),
+handle_info({ofp_connected, _Pid, {Host, Port, Id, Version}}, State) ->
+    ?INFO("Connected to controller ~s:~p/~p using OFP v~p",
+          [Host, Port, Id, Version]),
     {noreply, State};
-handle_info({ofp_closed, _Pid, Reason}, State) ->
-    ?INFO("Connection to controller closed because of ~p", [Reason]),
+handle_info({ofp_closed, _Pid, {Host, Port, Id, Reason}}, State) ->
+    ?INFO("Connection to controller ~s:~p/~p closed because of ~p",
+          [Host, Port, Id, Reason]),
     {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.

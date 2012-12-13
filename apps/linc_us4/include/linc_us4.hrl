@@ -18,10 +18,14 @@
 %% @copyright 2012 FlowForwarding.org
 %% @doc Header file for userspace implementation of OpenFlow switch.
 
--include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc.hrl").
-
+-define(CAPABILITIES, [flow_stats,
+                       table_stats,
+                       port_stats,
+                       group_stats,
+                       %% ip_reasm,
+                       queue_stats
+                       %% port_blocked
+                      ]).
 -define(SUPPORTED_ACTIONS, [output,
                             group,
                             set_queue,
@@ -78,7 +82,7 @@
                                  mpls_label,
                                  mpls_tc]).
 -define(SUPPORTED_WILDCARDS, ?SUPPORTED_MATCH_FIELDS).
--define(SUPPORTED_WRITE_SETFIELDS, []).
+-define(SUPPORTED_WRITE_SETFIELDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
 -define(SUPPORTED_INSTRUCTIONS, [goto_table,
                                  write_metadata,
@@ -115,9 +119,13 @@
 -type priority() :: non_neg_integer().
 -type flow_id() :: {priority(),reference()}.
 
+-type linc_table_config() :: continue
+                           | drop
+                           | controller.
+
 -record(flow_table_config, {
-          id                 :: non_neg_integer(),
-          config = controller:: ofp_table_config()
+          id :: non_neg_integer(),
+          config = drop :: linc_table_config()
          }).
 
 -record(flow_entry, {
@@ -148,9 +156,9 @@
          }).
 
 -record(linc_flow_table, {
-          id                   :: integer(),
-          entries = []         :: [#flow_entry{}],
-          config  = controller :: ofp_table_config()
+          id :: integer(),
+          entries = [] :: [#flow_entry{}],
+          config :: undefined
          }).
 
 -record(flow_table_counter, {
@@ -162,16 +170,16 @@
          }).
 
 -record(ofs_pkt, {
-          in_port              :: ofp_port_no(),
-          fields               :: ofp_match(),
-          actions = []         :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>>  :: binary(),
-          packet               :: pkt:packet(),
-          size                 :: integer(),
-          queue_id = default   :: integer() | default,
-          table_id             :: integer(),
-          no_packet_in = false :: boolean(),
-          packet_in_reason     :: ofp_packet_in_reason(),
-          packet_in_bytes      :: ofp_packet_in_bytes()
+          in_port                     :: ofp_port_no(),
+          fields = []                 :: ofp_match(),
+          actions = []                :: ordsets:ordset(ofp_action()),
+          metadata = <<0:64>>         :: binary(),
+          packet = []                 :: pkt:packet(),
+          size                        :: integer(),
+          queue_id = default          :: integer() | default,
+          table_id                    :: integer(),
+          no_packet_in = false        :: boolean(),
+          packet_in_reason            :: ofp_packet_in_reason(),
+          packet_in_bytes = no_buffer :: ofp_packet_in_bytes()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

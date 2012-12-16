@@ -22,7 +22,7 @@
                               unmock/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us4.hrl").
 
@@ -79,6 +79,10 @@ modify_group() ->
     B1 = make_test_bucket(),
     M1 = call_group_mod(add, 1, all, [B1]),
     ?assertEqual(ok, M1),
+
+	%% Duplicate group should fail
+    M1Err = call_group_mod(add, 1, all, [B1]),
+    ?assertMatch({error, #ofp_error_msg{}}, M1Err),
 
     %% Modifying non existing group should fail
     MUnk = call_group_mod(modify, 12345, all, []),

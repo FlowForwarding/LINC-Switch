@@ -103,7 +103,7 @@ apply_list(Pkt, [#ofp_action_set_queue{queue_id = QueueId} | Rest],
 %% Nothing happens if packet had no MPLS header
 apply_list(#ofs_pkt{packet = P} = Pkt,
            [#ofp_action_set_mpls_ttl{mpls_ttl = NewTTL} | Rest], SideEffects) ->
-    P2 = linc_us4_packet_edit:find_and_edit(
+    P2 = linc_us4_packet:find_and_edit(
            P, mpls_tag,
            fun(T) ->
                    [TopTag | StackTail] = T#mpls_tag.stack,
@@ -120,7 +120,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
            SideEffects) ->
     try 
-        P2 = linc_us4_packet_edit:find_and_edit(
+        P2 = linc_us4_packet:find_and_edit(
                P, mpls_tag,
                fun(#mpls_tag{stack=[#mpls_stack_entry{ttl=0} | _]}) ->
                        throw({error,invalid_ttl});
@@ -141,7 +141,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
 %% Nothing happens if packet had no IPv4 header
 apply_list(#ofs_pkt{packet = P} = Pkt,
            [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], SideEffects) ->
-    P2 = linc_us4_packet_edit:find_and_edit(
+    P2 = linc_us4_packet:find_and_edit(
            P, ipv4,
            fun(T) ->
                    T#ipv4{ ttl = NewTTL }
@@ -155,7 +155,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
            SideEffects) ->
     try
-        P2 = linc_us4_packet_edit:find_and_edit(
+        P2 = linc_us4_packet:find_and_edit(
                P, ipv4,
                fun(#ipv4{ ttl = 0 }) ->
                        throw({error,invalid_ttl});
@@ -180,7 +180,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
     P2 = case Tags of
              [#mpls_tag{stack = S}, #ipv4{ttl = NextOutermostTTL} | _]
                when length(S) == 1 ->
-                 linc_us4_packet_edit:find_and_edit(
+                 linc_us4_packet:find_and_edit(
                    P, mpls_tag,
                    fun(T) ->
                            [Stack1 | StackRest] = T#mpls_tag.stack,
@@ -192,7 +192,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
                             }
                    end);
              [#mpls_tag{stack = S} | _] when length(S) > 1 ->
-                 linc_us4_packet_edit:find_and_edit(
+                 linc_us4_packet:find_and_edit(
                    P, mpls_tag,
                    fun(T) ->
                            [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
@@ -205,7 +205,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
                             }
                    end);
              [#ipv4{}, #ipv4{ttl = NextOutermostTTL}] ->
-                 linc_us4_packet_edit:find_and_edit(
+                 linc_us4_packet:find_and_edit(
                    P, ipv4,
                    fun(T) ->
                            T#ipv4{ ttl = NextOutermostTTL }
@@ -223,13 +223,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
     P2 = case Tags of
              [#mpls_tag{stack = S} = MPLS, #ipv4{} | _]
                when length(S) == 1 ->
-                 linc_us4_packet_edit:find_and_edit(
+                 linc_us4_packet:find_and_edit(
                    P, ipv4,
                    fun(T) ->
                            T#ipv4{ ttl = mpls_get_outermost_ttl(MPLS) }
                    end);
              [#mpls_tag{stack = S} | _] when length(S) > 1 ->
-                 linc_us4_packet_edit:find_and_edit(
+                 linc_us4_packet:find_and_edit(
                    P, mpls_tag,
                    fun(T) ->
                            [Stack1, Stack2 | StackRest] = T#mpls_tag.stack,
@@ -241,7 +241,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
                             }
                    end);
              [#ipv4{ttl = OutermostTTL}, #ipv4{}] ->
-                 linc_us4_packet_edit:find_and_edit_skip(
+                 linc_us4_packet:find_and_edit_skip(
                    P, ipv4,
                    fun(T) ->
                            T#ipv4{ ttl = OutermostTTL }
@@ -258,7 +258,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
            SideEffects)
   when EtherType =:= 16#8100; EtherType =:= 16#88A8 ->
     %% When pushing, fields are based on existing tag if there is any
-    case linc_us4_packet_edit:find(P, ieee802_1q_tag) of
+    case linc_us4_packet:find(P, ieee802_1q_tag) of
         not_found ->
             InheritVid = 1,
             InheritPrio = 0;
@@ -266,7 +266,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
             InheritVid = BasedOnTag#ieee802_1q_tag.vid,
             InheritPrio = BasedOnTag#ieee802_1q_tag.pcp
     end,
-    P2 = linc_us4_packet_edit:find_and_edit(
+    P2 = linc_us4_packet:find_and_edit(
            P, ether,
            fun(T) -> 
                    NewTag = #ieee802_1q_tag{
@@ -287,7 +287,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_vlan{} | Rest],
            SideEffects)
   when length(P) > 1 ->
-    P2 = linc_us4_packet_edit:find_and_edit(
+    P2 = linc_us4_packet:find_and_edit(
            P, ieee802_1q_tag,
            %% returning 'delete' atom will work for first VLAN tag only
            fun(_) -> 'delete' end),
@@ -304,8 +304,8 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
   when EtherType =:= 16#8847;
        EtherType =:= 16#88A8 ->
     %% inherit IP or MPLS ttl value
-    FindOldMPLS = linc_us4_packet_edit:find(P, mpls_tag),
-    SetTTL = case linc_us4_packet_edit:find(P, ipv4) of
+    FindOldMPLS = linc_us4_packet:find(P, mpls_tag),
+    SetTTL = case linc_us4_packet:find(P, ipv4) of
                  not_found ->
                      case FindOldMPLS of
                          not_found ->
@@ -321,13 +321,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
         not_found ->
             %% Must insert after ether or vlan tag,
             %% whichever is deeper in the packet
-            InsertAfter = case linc_us4_packet_edit:find(P, ieee802_1q_tag) of
+            InsertAfter = case linc_us4_packet:find(P, ieee802_1q_tag) of
                               not_found ->
                                   ether;
                               _ ->
                                   ieee802_1q_tag
                           end,
-            P2 = linc_us4_packet_edit:find_and_edit(
+            P2 = linc_us4_packet:find_and_edit(
                    P, InsertAfter,
                    fun(T) -> 
                            NewEntry = #mpls_stack_entry{ttl = SetTTL},
@@ -341,7 +341,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
                    end);
         %% found an MPLS shim header, and will push tag into it
         _ ->
-            P2 = linc_us4_packet_edit:find_and_edit(
+            P2 = linc_us4_packet:find_and_edit(
                    P, mpls_tag,
                    fun(T) -> 
                            %% base the newly inserted entry on a previous one
@@ -360,7 +360,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
 %% inside it is empty. Nothing happens if no MPLS header found.
 apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
            SideEffects) ->
-    P2 = linc_us4_packet_edit:find_and_edit(
+    P2 = linc_us4_packet:find_and_edit(
            P, mpls_tag,
            fun(T) ->
                    Stk = T#mpls_tag.stack,
@@ -380,7 +380,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
 %% Applies all set-field actions to the packet 
 apply_list(#ofs_pkt{packet = Packet} = Pkt,
            [#ofp_action_set_field{field = F} | Rest], SideEffects) ->
-    Packet2 = linc_us4_packet_edit:set_field(F, Packet),
+    Packet2 = linc_us4_packet:set_field(F, Packet),
     apply_list(Pkt#ofs_pkt{packet = Packet2}, Rest, SideEffects);
 
 apply_list(Pkt, [#ofp_action_experimenter{experimenter = _Exp} | Rest],

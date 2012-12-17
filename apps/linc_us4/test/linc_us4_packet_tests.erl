@@ -16,7 +16,7 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
--module(linc_us4_packet_edit_tests).
+-module(linc_us4_packet_tests).
 
 -import(linc_us4_test_utils, [mock/1,
                               unmock/1,
@@ -92,7 +92,7 @@ skip_header() ->
     EditFun = fun(T) ->
                       T#ether{type = ?NEW_VAL}
               end,
-    Packet2 = linc_us4_packet_edit:find_and_edit_skip(Packet, ether,
+    Packet2 = linc_us4_packet:find_and_edit_skip(Packet, ether,
                                                       EditFun, SkipCount),
     ?assertEqual(NewPacket, Packet2).
 
@@ -102,7 +102,7 @@ outermost_header() ->
     
     Packet = [#ether{}, #ipv4{}],
     Header = ipv4,
-    Header2 = linc_us4_packet_edit:find_outermost_header(Packet, [ipv4]),
+    Header2 = linc_us4_packet:find_outermost_header(Packet, [ipv4]),
     ?assertEqual(Header, Header2).
 
 ethernet() ->
@@ -205,6 +205,6 @@ teardown(_) ->
 set_field(TestData) ->
     [begin
          Field = #ofp_field{name = Name, value = Value},
-         Packet2 = linc_us4_packet_edit:set_field(Field, Packet),
+         Packet2 = linc_us4_packet:set_field(Field, Packet),
          ?assertEqual(NewPacket, Packet2)
      end || {Packet, {Name, Value}, NewPacket} <- TestData].

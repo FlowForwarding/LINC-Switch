@@ -200,7 +200,7 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
                                       actions = Actions,
                                       in_port = InPort,
                                       data = Data}) ->
-    OfsPkt = linc_us4_packet_edit:binary_to_record(Data, InPort),
+    OfsPkt = linc_us4_packet:binary_to_record(Data, InPort),
     linc_us4_actions:apply_list(OfsPkt, Actions),
     {noreply, State};
 ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,

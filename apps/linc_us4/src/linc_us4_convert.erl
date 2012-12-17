@@ -53,8 +53,8 @@ packet_fields(Packet) ->
 special_header_fields(P) ->
     %% Assume there is ALWAYS ether header, sometimes not at start (due to PBB)
     %% the next line will crash if the packet doesn't have #ether header
-    {_, Ether} = linc_us4_packet_edit:find(P, ether),
-    VLANFind = linc_us4_packet_edit:find(P, ieee802_1q_tag),
+    {_, Ether} = linc_us4_packet:find(P, ether),
+    VLANFind = linc_us4_packet:find(P, ieee802_1q_tag),
 
     %% Ether Type, take either VLAN or ether header ether_type
     case VLANFind of

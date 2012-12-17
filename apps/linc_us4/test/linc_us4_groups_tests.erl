@@ -65,6 +65,10 @@ add_group() ->
     ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
 
+    %% check that time elapsed isn't zero
+	G1StatsTime = stats_get(G1Stats, 1, time),
+    ?assert(0 < G1StatsTime),
+
     %% send a random package
     Pkt2 = test_packet_vlan(),
     linc_us4_groups:apply(1, Pkt2),
@@ -72,6 +76,12 @@ add_group() ->
     %% check that counters changed
     G2Stats = linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
+
+	%% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
+	timer:sleep(1),
+	G2StatsTime = stats_get(G2Stats, 1, time),
+    ?assert(G1StatsTime + 1000 =< G2StatsTime),
+
     ?assertEqual(Pkt2#ofs_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
 %%--------------------------------------------------------------------
@@ -79,6 +89,10 @@ modify_group() ->
     B1 = make_test_bucket(),
     M1 = call_group_mod(add, 1, all, [B1]),
     ?assertEqual(ok, M1),
+
+	%% Duplicate group should fail
+    M1Err = call_group_mod(add, 1, all, [B1]),
+    ?assertMatch({error, #ofp_error_msg{}}, M1Err),
 
     %% Modifying non existing group should fail
     MUnk = call_group_mod(modify, 12345, all, []),
@@ -240,9 +254,19 @@ stats_get(#ofp_group_stats_reply{ body = Stats }, GroupId, Key) ->
         false -> {not_found, group, GroupId};
         GroupStats ->
             case Key of
-                reference_count -> GroupStats#ofp_group_stats.ref_count;
-                packet_count -> GroupStats#ofp_group_stats.packet_count;
-                byte_count -> GroupStats#ofp_group_stats.byte_count
+                reference_count ->
+					GroupStats#ofp_group_stats.ref_count;
+                packet_count ->
+					GroupStats#ofp_group_stats.packet_count;
+                byte_count ->
+					GroupStats#ofp_group_stats.byte_count;
+				time ->
+					S = GroupStats#ofp_group_stats.duration_sec,
+					NS = GroupStats#ofp_group_stats.duration_nsec,
+					%% ensure nanosec is in range 0..(1 billion - 1)
+					?assert(NS >= 0),
+					?assert(NS =< 999999999),
+					S * 10000000 + NS / 1000
             end
     end.
 

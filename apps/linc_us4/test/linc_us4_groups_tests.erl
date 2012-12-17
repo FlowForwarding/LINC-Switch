@@ -22,7 +22,7 @@
                               unmock/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us4.hrl").
 
@@ -183,11 +183,11 @@ stats_and_features() ->
     M1 = call_group_mod(add, 1, select, [B1]),
     ?assertEqual(ok, M1),
 
-    D1 = linc_us4_groups:get_desc(#ofp_group_desc_stats_request{}),
-    ?assertMatch(#ofp_group_desc_stats_reply{}, D1),
+    D1 = linc_us4_groups:get_desc(#ofp_group_desc_request{}),
+    ?assertMatch(#ofp_group_desc_reply{}, D1),
 
-    D2 = linc_us4_groups:get_features(#ofp_group_features_stats_request{}),
-    ?assertMatch(#ofp_group_features_stats_reply{}, D2),
+    D2 = linc_us4_groups:get_features(#ofp_group_features_request{}),
+    ?assertMatch(#ofp_group_features_reply{}, D2),
 
     %% try stats for nonexisting group
     linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 332211 }),
@@ -235,7 +235,7 @@ call_group_mod(Command, GroupId, Type, Buckets) ->
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.
-stats_get(#ofp_group_stats_reply{ stats = Stats }, GroupId, Key) ->
+stats_get(#ofp_group_stats_reply{ body = Stats }, GroupId, Key) ->
     case lists:keyfind(GroupId, #ofp_group_stats.group_id, Stats) of
         false -> {not_found, group, GroupId};
         GroupStats ->

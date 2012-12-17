@@ -65,6 +65,10 @@ add_group() ->
     ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
 
+    %% check that time elapsed isn't zero
+	G1StatsTime = stats_get(G1Stats, 1, time),
+    ?assert(0 < G1StatsTime),
+
     %% send a random package
     Pkt2 = test_packet_vlan(),
     linc_us4_groups:apply(1, Pkt2),
@@ -72,6 +76,12 @@ add_group() ->
     %% check that counters changed
     G2Stats = linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
+
+	%% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
+	timer:sleep(1),
+	G2StatsTime = stats_get(G2Stats, 1, time),
+    ?assert(G1StatsTime + 1000 =< G2StatsTime),
+
     ?assertEqual(Pkt2#ofs_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
 %%--------------------------------------------------------------------
@@ -187,11 +197,11 @@ stats_and_features() ->
     M1 = call_group_mod(add, 1, select, [B1]),
     ?assertEqual(ok, M1),
 
-    D1 = linc_us4_groups:get_desc(#ofp_group_desc_stats_request{}),
-    ?assertMatch(#ofp_group_desc_stats_reply{}, D1),
+    D1 = linc_us4_groups:get_desc(#ofp_group_desc_request{}),
+    ?assertMatch(#ofp_group_desc_reply{}, D1),
 
-    D2 = linc_us4_groups:get_features(#ofp_group_features_stats_request{}),
-    ?assertMatch(#ofp_group_features_stats_reply{}, D2),
+    D2 = linc_us4_groups:get_features(#ofp_group_features_request{}),
+    ?assertMatch(#ofp_group_features_reply{}, D2),
 
     %% try stats for nonexisting group
     linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 332211 }),
@@ -239,14 +249,24 @@ call_group_mod(Command, GroupId, Type, Buckets) ->
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.
-stats_get(#ofp_group_stats_reply{ stats = Stats }, GroupId, Key) ->
+stats_get(#ofp_group_stats_reply{ body = Stats }, GroupId, Key) ->
     case lists:keyfind(GroupId, #ofp_group_stats.group_id, Stats) of
         false -> {not_found, group, GroupId};
         GroupStats ->
             case Key of
-                reference_count -> GroupStats#ofp_group_stats.ref_count;
-                packet_count -> GroupStats#ofp_group_stats.packet_count;
-                byte_count -> GroupStats#ofp_group_stats.byte_count
+                reference_count ->
+					GroupStats#ofp_group_stats.ref_count;
+                packet_count ->
+					GroupStats#ofp_group_stats.packet_count;
+                byte_count ->
+					GroupStats#ofp_group_stats.byte_count;
+				time ->
+					S = GroupStats#ofp_group_stats.duration_sec,
+					NS = GroupStats#ofp_group_stats.duration_nsec,
+					%% ensure nanosec is in range 0..(1 billion - 1)
+					?assert(NS >= 0),
+					?assert(NS =< 999999999),
+					S * 10000000 + NS / 1000
             end
     end.
 

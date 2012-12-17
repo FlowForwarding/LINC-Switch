@@ -53,9 +53,8 @@
          }).
 
 -type linc_stats_key_type() :: {group, integer(), atom()}
-							 | {bucket, {integer(), binary()}, atom()}
-							 | {group_start_time, integer()}
-							 | {bucket_start_time, integer()}.
+                             | {bucket, {integer(), binary()}, atom()}
+                             | {group_start_time, integer()}.
 
 %% @doc Stats item record for storing stats in ETS
 -record(linc_group_stats, {
@@ -85,8 +84,8 @@ create() ->
                                         {read_concurrency, true},
                                         {write_concurrency, true}]),
 
-	%% Time for groups is stored in the same way as stats, but holds unix microtime
-	%% instead of counter
+    %% Time for groups is stored in the same way as stats, but holds unix microtime
+    %% instead of counter
     ok.
 
 %%--------------------------------------------------------------------
@@ -108,7 +107,6 @@ update_reference_count(GroupId, Increment) ->
 %% packets and ports where they are destined or 'drop' atom. Packet is
 %% cloned if multiple ports are the destination.
 -spec apply(GroupId :: integer(), Pkt :: #ofs_pkt{}) -> ok.
-                   %% [{NewPkt :: #ofs_pkt{}, Port :: ofp_port_no() | drop}].
 
 apply(GroupId, Pkt) ->
     case group_get(GroupId) of
@@ -144,13 +142,12 @@ modify(#ofp_group_mod{ command = add,
         true ->
             %% just in case, zero stats
             group_reset_stats(Id),
-			group_reset_timers(Id),
-			lists:foreach(
-			  fun(Bucket) ->
-					  BucketId = Bucket#linc_bucket.unique_id,
-					  group_reset_bucket_stats(BucketId),
-					  group_reset_bucket_timers(BucketId)
-			  end, OFSBuckets);
+            group_reset_timers(Id),
+            lists:foreach(
+              fun(Bucket) ->
+                      BucketId = Bucket#linc_bucket.unique_id,
+                      group_reset_bucket_stats(BucketId)
+              end, OFSBuckets);
         false ->
             {error, #ofp_error_msg{type = group_mod_failed,
                                    code = group_exists}}
@@ -177,13 +174,12 @@ modify(#ofp_group_mod{ command = modify,
                                    code = unknown_group}};
         OldGroup ->
             lists:foreach(
-			  fun(B) ->
-					  group_reset_bucket_stats(B#linc_bucket.unique_id),
-					  group_delete_bucket_timers(B#linc_bucket.unique_id)
-			  end, OldGroup#linc_group.buckets),
+              fun(B) ->
+                      group_reset_bucket_stats(B#linc_bucket.unique_id)
+              end, OldGroup#linc_group.buckets),
 
-			group_reset_stats(Id),
-			group_delete_timers(Id),
+            group_reset_stats(Id),
+            group_delete_timers(Id),
             ets:insert(group_table, Entry),
             ok
     end;
@@ -387,16 +383,12 @@ create_unique_id_for_bucket(B) ->
 
     %% Add a timestamp in case of identical buckets + a random
     {MegaS, S, MicroS} = os:timestamp(),
-	Random = random:uniform(16#7FFFFFFF),
+    Random = random:uniform(16#7FFFFFFF),
 
-	%% NOTE: this may create key collision if random and microseconds match
+    %% NOTE: this may create key collision if random and microseconds match
     Image = <<EncodedBucket/binary, MegaS:32, S:32, MicroS:32, Random:32>>,
     %% Create a hash
     crypto:sha(Image).
-
-%% create_unique_id_for_bucket(B) ->
-%%     {MegaS, S, MicroS} = time:now(),
-%%     MegaS * 1000000 * 1000000 + S * 1000000 + MicroS.
 
 %%%==============================================================
 %%% Stats counters and groups support functions
@@ -417,19 +409,19 @@ group_reset_stats(GroupId) ->
 %% @doc Resets group stats starting time to current Unix time (in microsec)
 group_reset_timers(GroupId) ->
     %% Set timer of the group to current time
-	{Mega, Sec, Micro} = os:timestamp(),
-	NowMicro = (Mega * 1000000 + Sec) * 1000000 + Micro,
-	ets:insert(group_stats, #linc_group_stats{
-				 key   = {group_start_time, GroupId},
-				 value = NowMicro
-				}),
+    {Mega, Sec, Micro} = os:timestamp(),
+    NowMicro = (Mega * 1000000 + Sec) * 1000000 + Micro,
+    ets:insert(group_stats, #linc_group_stats{
+                 key   = {group_start_time, GroupId},
+                 value = NowMicro
+                }),
     ok.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Deletes timer from ETS
 group_delete_timers(GroupId) ->
-	ets:delete(group_stats, {group_start_time, GroupId}).
+    ets:delete(group_stats, {group_start_time, GroupId}).
 
 %%--------------------------------------------------------------------
 %% @internal
@@ -469,15 +461,19 @@ group_get_stats(GroupId) ->
                          byte_count = group_get_bucket_stat(Bucket#linc_bucket.unique_id,
                                                             byte_count)
                         } || Bucket <- G#linc_group.buckets],
-			GroupTime = group_get_time(GroupId),
+
+			{MicroNowMS, MicroNowS, MicroNowMicroS} = os:timestamp(),
+			MicroNow = (MicroNowMS * 1000000 + MicroNowS) * 1000000 + MicroNowMicroS,
+            GroupTime = MicroNow - group_get_time(GroupId),
+
             [#ofp_group_stats{
                 group_id      = GroupId,
                 ref_count     = group_get_stat(GroupId, reference_count),
                 packet_count  = group_get_stat(GroupId, packet_count),
                 byte_count    = group_get_stat(GroupId, byte_count),
                 bucket_stats  = BStats,
-				duration_sec  = GroupTime / 1000000,           % seconds
-				duration_nsec = (GroupTime rem 1000000) * 1000 % microsec * 1000 = nsec
+                duration_sec  = GroupTime / 1000000,           % seconds
+                duration_nsec = (GroupTime rem 1000000) * 1000 % microsec * 1000 = nsec
                }]
     end.
 
@@ -496,9 +492,9 @@ group_get_stat(GroupId, Stat) ->
 group_get_time(GroupId) ->
     case ets:lookup(group_stats, {group_start_time, GroupId}) of
         [] ->
-			erlang:error({?MODULE, group_get_time, not_found, GroupId});
+            erlang:error({?MODULE, group_get_time, not_found, GroupId});
         [{linc_group_stats, {group_start_time, GroupId}, Value}] ->
-			Value
+            Value
     end.
 
 %%--------------------------------------------------------------------
@@ -520,26 +516,6 @@ group_reset_bucket_stats(BucketId) ->
     ets:delete(group_stats, {bucket, BucketId, packet_count}),
     ets:delete(group_stats, {bucket, BucketId, byte_count}),
     ok.
-
-
-%%--------------------------------------------------------------------
-%% @internal
-%% @doc Resets bucket stats starting time to current Unix time (in microsec)
-group_reset_bucket_timers(BucketId) ->
-    %% Set timer of the bucket to current time
-	{Mega, Sec, Micro} = os:timestamp(),
-	NowMicro = (Mega * 1000000 + Sec) * 1000000 + Micro,
-	ets:insert(group_stats, #linc_group_stats{
-				 key   = {bucket_start_time, BucketId},
-				 value = NowMicro
-				}),
-    ok.
-
-%%--------------------------------------------------------------------
-%% @internal
-%% @doc Deletes timer from ETS
-group_delete_bucket_timers(BucketId) ->
-	ets:delete(group_stats, {bucket_start_time, BucketId}).
 
 %%--------------------------------------------------------------------
 %% @internal
@@ -641,15 +617,6 @@ group_delete_2(Id, ProcessedGroups) ->
                                 Id, ets:first(group_table), ordsets:new()),
 
 			%% Delete group timers and bucket timers
-			case group_get(Id) of % can't fail here, or can we?
-				not_found -> ok;
-				Group ->
-					lists:foreach(
-					  fun(Bucket) ->
-							  BucketId = Bucket#linc_bucket.unique_id,
-							  group_delete_bucket_timers(BucketId)
-					  end, Group#linc_group.buckets)
-			end,
 			group_delete_timers(Id),
 
             %% Delete group stats and remove the group
@@ -721,7 +688,6 @@ calculate_total_weight(Buckets) ->
 calculate_refers_to_groups([], Set) ->
     Set;
 calculate_refers_to_groups([B|Buckets], Set) ->
-    %%B1 = B#linc_bucket.bucket,
     Set2 = calculate_refers_to_groups_2(B#ofp_bucket.actions, Set),
     calculate_refers_to_groups(Buckets, Set2).
 

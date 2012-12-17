@@ -140,12 +140,12 @@ send(#ofs_pkt{no_packet_in = true}, controller) ->
     ok;
 send(#ofs_pkt{no_packet_in = false, fields = Fields, packet = Packet,
               table_id = TableId, packet_in_reason = Reason, 
-              packet_in_bytes = Bytes},
+              packet_in_bytes = Bytes, cookie = Cookie},
      controller) ->
     {BufferId,Data} = maybe_buffer(Reason, Packet, Bytes),
     PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
-                              table_id = TableId, match = Fields,
-                              data = Data},
+                              table_id = TableId, cookie = Cookie,
+                              match = Fields, data = Data},
     linc_logic:send_to_controllers(#ofp_message{body = PacketIn}),
     ok;
 send(#ofp_port_status{} = PortStatus, controller) ->

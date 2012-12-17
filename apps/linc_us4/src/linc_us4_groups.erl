@@ -31,7 +31,7 @@
          is_valid/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 
@@ -203,21 +203,21 @@ get_stats(R) ->
         Id -> IdList = [Id]
     end,
     Stats = [group_get_stats(Id) || Id <- IdList],
-    #ofp_group_stats_reply{ stats = lists:flatten(Stats) }.
+    #ofp_group_stats_reply{body = lists:flatten(Stats)}.
 
 %%--------------------------------------------------------------------
--spec get_desc(#ofp_group_desc_stats_request{}) ->
-                      #ofp_group_desc_stats_reply{}.
+-spec get_desc(#ofp_group_desc_request{}) ->
+                      #ofp_group_desc_reply{}.
 get_desc(_R) ->
-    #ofp_group_desc_stats_reply{
-       stats = group_enum_groups()
+    #ofp_group_desc_reply{
+       body = group_enum_groups()
       }.
 
 %%--------------------------------------------------------------------
--spec get_features(#ofp_group_features_stats_request{}) ->
-                          #ofp_group_features_stats_reply{}.
-get_features(#ofp_group_features_stats_request{ flags = _F }) ->
-    #ofp_group_features_stats_reply{
+-spec get_features(#ofp_group_features_request{}) ->
+                          #ofp_group_features_reply{}.
+get_features(#ofp_group_features_request{ flags = _F }) ->
+    #ofp_group_features_reply{
        types = [all, select, indirect, ff],
        capabilities = [select_weight, chaining], %select_liveness, chaining_checks
        max_groups = {?MAX, ?MAX, ?MAX, ?MAX},

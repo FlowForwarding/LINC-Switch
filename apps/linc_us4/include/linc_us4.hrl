@@ -132,7 +132,7 @@
           id                       :: flow_id(),
           priority                 :: priority(),
           match                    :: ofp_match(),
-          cookie                   :: binary(),
+          cookie = <<0:64>>        :: binary(),
           flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
           expires = {infinity,0,0} :: erlang:timestamp(),
@@ -180,6 +180,7 @@
           table_id                    :: integer(),
           no_packet_in = false        :: boolean(),
           packet_in_reason            :: ofp_packet_in_reason(),
-          packet_in_bytes = no_buffer :: ofp_packet_in_bytes()
+          packet_in_bytes = no_buffer :: ofp_packet_in_bytes(),
+          cookie = <<0:64>>           :: binary()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

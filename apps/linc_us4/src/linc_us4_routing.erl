@@ -36,7 +36,8 @@
 %%% Routing functions ----------------------------------------------------------
 %%%
 
--type route_result() :: match | {table_miss, drop | controller}.
+-type route_result() :: {match, integer(), ofs_pkt()}
+                      | {table_miss, drop | controller}.
 
 -spec spawn_route(#ofs_pkt{}) -> pid().
 spawn_route(Pkt) ->
@@ -57,23 +58,26 @@ route(Pkt, TableId) ->
     FlowEntries = linc_us4_flow:get_flow_table(TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
         {match, #flow_entry{id = FlowId,
+                            cookie = Cookie,
                             instructions = Instructions}} ->
-            Pkt2 = Pkt#ofs_pkt{table_id = TableId},
+            Pkt2 = Pkt#ofs_pkt{table_id = TableId, cookie = Cookie},
             case linc_us4_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
                     linc_us4_actions:apply_set(Pkt3),
-                    {match, TableId, FlowId};
+                    {match, FlowId, Pkt3};
                 {{goto, NextTableId}, Pkt3} ->
                     route(Pkt3, NextTableId)
             end;
         {match, table_miss, #flow_entry{id = FlowId,
+                                        cookie = Cookie,
                                         instructions = Instructions}} ->
             Pkt2 = Pkt#ofs_pkt{packet_in_reason = no_match,
+                               cookie = Cookie,
                                table_id = TableId},
             case linc_us4_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
                     linc_us4_actions:apply_set(Pkt3),
-                    {match, TableId, FlowId};
+                    {match, FlowId, Pkt3};
                 {{goto, NextTableId}, Pkt3} ->
                     route(Pkt3, NextTableId)
             end;

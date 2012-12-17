@@ -30,6 +30,8 @@
          get_stats/1,
          get_aggregate_stats/1,
          get_table_stats/1,
+         set_table_config/2,
+         get_table_config/1,
          update_lookup_counter/1,
          update_match_counters/3,
          reset_idle_timeout/2
@@ -299,10 +301,26 @@ get_aggregate_stats(#ofp_aggregate_stats_request{
     #ofp_aggregate_stats_reply{packet_count = PacketCount,
                                byte_count = ByteCount,
                                flow_count = FlowCount}.
+
 %% @doc Get table statistics.
 -spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
 get_table_stats(#ofp_table_stats_request{}) ->
     #ofp_table_stats_reply{body=get_table_stats()}.
+
+-spec set_table_config(TableId :: integer(), linc_table_config()) -> ok.
+set_table_config(TableId, Config) ->
+    true = ets:insert(flow_table_config,
+                      #flow_table_config{id = TableId, config = Config}),
+    ok.
+
+-spec get_table_config(TableId :: integer()) -> linc_table_config().
+get_table_config(TableId) ->
+    case ets:lookup(flow_table_config, TableId) of
+        [#flow_table_config{config = Config}] ->
+            Config;
+        [] ->
+            drop
+    end.
 
 %% @doc Update the table lookup statistics counters for a table.
 -spec update_lookup_counter(TableId :: integer()) -> ok.
@@ -703,7 +721,7 @@ do_validate_instructions(TableId, [Instruction|Instructions], Match) ->
 do_validate_instructions(_TableId, [], _Match) ->
     ok.
 
-validate_instruction(TableId, #ofp_instruction_meter{meter_id=MeterId}, _Match) ->
+validate_instruction(_TableId, #ofp_instruction_meter{meter_id=MeterId}, _Match) ->
     case linc_us4_meter:is_valid(MeterId) of
         true ->
             ok;

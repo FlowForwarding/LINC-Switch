@@ -46,6 +46,7 @@
          ofp_flow_stats_request/2,
          ofp_aggregate_stats_request/2,
          ofp_table_stats_request/2,
+         ofp_table_features_request/2,
          ofp_port_desc_request/2,
          ofp_port_stats_request/2,
          ofp_queue_stats_request/2,
@@ -280,6 +281,10 @@ ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
                                      {reply, ofp_message(), #state{}}.
 ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
     Reply = linc_us4_flow:get_table_stats(Request),
+    {reply, Reply, State}.
+
+ofp_table_features_request(State, #ofp_table_features_request{} = Request) ->
+    Reply = linc_us4_table_features:handle_req(Request),
     {reply, Reply, State}.
 
 %% @doc Get port description.

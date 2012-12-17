@@ -63,7 +63,7 @@ match() ->
     MatchFieldsFlow2 = [{ipv4_dst, ghi}, {ipv4_src, jkl}],
     TableId = 0,
     FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1),
-                   flow_entry(Flow2, MatchFieldsFlow2)],
+                   flow_entry(Flow2, MatchFieldsFlow2, cookie)],
     TableConfig = drop,
     flow_table(TableId, FlowEntries, TableConfig),
 
@@ -72,7 +72,9 @@ match() ->
                       {ipv4_src, jkl},
                       {not_in_match, shouldnt_be_used}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 0, Flow2}, linc_us4_routing:route(Pkt)).
+    ?assertEqual({match, Flow2, Pkt#ofs_pkt{cookie = cookie,
+                                            table_id = TableId}},
+                 linc_us4_routing:route(Pkt)).
 
 match_priority() ->
     Flow1 = 200,
@@ -88,7 +90,8 @@ match_priority() ->
     %% Match on the first flow entry in the first flow table
     MatchFieldsPkt = [{ipv4_dst, abc}, {ipv4_src, def}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 0, Flow1}, linc_us4_routing:route(Pkt)).
+    ?assertEqual({match, Flow1, Pkt#ofs_pkt{table_id = TableId}},
+                 linc_us4_routing:route(Pkt)).
 
 match_empty_matches() ->
     Flow1 = 200,
@@ -104,7 +107,8 @@ match_empty_matches() ->
     %% Match on the second flow entry in the first flow table
     MatchFieldsPkt = [{ipv4_dst, zxc}, {ipv4_src, qwe}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 0, Flow2}, linc_us4_routing:route(Pkt)).
+    ?assertEqual({match, Flow2, Pkt#ofs_pkt{table_id = TableId}},
+                 linc_us4_routing:route(Pkt)).
 
 match_miss() ->
     Flow1 = 200,
@@ -116,14 +120,17 @@ match_miss() ->
     TableId = 0,
     FlowEntries = [flow_entry(Flow1, MatchFieldsFlow1),
                    flow_entry(Flow2, MatchFieldsFlow2),
-                   flow_entry(FlowMiss, MatchFieldsFlow3)],
+                   flow_entry(FlowMiss, MatchFieldsFlow3, cookie)],
     TableConfig = drop,
     flow_table(TableId, FlowEntries, TableConfig),
 
     %% Match on the third flow entry (table-miss) in the first flow table
     MatchFieldsPkt = [{ipv4_dst, not_in_any_flow}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 0, FlowMiss}, linc_us4_routing:route(Pkt)).
+    ?assertEqual({match, FlowMiss, Pkt#ofs_pkt{table_id = TableId,
+                                               cookie = cookie,
+                                               packet_in_reason = no_match}},
+                 linc_us4_routing:route(Pkt)).
 
 match_miss_goto() ->
     Flow1 = 0,
@@ -144,27 +151,31 @@ match_miss_goto() ->
     %% Match on the third flow entry (table-miss) in the first flow table
     MatchFieldsPkt = [{ipv4_dst, abc}, {ipv4_src, def}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 1, Flow2}, linc_us4_routing:route(Pkt)).
+    ?assertEqual({match, Flow2, Pkt#ofs_pkt{table_id = TableId2,
+                                            packet_in_reason = no_match}},
+                 linc_us4_routing:route(Pkt)).
 
 goto() ->
+    Flow1 = 200,
+    Flow2 = 100,
     MatchFieldsFlow1 = [{ipv4_dst, abc}, {ipv4_src, def}],
     MatchFieldsFlow2 = [{ipv4_dst, abc}, {ipv4_src, def}],
-    Table1Id = 0,
-    Table2Id = 1,
-    FlowEntry1a = flow_entry(f1, MatchFieldsFlow1),
-    InstructionGoto = #ofp_instruction_goto_table{table_id = Table2Id},
+    TableId1 = 0,
+    TableId2 = 1,
+    FlowEntry1a = flow_entry(Flow1, MatchFieldsFlow1),
+    InstructionGoto = #ofp_instruction_goto_table{table_id = TableId2},
     FlowEntry1b = FlowEntry1a#flow_entry{instructions = [InstructionGoto]},
     FlowEntries1 = [FlowEntry1b],
-    FlowEntries2 = [flow_entry(f2, MatchFieldsFlow2)],
+    FlowEntries2 = [flow_entry(Flow2, MatchFieldsFlow2)],
     TableConfig = continue,
-    flow_table(Table1Id, FlowEntries1, TableConfig),
-    flow_table(Table2Id, FlowEntries2, TableConfig),
+    flow_table(TableId1, FlowEntries1, TableConfig),
+    flow_table(TableId2, FlowEntries2, TableConfig),
 
     %% Match on the first flow entry in the second flow table    
     MatchFieldsPkt = [{ipv4_dst, abc}, {ipv4_src, def}],
     Pkt = pkt(MatchFieldsPkt),
-    ?assertEqual({match, 1, f2}, linc_us4_routing:route(Pkt)),
-    ok.
+    ?assertEqual({match, Flow2, Pkt#ofs_pkt{table_id = TableId2}},
+                 linc_us4_routing:route(Pkt)).
 
 miss_continue() ->
     [begin
@@ -222,11 +233,14 @@ teardown(State) ->
     unmock(?MOCKED).
 
 flow_entry(FlowId, Matches) ->
+    flow_entry(FlowId, Matches, <<0:64>>).
+
+flow_entry(FlowId, Matches, Cookie) ->
     true = ets:insert(flow_entry_counters,
                       #flow_entry_counter{id = FlowId}),
     MatchFields = [#ofp_field{name = Type, value = Value}
                    || {Type, Value} <- Matches],
-    #flow_entry{id = FlowId, priority = FlowId,
+    #flow_entry{id = FlowId, priority = FlowId, cookie = Cookie,
                 match = #ofp_match{fields = MatchFields}}.
 
 flow_table(TableId, FlowEntries, Config) ->

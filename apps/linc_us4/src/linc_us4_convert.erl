@@ -51,21 +51,23 @@ packet_fields(Packet) ->
 -spec special_header_fields(pkt:packet()) -> [ofp_field()].
 
 special_header_fields(P) ->
-    %% Assume there is ALWAYS ether header, sometimes not at start (due to PBB)
-    %% the next line will crash if the packet doesn't have #ether header
-    {_, Ether} = linc_us4_packet:find(P, ether),
-    VLANFind = linc_us4_packet:find(P, ieee802_1q_tag),
-
-    %% Ether Type, take either VLAN or ether header ether_type
-    case VLANFind of
-        %% no VLAN header - we take eth_type from ether header
+    case linc_us4_packet:find(P, ether) of
         not_found ->
-            [ofp_field(eth_type, <<(Ether#ether.type):16>>)];
-        %% found VLAN header - take eth_type from it, also set other fields
-        {_, VLAN} ->
-            [ofp_field(eth_type, <<(VLAN#ieee802_1q_tag.ether_type):16>>),
-             ofp_field(vlan_vid, VLAN#ieee802_1q_tag.vid),
-             ofp_field(vlan_pcp, <<(VLAN#ieee802_1q_tag.pcp):3>>)]
+            [];
+        {_, Ether} -> 
+            VLANFind = linc_us4_packet:find(P, ieee802_1q_tag),
+            
+            %% Ether Type, take either VLAN or ether header ether_type
+            case VLANFind of
+                %% no VLAN header - we take eth_type from ether header
+                not_found ->
+                    [ofp_field(eth_type, <<(Ether#ether.type):16>>)];
+                %% found VLAN header - take eth_type from it, also set other fields
+                {_, VLAN} ->
+                    [ofp_field(eth_type, <<(VLAN#ieee802_1q_tag.ether_type):16>>),
+                     ofp_field(vlan_vid, VLAN#ieee802_1q_tag.vid),
+                     ofp_field(vlan_pcp, <<(VLAN#ieee802_1q_tag.pcp):3>>)]
+            end
     end.
 
 %% @doc Extracts known fields from different packet header types
@@ -117,7 +119,7 @@ header_fields(#ipv6{next = Proto,
                     daddr = DAddr,
                     class = Class,
                     flow = Flow}) ->
-    <<DSCP:6/bits, ECN:2/bits>> = <<Class:8>>,
+    <<DSCP:6/bits, ECN:2/bits>> = Class,
     [ofp_field(ip_proto, <<Proto:8>>),
      ofp_field(ip_dscp, DSCP),
      ofp_field(ip_ecn, ECN),

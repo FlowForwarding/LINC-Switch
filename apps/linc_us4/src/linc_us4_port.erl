@@ -491,7 +491,7 @@ handle_frame(Frame, PortNo, PortConfig) ->
         true ->
             drop;
         false ->
-            LincPkt = linc_us4_packet_edit:binary_to_record(Frame, PortNo),
+            LincPkt = linc_us4_packet:binary_to_record(Frame, PortNo),
             update_port_rx_counters(PortNo, byte_size(Frame)),
             case lists:member(no_packet_in, PortConfig) of
                 false ->

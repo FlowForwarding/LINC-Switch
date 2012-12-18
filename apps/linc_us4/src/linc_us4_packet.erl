@@ -17,7 +17,7 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Module defines tools and functions for packet manipulations
--module(linc_us4_packet_edit).
+-module(linc_us4_packet).
 
 -export([binary_to_record/2,
          find/2,

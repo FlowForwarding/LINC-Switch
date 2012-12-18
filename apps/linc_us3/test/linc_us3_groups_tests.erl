@@ -51,6 +51,10 @@ add_group() ->
     ?assertEqual(ok, M1),
     ?assertEqual(true, group_exists(1)),
 
+	%% Duplicate group should fail
+    M1Err = call_group_mod(add, 1, all, [B1]),
+    ?assertMatch({error, #ofp_error_msg{}}, M1Err),
+
     linc_us3_groups:update_reference_count(1, 333),
 
     %% Inserting duplicate group should fail

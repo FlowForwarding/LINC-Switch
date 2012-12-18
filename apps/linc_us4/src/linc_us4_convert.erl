@@ -39,51 +39,41 @@ ofp_field(Field, Value) ->
 
 -spec packet_fields([pkt:packet()]) -> [ofp_field()].
 packet_fields(Packet) ->
-    special_header_fields(Packet)
+    eth_and_vlan_fields(Packet)
         ++ lists:flatmap(fun header_fields/1, Packet).
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
-%% @doc Does special handling for unique fields and fields that originate from
-%% more than one header (like eth_type)
--spec special_header_fields(pkt:packet()) -> [ofp_field()].
-
-special_header_fields(P) ->
+%% @doc Does special handling for eth and vlan fields (because of eth_type).
+-spec eth_and_vlan_fields(pkt:packet()) -> [ofp_field()].
+eth_and_vlan_fields(P) ->
     case linc_us4_packet:find(P, ether) of
         not_found ->
             [];
-        {_, Ether} -> 
-            VLANFind = linc_us4_packet:find(P, ieee802_1q_tag),
-            
-            %% Ether Type, take either VLAN or ether header ether_type
-            case VLANFind of
-                %% no VLAN header - we take eth_type from ether header
+        {_, #ether{type = EtherType,
+                   dhost = DHost,
+                   shost = SHost}} ->
+            case linc_us4_packet:find(P, ieee802_1q_tag) of
                 not_found ->
-                    [ofp_field(eth_type, <<(Ether#ether.type):16>>)];
-                %% found VLAN header - take eth_type from it, also set other fields
-                {_, VLAN} ->
-                    [ofp_field(eth_type, <<(VLAN#ieee802_1q_tag.ether_type):16>>),
-                     ofp_field(vlan_vid, VLAN#ieee802_1q_tag.vid),
-                     ofp_field(vlan_pcp, <<(VLAN#ieee802_1q_tag.pcp):3>>)]
+                    [ofp_field(eth_type, <<EtherType:16>>),
+                     ofp_field(eth_dst, DHost),
+                     ofp_field(eth_src, SHost)];
+                {_, #ieee802_1q_tag{ether_type = VlanType,
+                                    vid = VID,
+                                    pcp = PCP}} ->
+                    [ofp_field(eth_dst, DHost),
+                     ofp_field(eth_src, SHost),
+                     ofp_field(eth_type, <<VlanType:16>>),
+                     ofp_field(vlan_vid, VID),
+                     ofp_field(vlan_pcp, <<PCP:3>>)]
             end
     end.
 
 %% @doc Extracts known fields from different packet header types
--spec header_fields(pkt:packet()) -> [ofp_field()].
-header_fields(#ether{type = _Type,
-                     dhost = DHost,
-                     shost = SHost}) ->
-    %% calculate eth_type separately in special_packet_fields()
-    %% ofp_field(eth_type, <<Type:16>>),
-    [ofp_field(eth_dst, DHost),
-     ofp_field(eth_src, SHost)];
-%% calculate VLAN separately in special_packet_fields()
-%% header_fields(#ieee802_1q_tag{vid = VID,
-%%                               pcp = PCP}) ->
-%%     [ofp_field(vlan_vid, VID),
-%%      ofp_field(vlan_pcp, <<PCP:3>>)];
+header_fields(#pbb{i_sid = ISID}) ->
+    [ofp_field(pbb_isid, <<ISID:24>>)];
 header_fields(#arp{op = Op,
                    sip = SPA,
                    tip = TPA,
@@ -101,9 +91,11 @@ header_fields(#sctp{sport = Src,
 header_fields(#mpls_tag{stack = [#mpls_stack_entry{label = L,
                                                    qos = QOS,
                                                    pri = PRI,
-                                                   ecn = ECN}]}) ->
+                                                   ecn = ECN,
+                                                   bottom = BOS} | _Rest]}) ->
     [ofp_field(mpls_label, L),
-     ofp_field(mpls_tc, <<QOS:1, PRI:1, ECN:1>>)];
+     ofp_field(mpls_tc, <<QOS:1, PRI:1, ECN:1>>),
+     ofp_field(mpls_bos, <<BOS:1>>)];
 header_fields(#ipv4{p = Proto,
                     dscp = DSCP,
                     ecn = ECN,

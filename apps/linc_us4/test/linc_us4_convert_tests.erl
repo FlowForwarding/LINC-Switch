@@ -34,7 +34,9 @@ convert_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Convert pkt:packet() to ofp_field(): Ethernet", fun ether/0},
+     [{"Convert pkt:packet() to ofp_field(): PBB", fun pbb/0},
+      {"Convert pkt:packet() to ofp_field(): Ethernet", fun ether/0},
+      {"Convert pkt:packet() to ofp_field(): VLAN", fun vlan/0},
       {"Convert pkt:packet() to ofp_field(): ARP", fun arp/0},
       {"Convert pkt:packet() to ofp_field(): SCTP", fun sctp/0},
       {"Convert pkt:packet() to ofp_field(): MPLS", fun mpls/0},
@@ -48,11 +50,24 @@ convert_test_() ->
       {"Convert pkt:packet() to ofp_field(): unknown", fun unknown/0}
      ]}.
 
+pbb() ->
+    Packet = [#pbb{i_sid = 100}],
+    check_packet(Packet, [{pbb_isid, <<100:24>>}]).
+
 ether() ->
     Packet = [#ether{dhost = dhost, shost = shost, type = 1}],
     check_packet(Packet, [{eth_type, <<1:16>>},
                           {eth_dst, dhost},
                           {eth_src, shost}]).
+
+vlan() ->
+    Packet = [#ether{dhost = dhost, shost = shost, type = 1},
+              #ieee802_1q_tag{vid = 1, pcp = 2, ether_type = 2}],
+    check_packet(Packet, [{eth_dst, dhost},
+                          {eth_src, shost},
+                          {eth_type, <<2:16>>},
+                          {vlan_vid, 1},
+                          {vlan_pcp, <<2:3>>}]).
 
 arp() ->
     Packet = [#arp{op = 1, sip = sip, tip = tip, sha = sha, tha = tha}],
@@ -72,10 +87,12 @@ mpls() ->
                                qos = 1, pri = 1, ecn = 1,
                                bottom = 0, ttl = 100},
     Label2 = #mpls_stack_entry{label = l2,
-                               qos = 1, pri = 1, ecn = 1,
-                               bottom = 1, ttl = 100},
-    Packet = [#ether{}, #mpls_tag{stack = [Label1, Label2]}],
-    Fields = linc_us4_convert:packet_fields(Packet).
+                               qos = 0, pri = 0, ecn = 0,
+                               bottom = 1, ttl = 200},
+    Packet = [#mpls_tag{stack = [Label1, Label2]}],
+    check_packet(Packet, [{mpls_label, l1},
+                          {mpls_tc, <<1:1, 1:1, 1:1>>},
+                          {mpls_bos, <<0:1>>}]).
 
 ipv4() ->
     Packet = [#ipv4{p = 1, dscp = 2, ecn = 1, saddr = saddr, daddr = daddr}],

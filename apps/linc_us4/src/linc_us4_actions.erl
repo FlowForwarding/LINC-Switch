@@ -251,6 +251,56 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
 
 %%------------------------------------------------------------------------------
 %% Optional action
+%% Push a new PBB service instance header (I-TAG TCI) onto the packet.
+%% The Ethertype is used as the Ethertype for the tag.
+%% Only Ethertype 0x88E7 should be used.
+apply_list(#ofs_pkt{packet = P} = Pkt,
+           [#ofp_action_push_pbb{ethertype = 16#88e7} | Rest],
+           SideEffects) ->
+    %% If there was PBB tag, copy isid from it
+    {ISID, IsPreviousPBB} = case linc_us4_packet:find(P, pbb) of
+                                not_found ->
+                                    {<<1:24>>, false};
+                                {_, PreviousPBB} ->
+                                    {PreviousPBB#pbb.i_sid, true}
+                            end,
+    %% If there was VLAN tag, copy PCP from it
+    IPCP = case linc_us4_packet:find(P, ieee802_1q_tag) of
+               not_found ->
+                   0;
+               {_, PreviousVLAN} ->
+                   PreviousVLAN#ieee802_1q_tag.pcp
+           end,
+    PBB = #pbb{b_pcp = 0,
+               b_dei = 0,
+               i_pcp = IPCP,
+               i_dei = 0,
+               i_uca = 0,
+               i_sid = ISID},
+    NewPacket = case IsPreviousPBB of
+                    true ->
+                        [#pbb{} | PacketRest] = P,
+                        [PBB | PacketRest];
+                    false ->
+                        [PBB | P]
+                end,
+    apply_list(Pkt#ofs_pkt{packet = NewPacket}, Rest, SideEffects);
+
+%%------------------------------------------------------------------------------
+%% Optional action
+%% Pop the outermost PBB service instance header (I-TAG TCI) from the packet.
+apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_pbb{} | Rest],
+           SideEffects) ->
+    P2 = case P of
+             [#pbb{} | PRest] ->
+                 PRest;
+             _ ->
+                 P
+         end,
+    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+
+%%------------------------------------------------------------------------------
+%% Optional action
 %% Push a new VLAN header onto the packet.
 %% Only Ethertype 0x8100 and 0x88A8 should be used (this is not checked)
 apply_list(#ofs_pkt{packet = P} = Pkt,

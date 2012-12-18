@@ -88,6 +88,8 @@ actions_test_() ->
       {"Action Set-Field", fun action_set_field/0},
       {"Action Set-Queue", fun action_set_queue/0},
 
+      {"Action Push-Tag: PBB", fun action_push_tag_pbb/0},
+      {"Action Pop-Tag: PBB", fun action_pop_tag_pbb/0},
       {"Action Push-Tag: VLAN", fun action_push_tag_vlan/0},
       {"Action Pop-Tag: VLAN", fun action_pop_tag_vlan/0},
       {"Action Push-Tag: MPLS", fun action_push_tag_mpls/0},
@@ -160,6 +162,37 @@ action_set_queue() ->
     {NewPkt, ?NO_SIDE_EFFECTS} =
         linc_us4_actions:apply_list(Pkt, [Action]),
     ?assertEqual(?NEW_VAL, NewPkt#ofs_pkt.queue_id).
+
+action_push_tag_pbb() ->
+    Ethertype = 16#88e7,
+    Action = #ofp_action_push_pbb{ethertype = Ethertype},
+
+    %% No previous PBB nor VLAN
+    Packet1 = [],
+    NewPacket1 = [#pbb{i_sid = <<1:24>>}],
+    check_action(Action, Packet1, NewPacket1),
+
+    %% Previous PBB exists
+    Packet2 = [#pbb{i_sid = <<100:24>>}],
+    NewPacket2 = [#pbb{i_sid = <<100:24>>}],
+    check_action(Action, Packet2, NewPacket2),
+
+    %% Previous VLAN exists
+    Packet3 = [#ieee802_1q_tag{pcp = 100}],
+    NewPacket3 = [#pbb{i_pcp = 100, i_sid = <<1:24>>},
+                  #ieee802_1q_tag{pcp = 100}],
+    check_action(Action, Packet3, NewPacket3).
+
+action_pop_tag_pbb() ->
+    Action = #ofp_action_pop_pbb{},
+
+    Packet1 = [#ether{}],
+    NewPacket1 = [#ether{}],
+    check_action(Action, Packet1, NewPacket1),
+
+    Packet2 = [#pbb{}],
+    NewPacket2 = [],
+    check_action(Action, Packet2, NewPacket2).
 
 action_push_tag_vlan() ->
     %% No initial VLAN

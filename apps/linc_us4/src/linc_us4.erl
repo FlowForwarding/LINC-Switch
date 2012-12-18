@@ -63,7 +63,7 @@
 -include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 
--record(state, {flow_state}).
+-record(state, {flow_state, buffer_state}).
 -type state() :: #state{}.
 
 %%%-----------------------------------------------------------------------------
@@ -100,20 +100,23 @@ stop_ofconfig() ->
 %% @doc Start the switch.
 -spec start(any()) -> {ok, state()}.
 start(_Opts) ->
+    BufferState = linc_buffer:initialize(),
     linc_us4_sup:start_backend_sup(),
     start_ofconfig(),
     linc_us4_groups:create(),
     FlowState = linc_us4_flow:initialize(),
     linc_us4_port:initialize(),
-    {ok, 4, #state{flow_state = FlowState}}.
+    {ok, 4, #state{flow_state = FlowState,
+                   buffer_state = BufferState}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
-stop(#state{flow_state = FlowState}) ->
+stop(#state{flow_state = FlowState, buffer_state = BufferState}) ->
     stop_ofconfig(),
     linc_us4_port:terminate(),
     linc_us4_flow:terminate(FlowState),
     linc_us4_groups:destroy(),
+    linc_buffer:terminate(BufferState),
     ok.
 
 -spec handle_message(ofp_message_body(), state()) ->

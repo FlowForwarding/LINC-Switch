@@ -78,9 +78,9 @@ port_mod() ->
     ok.
 
 is_valid() ->
-    ?assertEqual(true, linc_us4_port:is_valid(any)),
-    ?assertEqual(true, linc_us4_port:is_valid(1)),
-    ?assertEqual(false, linc_us4_port:is_valid(999)).
+    ?assertEqual(true, linc_us3_port:is_valid(any)),
+    ?assertEqual(true, linc_us3_port:is_valid(1)),
+    ?assertEqual(false, linc_us3_port:is_valid(999)).
 
 send_in_port() ->
     Pkt = pkt(1),

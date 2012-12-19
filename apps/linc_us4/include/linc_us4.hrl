@@ -39,8 +39,8 @@
                             pop_vlan,
                             push_mpls,
                             pop_mpls,
-                            %% push_pbb,
-                            %% pop_pbb,
+                            push_pbb,
+                            pop_pbb,
                             set_field
                            ]).
 -define(SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_ACTIONS).
@@ -80,7 +80,12 @@
                                  ipv6_nd_sll,
                                  ipv6_nd_tll,
                                  mpls_label,
-                                 mpls_tc]).
+                                 mpls_tc,
+                                 mpls_bos,
+                                 pbb_isid
+                                 %% tunnel_id
+                                 %% ext_hdr
+                                ]).
 -define(SUPPORTED_WILDCARDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_WRITE_SETFIELDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
@@ -88,12 +93,14 @@
                                  write_metadata,
                                  write_actions,
                                  apply_actions,
-                                 clear_actions]).
+                                 clear_actions,
+                                 meter]).
 -define(SUPPORTED_RESERVED_PORTS, [all,
                                    controller,
                                    table,
                                    inport,
                                    any
+                                   %% local
                                    %% normal
                                    %% flood
                                   ]).

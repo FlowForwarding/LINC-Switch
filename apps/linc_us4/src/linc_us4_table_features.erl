@@ -389,5 +389,4 @@ all_supported(Items, SupportedItems) ->
     lists:all(fun (I) -> lists:member(I, SupportedItems) end, Items).
 
 all_mandatory_present(Found, Required) ->
-    io:format("found ~p~nrequired ~p~n",[Found, Required]),
     lists:sort(Found) == lists:sort(Required).

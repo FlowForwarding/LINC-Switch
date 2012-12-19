@@ -43,27 +43,40 @@ apply(Pkt, Instructions) ->
              TerminationType :: instructions_apply_result())
             -> instructions_apply_output().
 apply2(Pkt,
+       [#ofp_instruction_meter{meter_id = MeterId} | InstructionsRest],
+       stop) ->
+    %% From Open Flow spec 1.3.1 page 15:
+    %% Direct packet to the specified meter.
+    %% As the result of the metering, the packet may be dropped.
+    {NewPkt, TerminationType}  = case linc_us4_meter:apply(MeterId, Pkt) of
+                                     drop ->
+                                         {Pkt, drop};
+                                     {continue, P} ->
+                                         {P, stop}
+                                 end,
+    apply2(NewPkt, InstructionsRest, TerminationType);
+apply2(Pkt,
        [#ofp_instruction_apply_actions{actions = Actions} | InstructionsRest],
        stop) ->
-    %% From Open Flow spec 1.2 page 14:
+    %% From Open Flow spec 1.3.1 page 15:
     %% Applies the specific action(s) immediately, without any change to the
     %% Action Set. This instruction may be used to modify the packet between
     %% two tables or to execute multiple actions of the same type.
-    %% The actions are specified as an action list (see 5.8).
+    %% The actions are specified as an action list (see 5.11).
     NewPkt = linc_us4_actions:apply_list(Pkt, Actions),
     apply2(NewPkt, InstructionsRest, stop);
 apply2(Pkt,
        [#ofp_instruction_clear_actions{} | InstructionsRest],
        stop) ->
-    %% From Open Flow spec 1.2 page 14:
+    %% From Open Flow spec 1.3.1 page 15:
     %% Clears all the actions in the action set immediately.
     apply2(Pkt#ofs_pkt{actions = []},
            InstructionsRest, stop);
 apply2(#ofs_pkt{actions = OldActions} = Pkt,
        [#ofp_instruction_write_actions{actions = Actions} | InstructionsRest],
        stop) ->
-    %% From Open Flow spec 1.2 page 14:
-    %% Merges the specified action(s) into the current action set (see 5.7).
+    %% From Open Flow spec 1.3.1 page 15:
+    %% Merges the specified action(s) into the current action set (see 5.10).
     %% If an action of the given type exists in the current set, overwrite it,
     %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
@@ -74,7 +87,7 @@ apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
        [#ofp_instruction_write_metadata{metadata = NewMetadata,
                                         metadata_mask = Mask} | InstructionsRest],
        stop) ->
-    %% From Open Flow spec 1.2 page 14:
+    %% From Open Flow spec 1.3.1 page 15:
     %% Writes the masked metadata value into the metadata field. The mask
     %% specifies which bits of the metadata register should be modified
     %% (i.e. new metadata = old metadata &  ̃mask | value & mask).
@@ -84,11 +97,13 @@ apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
 apply2(Pkt,
        [#ofp_instruction_goto_table{table_id = Id} | InstructionsRest],
        stop) ->
-    %% From Open Flow spec 1.2 page 14:
+    %% From Open Flow spec 1.3.1 page 17:
     %% Indicates the next table in the processing pipeline. The table-id must
     %% be greater than the current table-id. The flows of last table of the
     %% pipeline can not include this instruction (see 5.1).
     apply2(Pkt, InstructionsRest, {goto, Id});
+apply2(Pkt, _Instructions, drop) ->
+    {stop, Pkt};
 apply2(Pkt, [], stop) ->
     {stop, Pkt};
 apply2(Pkt, [], {goto, Id}) ->

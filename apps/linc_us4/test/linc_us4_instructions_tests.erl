@@ -27,7 +27,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us4.hrl").
 
--define(MOCKED, [actions]).
+-define(MOCKED, [actions, meter]).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -35,12 +35,30 @@ instruction_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Apply-Actions", fun apply_actions/0},
+     [{"Meter", fun meter/0},
+      {"Apply-Actions", fun apply_actions/0},
       {"Clear-Actions", fun clear_actions/0},
       {"Write-Actions", fun write_actions/0},
       {"Write-Metadata", fun write_metadata/0},
       {"Goto-Table", fun goto_table/0},
       {"Empty instruction list", fun empty/0}]}.
+
+meter() ->
+    Actions = [dummy, actions],
+    Packet = #ofs_pkt{actions = Actions},
+    ClearActions = #ofp_instruction_clear_actions{},
+
+    %% Drop packet after metering
+    Meter1 = #ofp_instruction_meter{meter_id = 1},
+    Instructions1 = [Meter1, ClearActions],
+    {_, NewPacket1} = linc_us4_instructions:apply(Packet, Instructions1),
+    ?assertEqual(Packet, NewPacket1),
+    
+    %% Continue with packet after metering
+    Meter2 = #ofp_instruction_meter{meter_id = 2},
+    Instructions2 = [Meter2, ClearActions],
+    {_, NewPacket2} = linc_us4_instructions:apply(Packet, Instructions2),
+    ?assertEqual([], NewPacket2#ofs_pkt.actions).
 
 apply_actions() ->
     ApplyActions = #ofp_instruction_apply_actions{actions = []},

@@ -188,6 +188,6 @@
           no_packet_in = false        :: boolean(),
           packet_in_reason            :: ofp_packet_in_reason(),
           packet_in_bytes = no_buffer :: ofp_packet_in_bytes(),
-          cookie = <<0:64>>           :: binary()
+          cookie = <<-1:64>>          :: binary()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

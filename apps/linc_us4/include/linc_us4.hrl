@@ -47,7 +47,7 @@
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port,
                                  %% in_phy_port,
-                                 %% metadata,
+                                 metadata,
                                  eth_dst,
                                  eth_src,
                                  eth_type,
@@ -131,7 +131,7 @@
                            | controller.
 
 -record(flow_table_config, {
-          id :: non_neg_integer(),
+          id            :: non_neg_integer(),
           config = drop :: linc_table_config()
          }).
 
@@ -178,9 +178,8 @@
 
 -record(ofs_pkt, {
           in_port                     :: ofp_port_no(),
-          fields = []                 :: ofp_match(),
+          fields = #ofp_match{}       :: ofp_match(),
           actions = []                :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>>         :: binary(),
           packet = []                 :: pkt:packet(),
           size                        :: integer(),
           queue_id = default          :: integer() | default,

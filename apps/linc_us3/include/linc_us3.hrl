@@ -43,15 +43,13 @@
                             pop_vlan,
                             push_mpls,
                             pop_mpls,
-                            %% push_pbb,
-                            %% pop_pbb,
                             set_field
                            ]).
 -define(SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port,
                                  %% in_phy_port,
-                                 %% metadata,
+                                 metadata,
                                  eth_dst,
                                  eth_src,
                                  eth_type,
@@ -124,15 +122,15 @@
 -type flow_id() :: {priority(),reference()}.
 
 -record(flow_table_config, {
-          id                 :: non_neg_integer(),
-          config = controller:: ofp_table_config()
+          id                  :: non_neg_integer(),
+          config = controller :: ofp_table_config()
          }).
 
 -record(flow_entry, {
           id                       :: flow_id(),
           priority                 :: priority(),
-          match                    :: ofp_match(),
-          cookie                   :: binary(),
+          match = #ofp_match{}     :: ofp_match(),
+          cookie = <<0:64>>        :: binary(),
           flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
           expires = {infinity,0,0} :: erlang:timestamp(),
@@ -170,16 +168,15 @@
          }).
 
 -record(ofs_pkt, {
-          in_port              :: ofp_port_no(),
-          fields               :: ofp_match(),
-          actions = []         :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>>  :: binary(),
-          packet               :: pkt:packet(),
-          size                 :: integer(),
-          queue_id = default   :: integer() | default,
-          table_id             :: integer(),
-          no_packet_in = false :: boolean(),
-          packet_in_reason     :: ofp_packet_in_reason(),
-          packet_in_bytes      :: ofp_packet_in_bytes()
+          in_port                     :: ofp_port_no(),
+          fields = #ofp_match{}       :: ofp_match(),
+          actions = []                :: ordsets:ordset(ofp_action()),
+          packet = []                 :: pkt:packet(),
+          size                        :: integer(),
+          queue_id = default          :: integer() | default,
+          table_id                    :: integer(),
+          no_packet_in = false        :: boolean(),
+          packet_in_reason            :: ofp_packet_in_reason(),
+          packet_in_bytes = no_buffer :: ofp_packet_in_bytes()
          }).
 -type ofs_pkt() :: #ofs_pkt{}.

@@ -54,8 +54,7 @@ apply2(Pkt,
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Clears all the actions in the action set immediately.
-    apply2(Pkt#ofs_pkt{actions = []},
-           InstructionsRest, stop);
+    apply2(Pkt#ofs_pkt{actions = []}, InstructionsRest, stop);
 apply2(#ofs_pkt{actions = OldActions} = Pkt,
        [#ofp_instruction_write_actions{actions = Actions} | InstructionsRest],
        stop) ->
@@ -65,9 +64,8 @@ apply2(#ofs_pkt{actions = OldActions} = Pkt,
     %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
-    apply2(Pkt#ofs_pkt{actions = NewActions},
-           InstructionsRest, stop);
-apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
+    apply2(Pkt#ofs_pkt{actions = NewActions}, InstructionsRest, stop);
+apply2(#ofs_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
        [#ofp_instruction_write_metadata{metadata = NewMetadata,
                                         metadata_mask = Mask} | InstructionsRest],
        stop) ->
@@ -75,8 +73,15 @@ apply2(#ofs_pkt{metadata = OldMetadata} = Pkt,
     %% Writes the masked metadata value into the metadata field. The mask
     %% specifies which bits of the metadata register should be modified
     %% (i.e. new metadata = old metadata &  ̃mask | value & mask).
-    MaskedMetadata = apply_mask(OldMetadata, NewMetadata, Mask, []),
-    apply2(Pkt#ofs_pkt{metadata = MaskedMetadata},
+    Metadata = case lists:keyfind(metadata, #ofp_field.name, Fields) of
+                   false ->
+                       NewMetadata;
+                   #ofp_field{value = OldMetadata} ->
+                       apply_mask(OldMetadata, NewMetadata, Mask, [])
+               end,
+    MetadataField = #ofp_field{name = metadata, value = Metadata},
+    Fields2 = lists:keystore(metadata, #ofp_field.name, Fields, MetadataField),
+    apply2(Pkt#ofs_pkt{fields = #ofp_match{fields = Fields2}},
            InstructionsRest, stop);
 apply2(Pkt,
        [#ofp_instruction_goto_table{table_id = Id} | InstructionsRest],

@@ -126,7 +126,7 @@ modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
     case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
         ok ->
             case linc_buffer:get_buffer(BufferId) of
-                #ofs_pkt{}=OfsPkt ->
+                #linc_pkt{}=OfsPkt ->
                     linc_us3_actions:apply_list(OfsPkt,
                                                 [#ofp_action_output{port=table}]);
                 not_found ->

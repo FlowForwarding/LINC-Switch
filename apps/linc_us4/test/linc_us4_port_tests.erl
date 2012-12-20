@@ -249,10 +249,10 @@ teardown(_) ->
     unmock(?MOCKED).
 
 pkt() ->
-    #ofs_pkt{packet = [<<>>]}.
+    #linc_pkt{packet = [<<>>]}.
 
 pkt(Port) ->
-    #ofs_pkt{in_port = Port, packet = [<<>>]}.
+    #linc_pkt{in_port = Port, packet = [<<>>]}.
 
 pkt(controller=Port,Reason) ->
-    #ofs_pkt{in_port = Port, packet_in_reason=Reason, packet = [<<>>]}.
+    #linc_pkt{in_port = Port, packet_in_reason=Reason, packet = [<<>>]}.

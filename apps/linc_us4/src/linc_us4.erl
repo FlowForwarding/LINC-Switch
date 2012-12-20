@@ -209,7 +209,7 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
 ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
                                       actions = Actions}) ->
     case linc_buffer:get_buffer(BufferId) of
-        #ofs_pkt{}=OfsPkt ->
+        #linc_pkt{}=OfsPkt ->
             linc_us4_actions:apply_list(OfsPkt, Actions);
         not_found ->
             %% Buffer has been dropped, ignore

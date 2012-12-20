@@ -74,7 +74,7 @@ add_group() ->
     %% check that counters changed
     G2Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
-    ?assertEqual(Pkt2#ofs_pkt.size, stats_get(G2Stats, 1, byte_count)).
+    ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
 %%--------------------------------------------------------------------
 modify_group() ->
@@ -259,7 +259,7 @@ test_packet_vlan() ->
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205>>],
-    #ofs_pkt{
+    #linc_pkt{
        in_port = 1,
        packet = P,
        size = 122

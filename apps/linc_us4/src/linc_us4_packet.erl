@@ -35,7 +35,7 @@
 %%------------------------------------------------------------------------------
 %% @doc Parse binary representation of OF-Protocol packets and convert them
 %% to record representation.
--spec binary_to_record(binary(), ofp_port_no()) -> #ofs_pkt{}.
+-spec binary_to_record(binary(), ofp_port_no()) -> #linc_pkt{}.
 binary_to_record(Binary, Port) ->
     try
         Packet = pkt:decapsulate(Binary),
@@ -48,7 +48,7 @@ binary_to_record(Binary, Port) ->
         Fields = [linc_us4_convert:ofp_field(in_port, <<Port:32>>)
                   || is_integer(Port)]
             ++ linc_us4_convert:packet_fields(Packet),
-        #ofs_pkt{packet = Packet,
+        #linc_pkt{packet = Packet,
                  fields =
                      #ofp_match{fields = Fields},
                  in_port = Port,
@@ -57,7 +57,7 @@ binary_to_record(Binary, Port) ->
         E1:E2 ->
             ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
                    [Binary, E1, E2]),
-            #ofs_pkt{}
+            #linc_pkt{}
     end.
 
 %%------------------------------------------------------------------------------

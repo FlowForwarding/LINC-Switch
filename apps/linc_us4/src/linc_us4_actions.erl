@@ -29,62 +29,62 @@
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
 
--type side_effect() :: {output, Port :: integer(), ofs_pkt()} |
-                       {group, Group :: integer(), ofs_pkt()}.
+-type side_effect() :: {output, Port :: integer(), linc_pkt()} |
+                       {group, Group :: integer(), linc_pkt()}.
 
--type action_list_output() :: {NewPkt :: ofs_pkt(),
+-type action_list_output() :: {NewPkt :: linc_pkt(),
                                SideEffects :: list(side_effect())}.
 
 -type action_set_output() :: side_effect()
-                           | {drop, ofs_pkt()}
+                           | {drop, linc_pkt()}
                            | {error, term()}.
 
 %%------------------------------------------------------------------------------
 %% @doc Applies set of actions to the packet.
--spec apply_set(Pkt :: ofs_pkt()) -> action_set_output().
-apply_set(#ofs_pkt{actions = []} = Pkt) ->
+-spec apply_set(Pkt :: linc_pkt()) -> action_set_output().
+apply_set(#linc_pkt{actions = []} = Pkt) ->
     {drop, Pkt};
-apply_set(#ofs_pkt{actions = [#ofp_action_group{} = Action | _Rest]} = Pkt) ->
+apply_set(#linc_pkt{actions = [#ofp_action_group{} = Action | _Rest]} = Pkt) ->
     %% From Open Flow spec 1.2 page 15:
     %% If both an output action and a group action are specified in
     %% an action set, the output action is *ignored* and the group action
     %% takes precedence.
     {_NewPkt, [SideEffect]} = apply_list(Pkt, [Action]),
     SideEffect;
-apply_set(#ofs_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
+apply_set(#linc_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
-        {#ofs_pkt{}, [SideEffect]} ->
+        {#linc_pkt{}, [SideEffect]} ->
             SideEffect;
         {error, _Reason} = Error ->
             Error
     end;
-apply_set(#ofs_pkt{actions = [Action | Rest]} = Pkt) ->
+apply_set(#linc_pkt{actions = [Action | Rest]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
-        {#ofs_pkt{} = NewPkt, []} ->
-            apply_set(NewPkt#ofs_pkt{actions = Rest});
+        {#linc_pkt{} = NewPkt, []} ->
+            apply_set(NewPkt#linc_pkt{actions = Rest});
         {error, _Reason} = Error ->
             Error
     end.
 
 %%------------------------------------------------------------------------------
 %% @doc Does the routing decisions for the packet according to the action list
--spec apply_list(Pkt :: ofs_pkt(),
+-spec apply_list(Pkt :: linc_pkt(),
                  Actions :: list(ofp_action())) -> action_list_output().
 apply_list(Pkt, Actions) ->
     apply_list(Pkt, Actions, []).
 
--spec apply_list(Pkt :: ofs_pkt(),
+-spec apply_list(Pkt :: linc_pkt(),
                  Actions :: list(ofp_action()),
                  SideEffects :: side_effect()) -> action_list_output().
-apply_list(#ofs_pkt{packet_in_reason = no_match} = Pkt,
+apply_list(#linc_pkt{packet_in_reason = no_match} = Pkt,
            [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
            SideEffects) ->
-    linc_us4_port:send(Pkt#ofs_pkt{packet_in_bytes = MaxLen}, controller),
+    linc_us4_port:send(Pkt#linc_pkt{packet_in_bytes = MaxLen}, controller),
     apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
 apply_list(Pkt,
            [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
            SideEffects) ->
-    linc_us4_port:send(Pkt#ofs_pkt{packet_in_reason = action, 
+    linc_us4_port:send(Pkt#linc_pkt{packet_in_reason = action, 
                                    packet_in_bytes = MaxLen}, controller),
     apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
 apply_list(Pkt, [#ofp_action_output{port = Port} | Rest], SideEffects) ->
@@ -95,13 +95,13 @@ apply_list(Pkt, [#ofp_action_group{group_id = GroupId} | Rest], SideEffects) ->
     apply_list(Pkt, Rest, [{group, GroupId, Pkt} | SideEffects]);
 apply_list(Pkt, [#ofp_action_set_queue{queue_id = QueueId} | Rest],
            SideEffects) ->
-    apply_list(Pkt#ofs_pkt{queue_id = QueueId}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{queue_id = QueueId}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Modifies top tag on MPLS stack to set ttl field to a value
 %% Nothing happens if packet had no MPLS header
-apply_list(#ofs_pkt{packet = P} = Pkt,
+apply_list(#linc_pkt{packet = P} = Pkt,
            [#ofp_action_set_mpls_ttl{mpls_ttl = NewTTL} | Rest], SideEffects) ->
     P2 = linc_us4_packet:find_and_edit(
            P, mpls_tag,
@@ -110,14 +110,14 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
                    NewTag = TopTag#mpls_stack_entry{ ttl = NewTTL },
                    T#mpls_tag{ stack = [NewTag | StackTail] }
            end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Modifies top tag on MPLS stack to have TTL reduced by 1.
 %% Nothing happens if packet had no MPLS header.
 %% If an invalid TTL is found the packet is sent to the controller.
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
            SideEffects) ->
     try 
         P2 = linc_us4_packet:find_and_edit(
@@ -128,10 +128,10 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
                        NewTag = TopTag#mpls_stack_entry{ttl = TTL-1},
                        T#mpls_tag{ stack = [NewTag | StackTail] }
                end),
-        apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects)
+        apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects)
     catch 
         throw:{error,invalid_ttl}=Error ->
-            linc_us4_port:send(Pkt#ofs_pkt{packet_in_reason=invalid_ttl}, controller),
+            linc_us4_port:send(Pkt#linc_pkt{packet_in_reason=invalid_ttl}, controller),
             Error
     end;
 
@@ -139,20 +139,20 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
 %% Optional action
 %% Sets IPv4 or IPv6 packet header TTL to a defined value. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header
-apply_list(#ofs_pkt{packet = P} = Pkt,
+apply_list(#linc_pkt{packet = P} = Pkt,
            [#ofp_action_set_nw_ttl{nw_ttl = NewTTL} | Rest], SideEffects) ->
     P2 = linc_us4_packet:find_and_edit(
            P, ipv4,
            fun(T) ->
                    T#ipv4{ ttl = NewTTL }
            end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Decrements IPv4 or IPv6 packet header TTL by 1. NOTE: ipv6 has no TTL
 %% Nothing happens if packet had no IPv4 header. Clamps values below 0 to 0.
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
            SideEffects) ->
     try
         P2 = linc_us4_packet:find_and_edit(
@@ -162,10 +162,10 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
                   (#ipv4{ ttl = TTL } = T) ->
                        T#ipv4{ ttl = TTL-1 }
                end),
-        apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects)
+        apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects)
     catch
         throw:{error,invalid_ttl}=Error ->
-            linc_us4_port:send(Pkt#ofs_pkt{packet_in_reason=invalid_ttl}, controller),
+            linc_us4_port:send(Pkt#linc_pkt{packet_in_reason=invalid_ttl}, controller),
             Error
     end;
 
@@ -174,7 +174,7 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_dec_nw_ttl{} | Rest],
 %% Optional action
 %% Copy the TTL from next-to-outermost to outermost header with TTL.
 %% Copy can be IPv4-IPv4, MPLS-MPLS, IPv4-MPLS
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
            SideEffects) ->
     Tags = filter_copy_fields(P),
     P2 = case Tags of
@@ -211,13 +211,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
                            T#ipv4{ ttl = NextOutermostTTL }
                    end)
              end,
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
     
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Copy the TTL from outermost to next-to-outermost header with TTL
 %% Copy can be IPv4-IPv4, MPLS-MPLS, MPLS-IPv4
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
            SideEffects) ->
     Tags = filter_copy_fields(P),
     P2 = case Tags of
@@ -247,14 +247,14 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_in{} | Rest],
                            T#ipv4{ ttl = OutermostTTL }
                    end, 1)
          end,
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Push a new PBB service instance header (I-TAG TCI) onto the packet.
 %% The Ethertype is used as the Ethertype for the tag.
 %% Only Ethertype 0x88E7 should be used.
-apply_list(#ofs_pkt{packet = P} = Pkt,
+apply_list(#linc_pkt{packet = P} = Pkt,
            [#ofp_action_push_pbb{ethertype = 16#88e7} | Rest],
            SideEffects) ->
     %% If there was PBB tag, copy isid from it
@@ -284,12 +284,12 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
                     false ->
                         [PBB | P]
                 end,
-    apply_list(Pkt#ofs_pkt{packet = NewPacket}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = NewPacket}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Pop the outermost PBB service instance header (I-TAG TCI) from the packet.
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_pbb{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_pop_pbb{} | Rest],
            SideEffects) ->
     P2 = case P of
              [#pbb{} | PRest] ->
@@ -297,13 +297,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_pbb{} | Rest],
              _ ->
                  P
          end,
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Push a new VLAN header onto the packet.
 %% Only Ethertype 0x8100 and 0x88A8 should be used (this is not checked)
-apply_list(#ofs_pkt{packet = P} = Pkt,
+apply_list(#linc_pkt{packet = P} = Pkt,
            [#ofp_action_push_vlan{ ethertype = EtherType } | Rest],
            SideEffects)
   when EtherType =:= 16#8100; EtherType =:= 16#88A8 ->
@@ -327,28 +327,28 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
                    %% found ether element, return it plus VLAN tag for insertion
                    [T, NewTag]
            end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% pops the outermost VLAN header from the packet.
 %% "The effect of any inconsistent actions on matched packet is undefined"
 %% OF1.3 spec PDF page 32. Nothing happens if there is no VLAN tag.
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_vlan{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_pop_vlan{} | Rest],
            SideEffects)
   when length(P) > 1 ->
     P2 = linc_us4_packet:find_and_edit(
            P, ieee802_1q_tag,
            %% returning 'delete' atom will work for first VLAN tag only
            fun(_) -> 'delete' end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Finds an MPLS tag, and pushes an item in its stack. If there is no MPLS tag,
 %% a new one is added.
 %% Only ethertype 0x8847 or 0x88A8 should be used (OF1.2 spec, p.16)
-apply_list(#ofs_pkt{packet = P} = Pkt,
+apply_list(#linc_pkt{packet = P} = Pkt,
            [#ofp_action_push_mpls{ ethertype = EtherType } | Rest],
            SideEffects)
   when EtherType =:= 16#8847;
@@ -402,13 +402,13 @@ apply_list(#ofs_pkt{packet = P} = Pkt,
                             }
                    end)
     end,
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
 %% inside it is empty. Nothing happens if no MPLS header found.
-apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
+apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
            SideEffects) ->
     P2 = linc_us4_packet:find_and_edit(
            P, mpls_tag,
@@ -423,15 +423,15 @@ apply_list(#ofs_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
                            T#mpls_tag{ stack = RestOfStack }
                    end
            end),
-    apply_list(Pkt#ofs_pkt{packet = P2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Applies all set-field actions to the packet 
-apply_list(#ofs_pkt{packet = Packet} = Pkt,
+apply_list(#linc_pkt{packet = Packet} = Pkt,
            [#ofp_action_set_field{field = F} | Rest], SideEffects) ->
     Packet2 = linc_us4_packet:set_field(F, Packet),
-    apply_list(Pkt#ofs_pkt{packet = Packet2}, Rest, SideEffects);
+    apply_list(Pkt#linc_pkt{packet = Packet2}, Rest, SideEffects);
 
 apply_list(Pkt, [#ofp_action_experimenter{experimenter = _Exp} | Rest],
            SideEffects) ->

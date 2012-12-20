@@ -1,13 +1,12 @@
 -define(PORT_SPEED, 5000). %% Port speed in kbps = 5Mbps
 
 -record(linc_port, {
-          port_no             :: ofp_port_no(),
-          pid                :: pid()
+          port_no :: ofp_port_no(),
+          pid     :: pid()
          }).
 
 %% LINC swich port configuration stored in sys.config
 -type linc_port_config() :: tuple(interface, string()) |
-                            tuple(ofs_port_no, integer()) |
                             tuple(ip, string()).
 
 %% We use '_' as a part of the type to avoid dialyzer warnings when using

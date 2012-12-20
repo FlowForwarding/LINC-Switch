@@ -48,27 +48,27 @@ actions_set_test_() ->
 action_set_precedence() ->
     ActionSet = [#ofp_action_group{group_id = ?INIT_VAL},
                  #ofp_action_output{port = ?INIT_VAL}],
-    Pkt = #ofs_pkt{actions = ActionSet},
+    Pkt = #linc_pkt{actions = ActionSet},
     Output = linc_us4_actions:apply_set(Pkt),
     ?assertEqual({group, ?INIT_VAL, Pkt}, Output).
 
 action_set_drop() ->
     %% No actions in Action Set
     ActionSet1 = [],
-    Pkt1 = #ofs_pkt{actions = ActionSet1},
+    Pkt1 = #linc_pkt{actions = ActionSet1},
     Output1 = linc_us4_actions:apply_set(Pkt1),
     ?assertEqual({drop, Pkt1}, Output1),
 
     %% No Group or Output actions in Action Set
     ActionSet2 = [#ofp_action_set_queue{queue_id = ?NEW_VAL}],
-    Pkt2 = #ofs_pkt{actions = ActionSet2, queue_id = ?INIT_VAL},
-    NewPkt2 = #ofs_pkt{queue_id = ?NEW_VAL},
+    Pkt2 = #linc_pkt{actions = ActionSet2, queue_id = ?INIT_VAL},
+    NewPkt2 = #linc_pkt{queue_id = ?NEW_VAL},
     Output2 = linc_us4_actions:apply_set(Pkt2),
     ?assertEqual({drop, NewPkt2}, Output2).
 
 action_set_output() ->
     ActionSet = [#ofp_action_output{port = ?INIT_VAL}],
-    Pkt = #ofs_pkt{actions = ActionSet},
+    Pkt = #linc_pkt{actions = ActionSet},
     Output = linc_us4_actions:apply_set(Pkt),
     ?assertEqual({output, ?INIT_VAL, Pkt}, Output).
 
@@ -105,7 +105,7 @@ actions_test_() ->
       {"Action Change-TTL: copy TTL inwards", fun action_copy_ttl_inwards/0}]}.
 
 action_output() ->
-    Pkt = #ofs_pkt{},
+    Pkt = #linc_pkt{},
     Port = 500,
     Action = #ofp_action_output{port = Port},
     ?assertEqual({Pkt, [{output, Port, Pkt}]},
@@ -114,17 +114,17 @@ action_output() ->
     ?assertEqual([{Pkt, Port}], check_output_on_ports()).
 
 action_output_controller_action() ->
-    Pkt = #ofs_pkt{},
+    Pkt = #linc_pkt{},
     Port = controller,
     Action = #ofp_action_output{port = Port},
     ?assertEqual({Pkt, [{output, Port, Pkt}]},
                  linc_us4_actions:apply_list(Pkt, [Action])),
     ?assert(check_if_called({linc_us4_port, send, 2})),
-    ?assertEqual([{Pkt#ofs_pkt{packet_in_reason = action}, Port}],
+    ?assertEqual([{Pkt#linc_pkt{packet_in_reason = action}, Port}],
                  check_output_on_ports()).
 
 action_output_controller_nomatch() ->
-    Pkt = #ofs_pkt{packet_in_reason = no_match},
+    Pkt = #linc_pkt{packet_in_reason = no_match},
     Port = controller,
     Action = #ofp_action_output{port = Port},
     ?assertEqual({Pkt, [{output, Port, Pkt}]},
@@ -134,7 +134,7 @@ action_output_controller_nomatch() ->
 
 action_group() ->
     GroupId = 300,
-    Pkt = #ofs_pkt{},
+    Pkt = #linc_pkt{},
     ActionGroup = #ofp_action_group{group_id = GroupId},
     ?assertEqual({Pkt, [{group, GroupId, Pkt}]},
                  linc_us4_actions:apply_list(Pkt, [ActionGroup])),
@@ -157,11 +157,11 @@ action_set_field() ->
      end || {Packet, {Name, Value}, NewPacket} <- [EthType, EthDst, EthSrc]].
 
 action_set_queue() ->
-    Pkt = #ofs_pkt{queue_id = ?INIT_VAL},
+    Pkt = #linc_pkt{queue_id = ?INIT_VAL},
     Action = #ofp_action_set_queue{queue_id = ?NEW_VAL},
     {NewPkt, ?NO_SIDE_EFFECTS} =
         linc_us4_actions:apply_list(Pkt, [Action]),
-    ?assertEqual(?NEW_VAL, NewPkt#ofs_pkt.queue_id).
+    ?assertEqual(?NEW_VAL, NewPkt#linc_pkt.queue_id).
 
 action_push_tag_pbb() ->
     Ethertype = 16#88e7,
@@ -388,11 +388,11 @@ teardown(_) ->
     unmock(?MOCKED).
 
 check_action(Action, Packet, NewPacket) ->
-    Pkt = #ofs_pkt{packet = Packet},
-    NewPkt = #ofs_pkt{packet = NewPacket},
+    Pkt = #linc_pkt{packet = Packet},
+    NewPkt = #linc_pkt{packet = NewPacket},
     {Pkt2, ?NO_SIDE_EFFECTS} = linc_us4_actions:apply_list(Pkt, [Action]),
     ?assertEqual(NewPkt, Pkt2).
 
 check_action_error(Action, Packet, Error) ->
-    Pkt = #ofs_pkt{packet = Packet},
+    Pkt = #linc_pkt{packet = Packet},
     ?assertEqual(Error, linc_us4_actions:apply_list(Pkt, [Action])).

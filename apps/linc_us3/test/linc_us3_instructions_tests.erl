@@ -48,27 +48,43 @@ apply_actions() ->
 clear_actions() ->
     SomeAction = #ofp_action_output{port = 0},
     AnotherAction = #ofp_action_copy_ttl_out{},
-    SomePacket = #ofs_pkt{actions = [SomeAction, AnotherAction]},
+    SomePacket = #linc_pkt{actions = [SomeAction, AnotherAction]},
     ClearActions = #ofp_instruction_clear_actions{},
     {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [ClearActions]),
-    ?assertEqual([], NewPacket#ofs_pkt.actions).
+    ?assertEqual([], NewPacket#linc_pkt.actions).
 
 write_actions() ->
-    SomePacket = #ofs_pkt{actions = []},
+    SomePacket = #linc_pkt{actions = []},
     SomeAction = #ofp_action_output{port = 0},
     WriteActions = #ofp_instruction_write_actions{actions = [SomeAction]},
     {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [WriteActions]),
-    ?assertEqual([SomeAction], NewPacket#ofs_pkt.actions).
+    ?assertEqual([SomeAction], NewPacket#linc_pkt.actions).
 
 write_metadata() ->
-    SomePacket = #ofs_pkt{metadata = <<111:64>>},
-    WriteMetadata = #ofp_instruction_write_metadata{metadata = <<333:64>>,
-                                                    metadata_mask = <<222:64>>},
-    {_, NewPacket} = linc_us3_instructions:apply(SomePacket, [WriteMetadata]),
+    OldMetadata = <<111:64>>,
+    Metadata = <<333:64>>,
+    MetadataMask = <<222:64>>,
+    WriteMetadata = #ofp_instruction_write_metadata{metadata = Metadata,
+                                                    metadata_mask = MetadataMask},
+    %% No metadata in packet before, ignore mask
+    Packet1 = #linc_pkt{fields = #ofp_match{}},
+    {_, NewPacket1} = linc_us3_instructions:apply(Packet1, [WriteMetadata]),
+    Fields1 = NewPacket1#linc_pkt.fields#ofp_match.fields,
+    ?assertMatch(true, lists:keymember(metadata, #ofp_field.name, Fields1)),
+    MetadataField1 = lists:keyfind(metadata, #ofp_field.name, Fields1),
+    ?assertEqual(Metadata, MetadataField1#ofp_field.value),
+    
+    %% Metadata in packet before, apply mask
+    Packet2 = #linc_pkt{fields = #ofp_match{fields = [#ofp_field{name = metadata,
+                                                                value = OldMetadata}]}},
+    {_, NewPacket2} = linc_us3_instructions:apply(Packet2, [WriteMetadata]),
     %% From OpenFlow 1.2 spec, page 14:
     %% new metadata = (old metadata & ~mask) | (value & mask)
-    NewValue = (111 band (bnot 222)) bor (333 band 222),
-    ?assertEqual(<<NewValue:64>>, NewPacket#ofs_pkt.metadata).
+    ExpectedMetadata = (111 band (bnot 222)) bor (333 band 222),
+    Fields2 = NewPacket2#linc_pkt.fields#ofp_match.fields,
+    ?assertMatch(true, lists:keymember(metadata, #ofp_field.name, Fields2)),
+    MetadataField2 = lists:keyfind(metadata, #ofp_field.name, Fields2),
+    ?assertEqual(<<ExpectedMetadata:64>>, MetadataField2#ofp_field.value).
 
 goto_table() ->
     GotoTable = #ofp_instruction_goto_table{table_id = 5},

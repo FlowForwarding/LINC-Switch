@@ -134,7 +134,7 @@ update_flow_count(Id, Incr) ->
     end.
 
 %% @doc Apply meter to a packet.
--spec apply(integer(), #ofs_pkt{}) -> {continue, NewPkt :: #ofs_pkt{}} | drop.
+-spec apply(integer(), #linc_pkt{}) -> {continue, NewPkt :: #linc_pkt{}} | drop.
 apply(Id, Pkt) ->
     case get_meter_pid(Id) of
         undefined ->
@@ -226,7 +226,7 @@ handle_call({apply, Pkt}, _From, #linc_meter{rate_value = Value,
                                              byte_count = Bytes,
                                              install_ts = Then,
                                              bands = Bands} = State) ->
-    PktBytes = Pkt#ofs_pkt.size,
+    PktBytes = Pkt#linc_pkt.size,
     NewPkts = Pkts + 1,
     NewBytes = Bytes + PktBytes,
     Now = now(),
@@ -289,7 +289,7 @@ apply_band(Rate, Pkt, Bands) ->
                         %%
                         {continue, Pkt}
                 end,
-            {R, update_band(N, Bands, Pkt#ofs_pkt.size)}
+            {R, update_band(N, Bands, Pkt#linc_pkt.size)}
     end.
 
 find_the_right_band(Rate, Bands) ->

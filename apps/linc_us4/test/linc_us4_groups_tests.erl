@@ -82,7 +82,7 @@ add_group() ->
 	G2StatsTime = stats_get(G2Stats, 1, time),
     ?assert(G1StatsTime + 1000 =< G2StatsTime),
 
-    ?assertEqual(Pkt2#ofs_pkt.size, stats_get(G2Stats, 1, byte_count)).
+    ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
 %%--------------------------------------------------------------------
 modify_group() ->
@@ -281,7 +281,7 @@ test_packet_vlan() ->
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,205,171,
            205,171,205,171,205,171,205,171,205,171,205,171,205,171,205>>],
-    #ofs_pkt{
+    #linc_pkt{
        in_port = 1,
        packet = P,
        size = 122

@@ -50,6 +50,12 @@ mock([meter | Rest]) ->
                          (_) ->
                              false
                      end),
+    meck:expect(linc_us4_meter, apply,
+                fun(1, _Pkt) ->
+                        drop;
+                   (_, Pkt) ->
+                        {continue, Pkt}
+                end),
     mock(Rest);
 mock([port | Rest]) ->
     ok = meck:new(linc_us4_port),

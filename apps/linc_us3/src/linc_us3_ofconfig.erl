@@ -98,7 +98,6 @@ handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
     {reply, {ok, EncodedConfig}, State};
 handle_call({edit_config, _SessionId, running, {xml, Config}}, _From, State) ->
     Decoded = of_config:decode(Config),
-    io:format("Decoded: ~p~n", [Decoded]),
 
     [Switch0] = Decoded#capable_switch.logical_switches,
     Controllers = Switch0#logical_switch.controllers,

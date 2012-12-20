@@ -115,27 +115,27 @@ modify(#ofp_port_mod{port_no = PortNo} = PortMod) ->
     end.
 
 %% @doc Send OF packet to the OF port.
--spec send(ofs_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
-send(#ofs_pkt{in_port = InPort} = Pkt, in_port) ->
+-spec send(linc_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
+send(#linc_pkt{in_port = InPort} = Pkt, in_port) ->
     send(Pkt, InPort);
-send(#ofs_pkt{} = Pkt, table) ->
+send(#linc_pkt{} = Pkt, table) ->
     linc_us3_routing:spawn_route(Pkt),
     ok;
-send(#ofs_pkt{}, normal) ->
+send(#linc_pkt{}, normal) ->
     %% Normal port represents traditional non-OpenFlow pipeline of the switch
     %% not supprted by LINC
     bad_port;
-send(#ofs_pkt{}, flood) ->
+send(#linc_pkt{}, flood) ->
     %% Flood port represents traditional non-OpenFlow pipeline of the switch
     %% not supprted by LINC
     bad_port;
-send(#ofs_pkt{in_port = InPort} = Pkt, all) ->
+send(#linc_pkt{in_port = InPort} = Pkt, all) ->
     [send(Pkt, PortNo) || PortNo <- get_all_port_no(), PortNo /= InPort],
     ok;
-send(#ofs_pkt{no_packet_in = true}, controller) ->
+send(#linc_pkt{no_packet_in = true}, controller) ->
     %% Drop packets which originate from port with no_packet_in config flag set
     ok;
-send(#ofs_pkt{no_packet_in = false, fields = Fields, packet = Packet,
+send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
               table_id = TableId, packet_in_reason = Reason, 
               packet_in_bytes = Bytes},
      controller) ->
@@ -148,15 +148,15 @@ send(#ofs_pkt{no_packet_in = false, fields = Fields, packet = Packet,
 send(#ofp_port_status{} = PortStatus, controller) ->
     linc_logic:send_to_controllers(#ofp_message{body = PortStatus}),
     ok;
-send(#ofs_pkt{}, local) ->
+send(#linc_pkt{}, local) ->
     ?WARNING("Unsupported port type: local", []),
     bad_port;
-send(#ofs_pkt{}, any) ->
+send(#linc_pkt{}, any) ->
     %% Special value used in some OpenFlow commands when no port is specified
     %% (port wildcarded).
     %% Can not be used as an ingress port nor as an output port.
     bad_port;
-send(#ofs_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
+send(#linc_pkt{} = Pkt, PortNo) when is_integer(PortNo) ->
     case get_port_pid(PortNo) of
         bad_port ->
             bad_port;
@@ -325,7 +325,7 @@ handle_call({set_port_config, NewPortConfig}, _From,
     {reply, ok, State#state{port = NewPort}}.
 
 %% @private
-handle_cast({send, #ofs_pkt{packet = Packet, queue_id = QueueId}},
+handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
             #state{socket = Socket,
                    port = #ofp_port{port_no = PortNo,
                                     config = PortConfig},
@@ -492,7 +492,7 @@ handle_frame(Frame, PortNo, PortConfig) ->
                 false ->
                     linc_us3_routing:spawn_route(LincPkt);
                 true ->
-                    linc_us3_routing:spawn_route(LincPkt#ofs_pkt{no_packet_in = true})
+                    linc_us3_routing:spawn_route(LincPkt#linc_pkt{no_packet_in = true})
             end
     end.
 

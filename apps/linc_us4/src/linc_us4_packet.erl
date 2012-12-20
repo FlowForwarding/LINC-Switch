@@ -35,14 +35,20 @@
 %%------------------------------------------------------------------------------
 %% @doc Parse binary representation of OF-Protocol packets and convert them
 %% to record representation.
--spec binary_to_record(binary(), ofp_port_no()) -> #ofs_pkt{}.
+-spec binary_to_record(binary(), ofp_port_no()) -> #linc_pkt{}.
 binary_to_record(Binary, Port) ->
     try
         Packet = pkt:decapsulate(Binary),
+        %% From OFP 1.3.1 spec, page 78:
+        %% When a packet is received directly on a physical port and not
+        %% processed by a logical port, OFPXMT_OFB_IN_PORT and
+        %% OFPXMT_OFB_IN_PHY_PORT have the same value, the OpenFlow port no
+        %% of this physical port. OFPXMT_OFB_IN_PHY_PORT may be omitted if it
+        %% has the same value as OFPXMT_OFB_IN_PORT.
         Fields = [linc_us4_convert:ofp_field(in_port, <<Port:32>>)
                   || is_integer(Port)]
             ++ linc_us4_convert:packet_fields(Packet),
-        #ofs_pkt{packet = Packet,
+        #linc_pkt{packet = Packet,
                  fields =
                      #ofp_match{fields = Fields},
                  in_port = Port,
@@ -51,8 +57,7 @@ binary_to_record(Binary, Port) ->
         E1:E2 ->
             ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
                    [Binary, E1, E2]),
-            io:format("Stacktrace: ~p~n", [erlang:get_stacktrace()]),
-            #ofs_pkt{}
+            #linc_pkt{}
     end.
 
 %%------------------------------------------------------------------------------

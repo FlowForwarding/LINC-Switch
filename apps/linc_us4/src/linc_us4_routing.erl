@@ -36,15 +36,15 @@
 %%% Routing functions ----------------------------------------------------------
 %%%
 
--type route_result() :: {match, integer(), ofs_pkt()}
+-type route_result() :: {match, integer(), linc_pkt()}
                       | {table_miss, drop | controller}.
 
--spec spawn_route(#ofs_pkt{}) -> pid().
+-spec spawn_route(#linc_pkt{}) -> pid().
 spawn_route(Pkt) ->
     proc_lib:spawn_link(?MODULE, route, [Pkt]).
 
 %% @doc Applies flow instructions from the first flow table to a packet.
--spec route(#ofs_pkt{}) -> route_result().
+-spec route(#linc_pkt{}) -> route_result().
 route(Pkt) ->
     route(Pkt, 0).
 
@@ -53,14 +53,14 @@ route(Pkt) ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Applies flow instructions from the given table to a packet.
--spec route(#ofs_pkt{}, integer()) -> route_result().
+-spec route(#linc_pkt{}, integer()) -> route_result().
 route(Pkt, TableId) ->
     FlowEntries = linc_us4_flow:get_flow_table(TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
         {match, #flow_entry{id = FlowId,
                             cookie = Cookie,
                             instructions = Instructions}} ->
-            Pkt2 = Pkt#ofs_pkt{table_id = TableId, cookie = Cookie},
+            Pkt2 = Pkt#linc_pkt{table_id = TableId, cookie = Cookie},
             case linc_us4_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
                     linc_us4_actions:apply_set(Pkt3),
@@ -71,7 +71,7 @@ route(Pkt, TableId) ->
         {match, table_miss, #flow_entry{id = FlowId,
                                         cookie = Cookie,
                                         instructions = Instructions}} ->
-            Pkt2 = Pkt#ofs_pkt{packet_in_reason = no_match,
+            Pkt2 = Pkt#linc_pkt{packet_in_reason = no_match,
                                cookie = Cookie,
                                table_id = TableId},
             case linc_us4_instructions:apply(Pkt2, Instructions) of
@@ -92,7 +92,7 @@ route(Pkt, TableId) ->
         %% Thus we still support table miss logic where no flow entries are 
         %% present in the flow table.
         table_miss ->
-            Pkt2 = Pkt#ofs_pkt{packet_in_reason = no_match,
+            Pkt2 = Pkt#linc_pkt{packet_in_reason = no_match,
                                table_id = TableId},
             case linc_us4_flow:get_table_config(TableId) of
                 drop ->
@@ -106,7 +106,7 @@ route(Pkt, TableId) ->
             end
     end.
 
--spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
+-spec match_flow_entries(#linc_pkt{}, integer(), list(#flow_entry{}))
                         -> {match, #flow_entry{}} |
                            table_miss.
 match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
@@ -122,7 +122,7 @@ match_flow_entries(_Pkt, TableId, []) ->
     linc_us4_flow:update_lookup_counter(TableId),
     table_miss.
 
--spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+-spec match_flow_entry(#linc_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
 match_flow_entry(_Pkt, _TableId, #flow_entry{priority = 0,
                                            match = #ofp_match{fields = []}}) ->
     {match, table_miss};
@@ -130,14 +130,14 @@ match_flow_entry(_Pkt, _TableId,
                  #flow_entry{match = #ofp_match{fields = []}}) ->
     match;
 match_flow_entry(Pkt, TableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
+    case fields_match(Pkt#linc_pkt.fields#ofp_match.fields,
                       FlowEntry#flow_entry.match#ofp_match.fields) of
         false ->
             nomatch;
         true ->
             linc_us4_flow:update_match_counters(TableId,
                                                 FlowEntry#flow_entry.id,
-                                                Pkt#ofs_pkt.size),
+                                                Pkt#linc_pkt.size),
             match
     end.
 

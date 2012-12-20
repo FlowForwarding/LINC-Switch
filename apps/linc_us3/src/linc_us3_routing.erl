@@ -35,12 +35,12 @@
 
 -type route_result() :: match | {table_miss, drop | controller}.
 
--spec spawn_route(#ofs_pkt{}) -> pid().
+-spec spawn_route(#linc_pkt{}) -> pid().
 spawn_route(Pkt) ->
     proc_lib:spawn_link(?MODULE, route, [Pkt]).
 
 %% @doc Applies flow instructions from the first flow table to a packet.
--spec route(#ofs_pkt{}) -> route_result().
+-spec route(#linc_pkt{}) -> route_result().
 route(Pkt) ->
     route(Pkt, 0).
 
@@ -49,7 +49,7 @@ route(Pkt) ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Applies flow instructions from the given table to a packet.
--spec route(#ofs_pkt{}, integer()) -> route_result().
+-spec route(#linc_pkt{}, integer()) -> route_result().
 route(Pkt, TableId) ->
     FlowEntries = linc_us3_flow:get_flow_table(TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
@@ -75,30 +75,30 @@ route(Pkt, TableId) ->
             end
     end.
 
--spec match_flow_entries(#ofs_pkt{}, integer(), list(#flow_entry{}))
-                        -> {match, #flow_entry{}, #ofs_pkt{}} |
-                           {table_miss, #ofs_pkt{}}.
+-spec match_flow_entries(#linc_pkt{}, integer(), list(#flow_entry{}))
+                        -> {match, #flow_entry{}, #linc_pkt{}} |
+                           {table_miss, #linc_pkt{}}.
 match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
     case match_flow_entry(Pkt, TableId, FlowEntry) of
         nomatch ->
             match_flow_entries(Pkt, TableId, Rest);
         {match, FlowEntry} ->
-            {match, FlowEntry, Pkt#ofs_pkt{table_id = TableId}}
+            {match, FlowEntry, Pkt#linc_pkt{table_id = TableId}}
     end;
 match_flow_entries(Pkt, TableId, []) ->
     linc_us3_flow:update_lookup_counter(TableId),
-    {table_miss, Pkt#ofs_pkt{table_id = TableId, packet_in_reason = no_match}}.
+    {table_miss, Pkt#linc_pkt{table_id = TableId, packet_in_reason = no_match}}.
 
--spec match_flow_entry(#ofs_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
+-spec match_flow_entry(#linc_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
 match_flow_entry(Pkt, TableId, FlowEntry) ->
-    case fields_match(Pkt#ofs_pkt.fields#ofp_match.fields,
+    case fields_match(Pkt#linc_pkt.fields#ofp_match.fields,
                       FlowEntry#flow_entry.match#ofp_match.fields) of
         false ->
             nomatch;
         true ->
             linc_us3_flow:update_match_counters(TableId,
                                                 FlowEntry#flow_entry.id,
-                                                Pkt#ofs_pkt.size),
+                                                Pkt#linc_pkt.size),
             {match, FlowEntry}
     end.
 

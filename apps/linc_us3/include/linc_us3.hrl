@@ -153,12 +153,6 @@
           received_bytes   = 0 :: integer()
          }).
 
--record(linc_flow_table, {
-          id                   :: integer(),
-          entries = []         :: [#flow_entry{}],
-          config  = controller :: ofp_table_config()
-         }).
-
 -record(flow_table_counter, {
           id :: integer(),
           %% Reference count is dynamically generated for the sake of simplicity

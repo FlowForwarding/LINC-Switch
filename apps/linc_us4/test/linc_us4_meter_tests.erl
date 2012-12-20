@@ -277,7 +277,7 @@ apply_none() ->
     ?assertEqual(0, Stats1#ofp_meter_stats.packet_in_count),
     ?assertEqual(0, Stats1#ofp_meter_stats.byte_in_count),
 
-    Pkt = #ofs_pkt{size = 1},
+    Pkt = #linc_pkt{size = 1},
     ?assertEqual({continue, Pkt}, ?MOD:apply(1, Pkt)),
 
     #ofp_meter_stats_reply{body = [Stats2]} = ?MOD:get_stats(1),
@@ -287,7 +287,7 @@ apply_none() ->
 apply_drop() ->
     add(),
 
-    Pkt = #ofs_pkt{size = 30000},
+    Pkt = #linc_pkt{size = 30000},
     ?assertEqual(drop, ?MOD:apply(1, Pkt)),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
@@ -300,7 +300,7 @@ apply_drop() ->
 apply_dscp() ->
     add(),
 
-    Pkt = #ofs_pkt{size = 15000},
+    Pkt = #linc_pkt{size = 15000},
     ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt))),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
@@ -313,7 +313,7 @@ apply_dscp() ->
 apply_experimenter() ->
     add(),
 
-    Pkt = #ofs_pkt{size = 7500},
+    Pkt = #linc_pkt{size = 7500},
     ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt))),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
@@ -331,11 +331,11 @@ apply_pktps() ->
                               bands = Bands},
     ?assertEqual(noreply, ?MOD:modify(MeterMod)),
 
-    Pkt1 = #ofs_pkt{size = 200},
+    Pkt1 = #linc_pkt{size = 200},
     ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt1))),
-    Pkt2 = #ofs_pkt{size = 300},
+    Pkt2 = #linc_pkt{size = 300},
     ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt2))),
-    Pkt3 = #ofs_pkt{size = 500},
+    Pkt3 = #linc_pkt{size = 500},
     ?assertEqual(drop, ?MOD:apply(1, Pkt3)),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
@@ -348,7 +348,7 @@ apply_pktps() ->
 apply_burst_kbps() ->
     add_with_burst(),
 
-    Pkt = #ofs_pkt{size = 10000},
+    Pkt = #linc_pkt{size = 10000},
     ?assertEqual(drop, ?MOD:apply(1, Pkt)),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
@@ -361,11 +361,11 @@ apply_burst_kbps() ->
 apply_burst_pktps() ->
     add_with_burst_pktps(),
 
-    Pkt1 = #ofs_pkt{size = 100},
+    Pkt1 = #linc_pkt{size = 100},
     [?assertEqual(continue, element(1, ?MOD:apply(1, Pkt1)))
      || _ <- lists:seq(1, 30)],
 
-    Pkt31 = #ofs_pkt{size = 200},
+    Pkt31 = #linc_pkt{size = 200},
     ?assertEqual(drop, ?MOD:apply(1, Pkt31)),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),

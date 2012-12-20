@@ -96,8 +96,8 @@ update_reference_count(GroupId, Increment) ->
 %% @doc Applies group GroupId to packet Pkt, result should be list of
 %% packets and ports where they are destined or 'drop' atom. Packet is
 %% cloned if multiple ports are the destination.
--spec apply(GroupId :: integer(), Pkt :: #ofs_pkt{}) -> ok.
-                   %% [{NewPkt :: #ofs_pkt{}, Port :: ofp_port_no() | drop}].
+-spec apply(GroupId :: integer(), Pkt :: #linc_pkt{}) -> ok.
+                   %% [{NewPkt :: #linc_pkt{}, Port :: ofp_port_no() | drop}].
 
 apply(GroupId, Pkt) ->
     case group_get(GroupId) of
@@ -105,7 +105,7 @@ apply(GroupId, Pkt) ->
         Group     ->
             %% update group stats
             group_update_stats(GroupId, packet_count, 1),
-            group_update_stats(GroupId, byte_count, Pkt#ofs_pkt.size),
+            group_update_stats(GroupId, byte_count, Pkt#linc_pkt.size),
 
             apply_group_type_to_packet(Group, Pkt)
     end.
@@ -236,10 +236,10 @@ is_valid(GroupId) ->
 %% @doc Chooses a bucket of actions from list of buckets according to the
 %% group type. Executes actions. Returns [{packet, portnum|'drop'}]
 %% (see 5.4.1 of OF1.2 spec)
--spec apply_group_type_to_packet(#linc_group{}, #ofs_pkt{}) -> ok.
+-spec apply_group_type_to_packet(#linc_group{}, #linc_pkt{}) -> ok.
 
 apply_group_type_to_packet(#linc_group{type = all, buckets = Buckets},
-                           Pkt = #ofs_pkt{}) ->
+                           Pkt = #linc_pkt{}) ->
     %% Required: all: Execute all buckets in the group. This group is used for
     %% multicast or broadcast forwarding. The packet is effectively cloned for
     %% each bucket; one packet is processed for each bucket of the group. If a
@@ -253,7 +253,7 @@ apply_group_type_to_packet(#linc_group{type = all, buckets = Buckets},
     ok;
 
 apply_group_type_to_packet(G = #linc_group{type = select, buckets = Buckets},
-                           Pkt = #ofs_pkt{}) ->
+                           Pkt = #linc_pkt{}) ->
     %% Optional: select: Execute one bucket in the group. Packets are processed
     %% by a single bucket in the group, based on a switch-computed selection
     %% algorithm (e.g. hash on some user-configured tuple or simple round robin).
@@ -273,7 +273,7 @@ apply_group_type_to_packet(G = #linc_group{type = select, buckets = Buckets},
     ok;
 
 apply_group_type_to_packet(#linc_group{type = indirect, buckets = Buckets},
-                           Pkt = #ofs_pkt{})  ->
+                           Pkt = #linc_pkt{})  ->
     %% Required: indirect: Execute the one defined bucket in this group. This
     %% group supports only a single bucket. Allows multiple flows or groups to
     %% point to a common group identifier, supporting faster, more efficient
@@ -284,7 +284,7 @@ apply_group_type_to_packet(#linc_group{type = indirect, buckets = Buckets},
     ok;
 
 apply_group_type_to_packet(#linc_group{type = ff, buckets = Buckets},
-                           Pkt = #ofs_pkt{})  ->
+                           Pkt = #linc_pkt{})  ->
     %% Optional: fast failover: Execute the first live bucket. Each action bucket
     %% is associated with a specific port and/or group that controls its liveness.
     %% The buckets are evaluated in the order defined by the group, and the first
@@ -311,7 +311,7 @@ pick_live_bucket([Bucket | _]) -> Bucket.
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Applies set of commands
--spec apply_bucket(#linc_bucket{}, #ofs_pkt{}) -> ok.
+-spec apply_bucket(#linc_bucket{}, #linc_pkt{}) -> ok.
 
 apply_bucket(#linc_bucket{
                 unique_id = BucketId,
@@ -319,10 +319,10 @@ apply_bucket(#linc_bucket{
                }, Pkt) ->
     %% update bucket stats no matter where packet goes
     group_update_bucket_stats(BucketId, packet_count, 1),
-    group_update_bucket_stats(BucketId, byte_count, Pkt#ofs_pkt.size),
+    group_update_bucket_stats(BucketId, byte_count, Pkt#linc_pkt.size),
 
     %%ActionsSet = ordsets:from_list(Actions),
-    case linc_us3_actions:apply_set(Pkt#ofs_pkt{ actions = Actions }) of
+    case linc_us3_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
         {output, NewPkt, PortNo} ->
             linc_us3_port:send(NewPkt, PortNo),
             ok;

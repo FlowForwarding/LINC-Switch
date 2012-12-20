@@ -21,8 +21,8 @@
 
 -export([handle_req/1]).
 
--include_lib("linc_us4/include/linc_us4.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc_us4/include/linc_us4.hrl").
 
 -define(REQUIRED_PROPERTIES, [instructions,
                               next_tables,
@@ -389,5 +389,4 @@ all_supported(Items, SupportedItems) ->
     lists:all(fun (I) -> lists:member(I, SupportedItems) end, Items).
 
 all_mandatory_present(Found, Required) ->
-    io:format("found ~p~nrequired ~p~n",[Found, Required]),
     lists:sort(Found) == lists:sort(Required).

@@ -321,6 +321,8 @@ instructions(Instructions) ->
 %% @private
 instructions([], Instructions) ->
     lists:reverse(Instructions);
+instructions([meter | Rest], Instructions) ->
+    instructions(Rest, ['meter' | Instructions]);
 instructions([apply_actions | Rest], Instructions) ->
     instructions(Rest, ['apply-actions' | Instructions]);
 instructions([clear_actions | Rest], Instructions) ->

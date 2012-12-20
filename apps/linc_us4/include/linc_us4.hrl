@@ -39,15 +39,15 @@
                             pop_vlan,
                             push_mpls,
                             pop_mpls,
-                            %% push_pbb,
-                            %% pop_pbb,
+                            push_pbb,
+                            pop_pbb,
                             set_field
                            ]).
 -define(SUPPORTED_WRITE_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_APPLY_ACTIONS, ?SUPPORTED_ACTIONS).
 -define(SUPPORTED_MATCH_FIELDS, [in_port,
                                  %% in_phy_port,
-                                 %% metadata,
+                                 metadata,
                                  eth_dst,
                                  eth_src,
                                  eth_type,
@@ -80,7 +80,12 @@
                                  ipv6_nd_sll,
                                  ipv6_nd_tll,
                                  mpls_label,
-                                 mpls_tc]).
+                                 mpls_tc,
+                                 mpls_bos,
+                                 pbb_isid
+                                 %% tunnel_id
+                                 %% ext_hdr
+                                ]).
 -define(SUPPORTED_WILDCARDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_WRITE_SETFIELDS, ?SUPPORTED_MATCH_FIELDS).
 -define(SUPPORTED_APPLY_SETFIELDS, ?SUPPORTED_WRITE_SETFIELDS).
@@ -88,12 +93,14 @@
                                  write_metadata,
                                  write_actions,
                                  apply_actions,
-                                 clear_actions]).
+                                 clear_actions,
+                                 meter]).
 -define(SUPPORTED_RESERVED_PORTS, [all,
                                    controller,
                                    table,
                                    inport,
                                    any
+                                   %% local
                                    %% normal
                                    %% flood
                                   ]).
@@ -124,7 +131,7 @@
                            | controller.
 
 -record(flow_table_config, {
-          id :: non_neg_integer(),
+          id            :: non_neg_integer(),
           config = drop :: linc_table_config()
          }).
 
@@ -155,12 +162,6 @@
           received_bytes   = 0 :: integer()
          }).
 
--record(linc_flow_table, {
-          id :: integer(),
-          entries = [] :: [#flow_entry{}],
-          config :: undefined
-         }).
-
 -record(flow_table_counter, {
           id :: integer(),
           %% Reference count is dynamically generated for the sake of simplicity
@@ -169,11 +170,10 @@
           packet_matches = 0 :: integer()
          }).
 
--record(ofs_pkt, {
+-record(linc_pkt, {
           in_port                     :: ofp_port_no(),
-          fields = []                 :: ofp_match(),
+          fields = #ofp_match{}       :: ofp_match(),
           actions = []                :: ordsets:ordset(ofp_action()),
-          metadata = <<0:64>>         :: binary(),
           packet = []                 :: pkt:packet(),
           size                        :: integer(),
           queue_id = default          :: integer() | default,
@@ -181,6 +181,6 @@
           no_packet_in = false        :: boolean(),
           packet_in_reason            :: ofp_packet_in_reason(),
           packet_in_bytes = no_buffer :: ofp_packet_in_bytes(),
-          cookie = <<0:64>>           :: binary()
+          cookie = <<-1:64>>          :: binary()
          }).
--type ofs_pkt() :: #ofs_pkt{}.
+-type linc_pkt() :: #linc_pkt{}.

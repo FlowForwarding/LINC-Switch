@@ -96,6 +96,7 @@
                                    table,
                                    inport,
                                    any
+                                   %% local
                                    %% normal
                                    %% flood
                                   ]).
@@ -151,12 +152,6 @@
           id                   :: {FlowTableId :: integer(), #flow_entry{}},
           received_packets = 0 :: integer(),
           received_bytes   = 0 :: integer()
-         }).
-
--record(linc_flow_table, {
-          id                   :: integer(),
-          entries = []         :: [#flow_entry{}],
-          config  = controller :: ofp_table_config()
          }).
 
 -record(flow_table_counter, {

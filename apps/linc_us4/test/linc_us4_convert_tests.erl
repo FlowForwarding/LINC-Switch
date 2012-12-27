@@ -42,7 +42,6 @@ convert_test_() ->
       {"Convert pkt:packet() to ofp_field(): MPLS", fun mpls/0},
       {"Convert pkt:packet() to ofp_field(): IPv4", fun ipv4/0},
       {"Convert pkt:packet() to ofp_field(): IPv6", fun ipv6/0},
-      {"Convert pkt:packet() to ofp_field(): IPv6", fun ipv6/0},
       {"Convert pkt:packet() to ofp_field(): ICMPv4", fun icmpv4/0},
       {"Convert pkt:packet() to ofp_field(): ICMPv6", fun icmpv6/0},
       {"Convert pkt:packet() to ofp_field(): TCP", fun tcp/0},
@@ -105,7 +104,7 @@ ipv4() ->
 ipv6() ->
     %% IPv6 packets
     Packet1 = [#ipv6{next = 1, saddr = saddr, daddr = daddr,
-                     class = <<2:6, 1:2>>, flow = 100}],
+                     class = 9, flow = 100}],
     check_packet(Packet1, [{ip_proto, <<1:8>>},
                            {ip_dscp, <<2:6>>},
                            {ip_ecn, <<1:2>>},

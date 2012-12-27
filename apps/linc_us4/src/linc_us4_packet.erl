@@ -24,7 +24,8 @@
          find_and_edit/3,
          find_and_edit_skip/4,
          find_outermost_header/2,
-         set_field/2]).
+         set_field/2,
+         decrement_dscp/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -299,4 +300,8 @@ set_field(#ofp_field{ name = udp_dst, value = Value }, Pkt) ->
     find_and_edit(Pkt, udp, fun(H) -> H#udp{dport = Value} end);
 
 set_field(_, Pkt) ->
+    Pkt.
+
+decrement_dscp(Pkt, _N) ->
+    %% TODO: Implement
     Pkt.

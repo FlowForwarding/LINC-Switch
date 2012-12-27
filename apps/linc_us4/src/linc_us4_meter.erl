@@ -277,10 +277,8 @@ apply_band(Rate, Pkt, Bands) ->
                     #linc_meter_band{type = drop} ->
                         drop;
                     #linc_meter_band{type = dscp_remark,
-                                     prec_level = _Prec} ->
-                        %% TODO:
-                        %% NewPkt = linc_us4_packet:descrement_dscp(Pkt, Prec),
-                        NewPkt = Pkt,
+                                     prec_level = Prec} ->
+                        NewPkt = linc_us4_packet:decrement_dscp(Pkt, Prec),
                         {continue, NewPkt};
                     #linc_meter_band{type = experimenter,
                                      experimenter = _ExperimenterId} ->

@@ -308,7 +308,7 @@ ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
 ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
-    Reply = linc_us4_port:get_queue_stats(Request),
+    Reply = linc_us4_queue:get_stats(Request),
     {reply, Reply, State}.
 
 %% @doc Get group statistics.

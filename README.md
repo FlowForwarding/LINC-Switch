@@ -1,41 +1,31 @@
-LINC - OpenFlow software switch
-===============================
+# LINC - OpenFlow software switch
 
-What is LINC?
-=============
+## What is LINC?
 
-LINC is a pure OpenFlow switch written in Erlang. It's implemented in operating
-system's userspace as an Erlang node. Such approach is not the most efficient
-one, compared to [Open vSwitch][ovs] implemented in Linux kernel, or pure
-hardware implementations of traditional switches, but it gives a lot of
-flexibility and allows quick deployments and tests of new OpenFlow features.
+LINC is a pure OpenFlow software switch written in Erlang. It's implemented in
+operating system's userspace as an Erlang node. Such approach is not the most
+efficient one, but it gives a lot of flexibility and allows quick development
+and testing of new OpenFlow features.
 
-Features
-========
+### Features
 
- * Full support for [OpenFlow Protocol 1.2][ofp3],
- * Backward compatibility with [OpenFlow Protocol 1.0][ofp1],
+ * Support for [OpenFlow Protocol 1.2][ofp3] and [OpenFlow Protocol 1.3][ofp4],
  * Modular architecture, easily extensible.
 
-Planned features
-----------------
+#### Planned features
 
  * Support for [OF-Config 1.0][ofc1] and/or [OF-Config 1.1][ofc2] management
    protocols,
- * Support for [OpenFlow Protocol 1.3][ofp4],
- * Backward compatibility with [OpenFlow Protocol 1.1][ofp2],
  * Alternative switching backends (kernel space or hardware).
 
-How to use it?
-==============
+## How to use it?
 
-Erlang
-------
+### Erlang
 
 To use LINC you need to have an Erlang runtime installed on your
-machine. Required version is **R15B**.
+machine. Required version is **R15B+**.
 
-### Install from sources
+#### Install from sources
 
 To build Erlang from sources first you have to install some required system
 packages.
@@ -57,12 +47,11 @@ When your system environment is ready download the sources from [erlang.org][erl
     % make
     # make install
 
-### Install from binaries
+#### Install from binaries
 
 If you're lazy you can also use [Erlang binary packages][erlang-bin] created by [Erlang Solutions][esl].
 
-LINC
-----
+### LINC
 
 To build the switch you need to install the following additional libraries and
 tools.
@@ -97,27 +86,19 @@ Compile everything:
 
     % make
 
-Generate an Erlang release:
-
-    % make rel
-
 Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` file which looks like this:
 
     {linc, [
         {controllers, [
             {"localhost", 6633}
         ]},
-        {ports, [
-            [{ofs_port_no, 1},
-             {interface, "eth0"},
-             {queues, [{0, [{ofp_queue_prop_min_rate, 0},
-                            {ofp_queue_prop_max_rate, 1000}]}]},
-             {rate, {1, gibps}}],
-            [{ofs_port_no, 2},
-             {interface, "eth1"},
-             {queues, [{0, [{ofp_queue_prop_min_rate, 0},
-                            {ofp_queue_prop_max_rate, 1000}]}]},
-             {rate, {1, gibps}}]
+        {backends_opts, [
+            {linc_us4, [
+                {ports, [
+                    {1, [{interface, "eth0"}]},
+                    {2, [{interface, "eth1"}]}
+                ]}
+             ]}
         ]}
     ]}.
 
@@ -134,14 +115,7 @@ For further instructions on how to use LINC check the
 For detailed explanation on how to setup simple LINC testbed check the
 "[Testbed setup](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/testbed-setup.md)".
 
-Read more...
-============
-
- * About the [gen_switch behaviour](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/gen_switch.md) and how to implement a
-   backend.
-
-Support
-=======
+## Support
 
 If you have any technical questions, problems or suggestions regarding LINC
 please contact <openflow@erlang-solutions.com>.

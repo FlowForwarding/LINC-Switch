@@ -111,7 +111,7 @@ header_fields(#ipv6{next = Proto,
                     daddr = DAddr,
                     class = Class,
                     flow = Flow}) ->
-    <<DSCP:6/bits, ECN:2/bits>> = Class,
+    <<DSCP:6/bits, ECN:2/bits>> = <<Class:8>>,
     [ofp_field(ip_proto, <<Proto:8>>),
      ofp_field(ip_dscp, DSCP),
      ofp_field(ip_ecn, ECN),

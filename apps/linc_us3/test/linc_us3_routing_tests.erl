@@ -191,7 +191,7 @@ flow_table(TableId, FlowEntries, Config) ->
 pkt(Matches) ->
     MatchFields = [#ofp_field{name = Type, value = Value}
                    || {Type, Value} <- Matches],
-    #ofs_pkt{fields = #ofp_match{fields = MatchFields}}.
+    #linc_pkt{fields = #ofp_match{fields = MatchFields}}.
 
 miss_no_flow_entries(TableConfig, MissError) ->
     %% Table miss when no flow entries in the flow table

@@ -209,7 +209,7 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
 ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
                                       actions = Actions}) ->
     case linc_buffer:get_buffer(BufferId) of
-        #ofs_pkt{}=OfsPkt ->
+        #linc_pkt{}=OfsPkt ->
             linc_us4_actions:apply_list(OfsPkt, Actions);
         not_found ->
             %% Buffer has been dropped, ignore
@@ -308,7 +308,7 @@ ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
 ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
-    Reply = linc_us4_port:get_queue_stats(Request),
+    Reply = linc_us4_queue:get_stats(Request),
     {reply, Reply, State}.
 
 %% @doc Get group statistics.

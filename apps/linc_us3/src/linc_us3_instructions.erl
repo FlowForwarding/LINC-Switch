@@ -27,15 +27,15 @@
 -type instructions_apply_result() :: stop | {goto, integer()}.
 
 -type instructions_apply_output() :: {instructions_apply_result(),
-                                      NewPkt :: ofs_pkt()}.
+                                      NewPkt :: linc_pkt()}.
 
--spec apply(Pkt :: ofs_pkt(),
+-spec apply(Pkt :: linc_pkt(),
             Instructions :: list(ofp_instruction()))
            -> instructions_apply_output().
 apply(Pkt, Instructions) ->
     apply2(Pkt, Instructions, stop).
 
--spec apply2(Pkt :: ofs_pkt(),
+-spec apply2(Pkt :: linc_pkt(),
              Instructions :: list(ofp_instruction()),
              TerminationType :: instructions_apply_result())
             -> instructions_apply_output().
@@ -54,8 +54,8 @@ apply2(Pkt,
        stop) ->
     %% From Open Flow spec 1.2 page 14:
     %% Clears all the actions in the action set immediately.
-    apply2(Pkt#ofs_pkt{actions = []}, InstructionsRest, stop);
-apply2(#ofs_pkt{actions = OldActions} = Pkt,
+    apply2(Pkt#linc_pkt{actions = []}, InstructionsRest, stop);
+apply2(#linc_pkt{actions = OldActions} = Pkt,
        [#ofp_instruction_write_actions{actions = Actions} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.2 page 14:
@@ -64,8 +64,8 @@ apply2(#ofs_pkt{actions = OldActions} = Pkt,
     %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
-    apply2(Pkt#ofs_pkt{actions = NewActions}, InstructionsRest, stop);
-apply2(#ofs_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
+    apply2(Pkt#linc_pkt{actions = NewActions}, InstructionsRest, stop);
+apply2(#linc_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
        [#ofp_instruction_write_metadata{metadata = NewMetadata,
                                         metadata_mask = Mask} | InstructionsRest],
        stop) ->
@@ -81,7 +81,7 @@ apply2(#ofs_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
                end,
     MetadataField = #ofp_field{name = metadata, value = Metadata},
     Fields2 = lists:keystore(metadata, #ofp_field.name, Fields, MetadataField),
-    apply2(Pkt#ofs_pkt{fields = #ofp_match{fields = Fields2}},
+    apply2(Pkt#linc_pkt{fields = #ofp_match{fields = Fields2}},
            InstructionsRest, stop);
 apply2(Pkt,
        [#ofp_instruction_goto_table{table_id = Id} | InstructionsRest],

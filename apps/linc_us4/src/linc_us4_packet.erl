@@ -24,7 +24,8 @@
          find_and_edit/3,
          find_and_edit_skip/4,
          find_outermost_header/2,
-         set_field/2]).
+         set_field/2,
+         decrement_dscp/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -35,7 +36,7 @@
 %%------------------------------------------------------------------------------
 %% @doc Parse binary representation of OF-Protocol packets and convert them
 %% to record representation.
--spec binary_to_record(binary(), ofp_port_no()) -> #ofs_pkt{}.
+-spec binary_to_record(binary(), ofp_port_no()) -> #linc_pkt{}.
 binary_to_record(Binary, Port) ->
     try
         Packet = pkt:decapsulate(Binary),
@@ -48,7 +49,7 @@ binary_to_record(Binary, Port) ->
         Fields = [linc_us4_convert:ofp_field(in_port, <<Port:32>>)
                   || is_integer(Port)]
             ++ linc_us4_convert:packet_fields(Packet),
-        #ofs_pkt{packet = Packet,
+        #linc_pkt{packet = Packet,
                  fields =
                      #ofp_match{fields = Fields},
                  in_port = Port,
@@ -57,7 +58,7 @@ binary_to_record(Binary, Port) ->
         E1:E2 ->
             ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",
                    [Binary, E1, E2]),
-            #ofs_pkt{}
+            #linc_pkt{}
     end.
 
 %%------------------------------------------------------------------------------
@@ -299,4 +300,8 @@ set_field(#ofp_field{ name = udp_dst, value = Value }, Pkt) ->
     find_and_edit(Pkt, udp, fun(H) -> H#udp{dport = Value} end);
 
 set_field(_, Pkt) ->
+    Pkt.
+
+decrement_dscp(Pkt, _N) ->
+    %% TODO: Implement
     Pkt.

@@ -96,6 +96,7 @@
                                    table,
                                    inport,
                                    any
+                                   %% local
                                    %% normal
                                    %% flood
                                   ]).
@@ -161,7 +162,7 @@
           packet_matches = 0 :: integer()
          }).
 
--record(ofs_pkt, {
+-record(linc_pkt, {
           in_port                     :: ofp_port_no(),
           fields = #ofp_match{}       :: ofp_match(),
           actions = []                :: ordsets:ordset(ofp_action()),
@@ -173,4 +174,4 @@
           packet_in_reason            :: ofp_packet_in_reason(),
           packet_in_bytes = no_buffer :: ofp_packet_in_bytes()
          }).
--type ofs_pkt() :: #ofs_pkt{}.
+-type linc_pkt() :: #linc_pkt{}.

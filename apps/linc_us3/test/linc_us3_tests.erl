@@ -22,7 +22,7 @@
 
 %% Tests -----------------------------------------------------------------------
 
--define(TIMEOUT, 100).
+-define(TIMEOUT, 300).
 
 switch_setup_test_() ->
     {setup,

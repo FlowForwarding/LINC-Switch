@@ -58,7 +58,7 @@ queue_stats_request() ->
                                              queue_id = ValidQueue},
     StatsReply3 = linc_us3_queue:get_stats(StatsRequest3),
     ?assertMatch(#ofp_queue_stats_reply{}, StatsReply3),
-    [QueueStats] = StatsReply3#ofp_queue_stats_reply.stats,
+    ?assertEqual(1, length(StatsReply3#ofp_queue_stats_reply.stats)),
 
     StatsRequest4 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = all},

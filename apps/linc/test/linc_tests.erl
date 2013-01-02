@@ -34,7 +34,7 @@ logic() ->
     %% exist.
     Backend = linc_backend,
     application:load(linc),
-    application:set_env(linc, backend, {Backend, []}),
+    application:set_env(linc, backend, Backend),
     meck:new(Backend),
     meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
     meck:expect(Backend, stop, fun(_) -> ok end),

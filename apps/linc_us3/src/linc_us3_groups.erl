@@ -326,14 +326,8 @@ apply_bucket(#linc_bucket{
         {output, NewPkt, PortNo} ->
             linc_us3_port:send(NewPkt, PortNo),
             ok;
-
         {group, NewPkt, GroupId} ->
             ?MODULE:apply(NewPkt, GroupId); %% tail-recur & should return ok
-
-        %% no side effects, packet is going to be dropped anyway
-        ok ->
-            ok;
-
         {drop, _} ->
             ok
     end.

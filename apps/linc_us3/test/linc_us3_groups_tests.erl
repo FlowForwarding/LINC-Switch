@@ -24,7 +24,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us3.hrl").
 
--define(MOCKED, [flow, port, actions]).
+-define(MOCKED, [flow, port]).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
@@ -46,7 +46,7 @@ group_test_() ->
 
 %%--------------------------------------------------------------------
 add_group() ->
-    Bkt1 = make_test_bucket(),
+    Bkt1 = make_test_bucket(2),
     M1 = call_group_mod(add, 1, all, [Bkt1]),
     ?assertEqual(ok, M1),
     ?assertEqual(true, group_exists(1)),

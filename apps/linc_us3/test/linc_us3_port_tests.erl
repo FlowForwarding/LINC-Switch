@@ -32,30 +32,29 @@
 %% Tests -----------------------------------------------------------------------
 
 port_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [
-      {"Port: port_mod", fun port_mod/0},
-      {"Port: is_valid", fun is_valid/0},
-      {"Port send: in_port", fun send_in_port/0},
-      {"Port send: table", fun send_table/0},
-      {"Port send: normal", fun send_normal/0},
-      {"Port send: flood", fun send_flood/0},
-      {"Port send: all", fun send_all/0},
-      {"Port send: controller", fun send_controller/0},
-      {"Port send: local", fun send_local/0},
-      {"Port send: any", fun send_any/0},
-      {"Port send: port number", fun send_port_number/0},
-      {"Port stats: port_stats_request", fun port_stats_request/0},
-      {"Port config: port_down", fun config_port_down/0},
-      {"Port config: no_recv", fun config_no_recv/0},
-      {"Port config: no_fwd", fun config_no_fwd/0},
-      {"Port config: no_pkt_in", fun config_no_pkt_in/0},
-      {"Port state: link_down", fun state_link_down/0},
-      {"Port state: blocked", fun state_blocked/0},
-      {"Port state: live", fun state_live/0}
-     ]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [
+       {"Port: port_mod", fun port_mod/0},
+       {"Port: is_valid", fun is_valid/0},
+       {"Port send: in_port", fun send_in_port/0},
+       {"Port send: table", fun send_table/0},
+       {"Port send: normal", fun send_normal/0},
+       {"Port send: flood", fun send_flood/0},
+       {"Port send: all", fun send_all/0},
+       {"Port send: controller", fun send_controller/0},
+       {"Port send: local", fun send_local/0},
+       {"Port send: any", fun send_any/0},
+       {"Port send: port number", fun send_port_number/0},
+       {"Port stats: port_stats_request", fun port_stats_request/0},
+       {"Port config: port_down", fun config_port_down/0},
+       {"Port config: no_recv", fun config_no_recv/0},
+       {"Port config: no_fwd", fun config_no_fwd/0},
+       {"Port config: no_pkt_in", fun config_no_pkt_in/0},
+       {"Port state: link_down", fun state_link_down/0},
+       {"Port state: blocked", fun state_blocked/0},
+       {"Port state: live", fun state_live/0}
+      ]}}.
 
 port_mod() ->
     BadPort = 999,
@@ -180,12 +179,16 @@ setup() ->
                           {queues_status, enabled},
                           {queues, Queues}
                          ]},
-    application:set_env(linc, backends_opts, [Backend]),
-    ok = linc_us3_port:initialize().
+    application:set_env(linc, backends_opts, [Backend]).
 
 teardown(_) ->
-    ok = linc_us3_port:terminate(),
     unmock(?MOCKED).
+
+foreach_setup() ->
+    ok = linc_us3_port:initialize().
+
+foreach_teardown(_) ->
+    ok = linc_us3_port:terminate().
 
 pkt() ->
     #linc_pkt{packet = [<<>>]}.

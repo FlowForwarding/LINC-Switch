@@ -32,23 +32,22 @@
 %% Tests -----------------------------------------------------------------------
 
 routing_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Routing: match on Flow Table entry",
-       fun match/0},
-      {"Routing: match on Flow Table entry with highest priority",
-       fun match_priority/0},
-      {"Routing: match on Flow Table entry with empty match list",
-       fun match_empty_matches/0},
-      {"Routing: match on next Flow Table because of Goto instruction",
-       fun goto/0},
-      {"Routing: table miss - continue to next table", fun miss_continue/0},
-      {"Routing: table miss - send to controller", fun miss_controller/0},
-      {"Routing: table miss - drop packet", fun miss_drop/0},
-      {"Routing: match fields with masks", fun mask_match/0},
-      {"Routing: spawn new route process", fun spawn_route/0}
-     ]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Routing: match on Flow Table entry",
+        fun match/0},
+       {"Routing: match on Flow Table entry with highest priority",
+        fun match_priority/0},
+       {"Routing: match on Flow Table entry with empty match list",
+        fun match_empty_matches/0},
+       {"Routing: match on next Flow Table because of Goto instruction",
+        fun goto/0},
+       {"Routing: table miss - continue to next table", fun miss_continue/0},
+       {"Routing: table miss - send to controller", fun miss_controller/0},
+       {"Routing: table miss - drop packet", fun miss_drop/0},
+       {"Routing: match fields with masks", fun mask_match/0},
+       {"Routing: spawn new route process", fun spawn_route/0}
+      ]}}.
 
 match() ->
     Flow1 = 200,
@@ -167,13 +166,16 @@ spawn_route() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    State = linc_us3_flow:initialize(),
-    mock(?MOCKED),
-    State.
+    mock(?MOCKED).
 
-teardown(State) ->
-    ok = linc_us3_flow:terminate(State),
+teardown(_) ->
     unmock(?MOCKED).
+
+foreach_setup() ->
+    linc_us3_flow:initialize().
+
+foreach_teardown(State) ->
+    ok = linc_us3_flow:terminate(State).
 
 flow_entry(FlowId, Matches) ->
     true = ets:insert(flow_entry_counters,

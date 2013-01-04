@@ -60,7 +60,7 @@
 %% Queue API
 %%------------------------------------------------------------------------------
 
--spec attach_all(ofp_port_no(), fun(), [term()]) -> {ok, pid()}.
+-spec attach_all(ofp_port_no(), fun(), [term()]) -> ok.
 attach_all(PortNo, SendFun, QueuesConfig) ->
     ThrottlingETS = ets:new(queue_throttling,
                             [public,

@@ -318,7 +318,7 @@ update_lookup_counter(TableId) ->
     ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
--spec update_match_counters(TableId :: integer(), FlowId :: integer(),
+-spec update_match_counters(TableId :: integer(), FlowId :: flow_id(),
                             PktByteSize :: integer()) -> ok.
 update_match_counters(TableId, FlowId, PktByteSize) ->
     try

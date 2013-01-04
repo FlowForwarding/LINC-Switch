@@ -98,7 +98,7 @@ stop_ofconfig() ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start the switch.
--spec start(any()) -> {ok, state()}.
+-spec start(any()) -> {ok, Version :: 4, state()}.
 start(_Opts) ->
     BufferState = linc_buffer:initialize(),
     linc_us4_sup:start_backend_sup(),

@@ -30,9 +30,12 @@
                        {group, Group :: integer(), linc_pkt()}.
 
 -type action_list_output() :: {NewPkt :: linc_pkt(),
-                               SideEffects :: list(side_effect())}.
+                               SideEffects :: list(side_effect())}
+                            | {error, term()}.
 
--type action_set_output() :: side_effect() | {drop, linc_pkt()} | {error, term()}.
+-type action_set_output() :: side_effect()
+                           | {drop, linc_pkt()}
+                           | {error, term()}.
 
 %%------------------------------------------------------------------------------
 %% @doc Applies set of actions to the packet.
@@ -44,20 +47,28 @@ apply_set(#linc_pkt{actions = [#ofp_action_group{} = Action | _Rest]} = Pkt) ->
     %% If both an output action and a group action are specified in
     %% an action set, the output action is *ignored* and the group action
     %% takes precedence.
-    {_NewPkt, [SideEffect]} = apply_list(Pkt, [Action]),
-    SideEffect;
-apply_set(#linc_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
+        {#linc_pkt{} = NewPkt, []} ->
+            {drop, NewPkt};
         {#linc_pkt{}, [SideEffect]} ->
             SideEffect;
-        {error,_Reason}=Error ->
+        {error, _Reason} = Error ->
+            Error
+    end;
+apply_set(#linc_pkt{actions = [#ofp_action_output{} = Action]} = Pkt) ->
+    case apply_list(Pkt, [Action]) of
+        {#linc_pkt{} = NewPkt, []} ->
+            {drop, NewPkt};
+        {#linc_pkt{}, [SideEffect]} ->
+            SideEffect;
+        {error, _Reason} = Error ->
             Error
     end;
 apply_set(#linc_pkt{actions = [Action | Rest]} = Pkt) ->
     case apply_list(Pkt, [Action]) of
-        {#linc_pkt{}=NewPkt, []} ->
+        {#linc_pkt{} = NewPkt, []} ->
             apply_set(NewPkt#linc_pkt{actions = Rest});
-        {error,_Reason}=Error ->
+        {error, _Reason} = Error ->
             Error
     end.
 
@@ -65,12 +76,14 @@ apply_set(#linc_pkt{actions = [Action | Rest]} = Pkt) ->
 %% @doc Does the routing decisions for the packet according to the action list
 -spec apply_list(Pkt :: linc_pkt(),
                  Actions :: list(ofp_action())) -> action_list_output().
+apply_list(Pkt, []) ->
+    {Pkt, []};
 apply_list(Pkt, Actions) ->
     apply_list(Pkt, Actions, []).
 
 -spec apply_list(Pkt :: linc_pkt(),
                  Actions :: list(ofp_action()),
-                 SideEffects :: side_effect()) -> action_list_output().
+                 SideEffects :: list(side_effect())) -> action_list_output().
 apply_list(Pkt, [#ofp_action_output{port = controller, max_len = MaxLen} | Rest], SideEffects) ->
     linc_us3_port:send(Pkt#linc_pkt{packet_in_reason = action, 
                                    packet_in_bytes = MaxLen}, controller),
@@ -111,15 +124,16 @@ apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_dec_mpls_ttl{} | Rest],
         P2 = linc_us3_packet_edit:find_and_edit(
                P, mpls_tag,
                fun(#mpls_tag{stack=[#mpls_stack_entry{ttl=0} | _]}) ->
-                       throw({error,invalid_ttl});
+                       throw({error, invalid_ttl});
                   (#mpls_tag{stack=[#mpls_stack_entry{ttl=TTL}=TopTag | StackTail]}=T) ->
                        NewTag = TopTag#mpls_stack_entry{ttl = TTL-1},
                        T#mpls_tag{ stack = [NewTag | StackTail] }
                end),
         apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects)
     catch 
-        throw:{error,invalid_ttl}=Error ->
-            linc_us3_port:send(Pkt#linc_pkt{packet_in_reason=invalid_ttl}, controller),
+        throw:{error, invalid_ttl} = Error ->
+            linc_us3_port:send(Pkt#linc_pkt{packet_in_reason = invalid_ttl},
+                               controller),
             Error
     end;
 

@@ -433,11 +433,7 @@ add(physical, Opts) ->
         {error, shutdown} ->
             ?ERROR("Cannot create port ~p", [Opts]),
             error
-    end;
-add(logical, _Opts) ->
-    error;
-add(reserved, _Opts) ->
-    error.
+    end.
 
 %% @doc Removes given OF port from the switch, as well as its port stats entry,
 %% all queues connected to it and their queue stats entries.

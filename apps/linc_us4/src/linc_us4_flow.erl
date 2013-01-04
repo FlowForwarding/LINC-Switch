@@ -763,7 +763,8 @@ validate_actions([], _Match) ->
     ok.
 
 validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
-    case MaxLen>?OFPCML_MAX of
+    OFPCMLNoBuffer = 16#ffff,
+    case MaxLen /= OFPCMLNoBuffer andalso MaxLen > ?OFPCML_MAX of
         true ->
             {error,{bad_action,bad_argument}};
         false ->

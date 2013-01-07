@@ -26,29 +26,29 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us4.hrl").
 
--define(MOCKED, [flow, port, actions]).
+-define(MOCKED, [flow, port]).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
 %%%
 
 group_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Add group",        fun add_group/0},
-      {"Modify group",     fun modify_group/0},
-      {"Delete group",     fun delete_group/0},
-      {"Chain deletion",   fun chain_delete_group/0},
-      {"Apply to packet",  fun apply_to_packet/0},
-      {"Stats & features", fun stats_and_features/0},
-      {"is_valid",         fun is_valid/0}]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Add group",        fun add_group/0},
+       {"Modify group",     fun modify_group/0},
+       {"Delete group",     fun delete_group/0},
+       {"Chain deletion",   fun chain_delete_group/0},
+       {"Apply to packet",  fun apply_to_packet/0},
+       {"Stats & features", fun stats_and_features/0},
+       {"is_valid",         fun is_valid/0}
+      ]}}.
 
 %% TODO: Test 32 and 64bit counters wrapping to 0
 
 %%--------------------------------------------------------------------
 add_group() ->
-    Bkt1 = make_test_bucket(),
+    Bkt1 = make_test_bucket(2),
     M1 = call_group_mod(add, 1, all, [Bkt1]),
     ?assertEqual(ok, M1),
     ?assertEqual(true, group_exists(1)),
@@ -220,14 +220,16 @@ is_valid() ->
 %%%
 
 setup() ->
-    mock(?MOCKED),
-    linc_us4_groups:create(),
-    ok.
+    mock(?MOCKED).
 
-teardown(ok) ->
-    unmock(?MOCKED),
-    linc_us4_groups:destroy(),
-    ok.
+teardown(_) ->
+    unmock(?MOCKED).
+
+foreach_setup() ->
+    linc_us4_groups:create().
+
+foreach_teardown(_) ->
+    linc_us4_groups:destroy().
 
 %%%
 %%% Tools --------------------------------------------------------------------

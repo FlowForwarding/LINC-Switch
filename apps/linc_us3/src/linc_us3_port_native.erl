@@ -26,8 +26,8 @@
 -include("linc_us3.hrl").
 -include("linc_us3_port.hrl").
 
--spec tap(string(), integer()) -> {port(), pid()} |
-                                  {stop, shutdown}.
+-spec tap(string(), list(term())) -> {port(), pid(), binary()} |
+                                     {stop, shutdown}.
 tap(Interface, PortOpts) ->
     case tuncer:create(Interface) of
         {ok, Pid} ->

@@ -43,8 +43,8 @@ init([]) ->
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, []},
                   permanent, 5000, supervisor, [ofp_channel_sup]},
 
-    {ok, {BackendMod, BackendOpts}} = application:get_env(linc, backend),
-    Logic = {linc_logic, {linc_logic, start_link, [BackendMod, BackendOpts]},
+    {ok, BackendMod} = application:get_env(linc, backend),
+    Logic = {linc_logic, {linc_logic, start_link, [BackendMod, []]},
              permanent, 5000, worker, [linc_logic]},
 
     {ok, {{one_for_all, 5, 10}, [ChannelSup, Logic]}}.

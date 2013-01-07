@@ -22,7 +22,7 @@
 
 %% Tests -----------------------------------------------------------------------
 
--define(TIMEOUT, 100).
+-define(TIMEOUT, 300).
 
 switch_setup_test_() ->
     {setup,
@@ -40,7 +40,7 @@ no_ofconfig() ->
 
     application:load(linc),
     application:set_env(linc, of_config, disabled),
-    application:set_env(linc, backend, {linc_us3, []}),
+    application:set_env(linc, backend, linc_us3),
 
     [begin
          ?assertEqual(ok, application:start(linc)),
@@ -56,7 +56,7 @@ with_ofconfig() ->
     application:load(linc),
     application:set_env(enetconf, sshd_port, 1830),
     application:set_env(linc, of_config, enabled),
-    application:set_env(linc, backend, {linc_us3, []}),    
+    application:set_env(linc, backend, linc_us3),
 
     [begin
          ?assertEqual(ok, application:start(linc)),

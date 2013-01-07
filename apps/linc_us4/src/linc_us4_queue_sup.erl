@@ -22,8 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0,
-         add_queue/6]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -40,21 +39,11 @@
 start_link() ->
     {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
--spec add_queue({ofp_port_no(), ofp_queue_id()},
-                integer(),
-                integer(),
-                integer(),
-                ets:tid(),
-                fun()) -> {ok, pid()}.
-add_queue(Key, MinRateBps, MaxRateBps, PortRateBps, ThrottlingEts, SendFun) ->
-    supervisor:start_child(?MODULE, [Key, MinRateBps, MaxRateBps, PortRateBps,
-                                     ThrottlingEts, SendFun]).
-
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
 init([]) ->
-    ChildSpec = {key, {linc_us4_queue, start_link, []},
+    ChildSpec = {linc_us4_queue, {linc_us4_queue, start_link, []},
                  transient, 5000, worker, [linc_us4_queue]},
     {ok, {{simple_one_for_one, 5, 10}, [ChildSpec]}}.

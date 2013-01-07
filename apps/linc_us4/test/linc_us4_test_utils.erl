@@ -21,6 +21,7 @@
 
 -export([mock/1,
          unmock/1,
+         mock_reset/1,
          check_output_on_ports/0,
          check_output_to_groups/0,
          check_if_called/1,
@@ -112,17 +113,6 @@ mock([instructions | Rest]) ->
                      fun(Pkt, _) ->
                              {stop, Pkt}
                      end),
-    mock(Rest);
-mock([actions | Rest]) ->
-    ok = meck:new(linc_us4_actions),
-    ok = meck:expect(linc_us4_actions, apply_set,
-                     fun(_) ->
-                             ok
-                     end),
-    ok = meck:expect(linc_us4_actions, apply_list,
-                     fun(Pkt, _) ->
-                             Pkt
-                     end),
     mock(Rest).
 
 unmock([]) ->
@@ -147,10 +137,15 @@ unmock([group | Rest]) ->
     unmock(Rest);
 unmock([instructions | Rest]) ->
     ok = meck:unload(linc_us4_instructions),
-    unmock(Rest);
-unmock([actions | Rest]) ->
-    ok = meck:unload(linc_us4_actions),
     unmock(Rest).
+
+mock_reset([]) ->
+    ok;
+mock_reset([port | Rest]) ->
+    ok = meck:reset(linc_us4_port),
+    mock_reset(Rest);
+mock_reset([_ | Rest]) ->
+    mock_reset(Rest).
 
 check_output_on_ports() ->
     [{Pkt, PortNo}

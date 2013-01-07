@@ -107,7 +107,6 @@ update_reference_count(GroupId, Increment) ->
 %% packets and ports where they are destined or 'drop' atom. Packet is
 %% cloned if multiple ports are the destination.
 -spec apply(GroupId :: integer(), Pkt :: #linc_pkt{}) -> ok.
-
 apply(GroupId, Pkt) ->
     case group_get(GroupId) of
         not_found -> ok;
@@ -342,17 +341,11 @@ apply_bucket(#linc_bucket{
 
     %%ActionsSet = ordsets:from_list(Actions),
     case linc_us4_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
-        {output, NewPkt, PortNo} ->
+        {output, PortNo, NewPkt} ->
             linc_us4_port:send(NewPkt, PortNo),
             ok;
-
-        {group, NewPkt, GroupId} ->
-            ?MODULE:apply(NewPkt, GroupId); %% tail-recur & should return ok
-
-        %% no side effects, packet is going to be dropped anyway
-        ok ->
-            ok;
-
+        {group, GroupId, NewPkt} ->
+            ?MODULE:apply(GroupId, NewPkt); %% tail-recur & should return ok
         {drop, _} ->
             ok
     end.
@@ -449,7 +442,7 @@ group_update_stats(GroupId, Stat, Increment) ->
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Requests full group stats
--spec group_get_stats(integer()) -> #ofp_group_stats{} | not_found.
+-spec group_get_stats(integer()) -> list(#ofp_group_stats{}).
 group_get_stats(GroupId) ->
     case group_get(GroupId) of
         not_found ->

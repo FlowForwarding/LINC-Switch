@@ -28,48 +28,47 @@
 %% Tests -----------------------------------------------------------------------
 
 flow_mod_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Bad table_id", fun bad_table_id/0}
-      ,{"Duplicate fields", fun duplicate_field/0}
-      ,{"Prerequisite field present", fun prerequisite_field_present/0}
-      ,{"Prerequisite field present bad val", fun prerequisite_field_present_bad_val/0}
-      ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
-      ,{"Goto table with smaller table_id", fun goto_backwards/0}
-      ,{"Valid out port", fun valid_out_port/0}
-      ,{"Invalid out port", fun invalid_out_port/0}
-      ,{"Valid out group", fun valid_out_group/0}
-      ,{"Invalid out group", fun invalid_out_group/0}
-      ,{"Invalid meter", fun invalid_meter/0}
-      ,{"Valid meter", fun valid_meter/0}
-      ,{"Duplicate instruction type", fun dupl_instruction/0}
-      ,{"Set field incompatible with match", fun incompatible_set_field/0}
-      ,{"Add 1 flow, no check_overlap", fun () -> add_flow(0, []) end}
-      ,{"Add 1 flow, check_overlap", fun () -> add_flow(1, [check_overlap]) end}
-      ,{"Add 2 non overlapping flows, no check_overlap", fun () -> add_non_overlapping_flows([]) end}
-      ,{"Add 2 non overlapping flows, check_overlap", fun () -> add_non_overlapping_flows([check_overlap]) end}
-      ,{"Add 2 overlapping flows, no check_overlap", fun add_overlapping_flows/0}
-      ,{"Add 2 with overlapping flow, check_overlap", fun add_overlapping_flow_check_overlap/0}
-      ,{"Add 2 with exact match, reset_counters", fun () -> add_exact_flow([reset_counts]) end}
-      ,{"Add 2 with exact match, no reset_counters", fun () -> add_exact_flow([]) end}
-      ,{"Flow entry priority order", fun flow_priority_order/0}
-      ,{"Modify flow, strict, no reset_counts", fun () -> modify_strict([]) end}
-      ,{"Modify flow, strict, reset_counts", fun () -> modify_strict([reset_counts]) end}
-      ,{"Modify flow, non-strict, cookie no match", fun modify_cookie_no_match/0}
-      ,{"Modify flow, non-strict, cookie match", fun modify_cookie_match/0}
-      ,{"Delete flow, strict", fun delete_strict/0}
-      ,{"Delete flow, non-strict, cookie no match", fun delete_cookie_no_match/0}
-      ,{"Delete flow, non-strict, cookie match", fun delete_cookie_match/0}
-      ,{"Delete flow, non-strict, send flow rem", fun delete_send_flow_rem/0}
-      ,{"Delete flow, outport no match", fun delete_outport_no_match/0}
-      ,{"Delete flow, outport match", fun delete_outport_match/0}
-      ,{"Delete flow, outgroup no match", fun delete_outgroup_no_match/0}
-      ,{"Delete flow, outgroup match", fun delete_outgroup_match/0}
-      ,{"Delete flow, all tables", fun delete_all_tables/0}
-      ,{"Delete where group", fun delete_where_group/0}
-      ,{"Delete where meter", fun delete_where_meter/0}
-     ]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Bad table_id", fun bad_table_id/0}
+       ,{"Duplicate fields", fun duplicate_field/0}
+       ,{"Prerequisite field present", fun prerequisite_field_present/0}
+       ,{"Prerequisite field present bad val", fun prerequisite_field_present_bad_val/0}
+       ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
+       ,{"Goto table with smaller table_id", fun goto_backwards/0}
+       ,{"Valid out port", fun valid_out_port/0}
+       ,{"Invalid out port", fun invalid_out_port/0}
+       ,{"Valid out group", fun valid_out_group/0}
+       ,{"Invalid out group", fun invalid_out_group/0}
+       ,{"Invalid meter", fun invalid_meter/0}
+       ,{"Valid meter", fun valid_meter/0}
+       ,{"Duplicate instruction type", fun dupl_instruction/0}
+       ,{"Set field incompatible with match", fun incompatible_set_field/0}
+       ,{"Add 1 flow, no check_overlap", fun () -> add_flow(0, []) end}
+       ,{"Add 1 flow, check_overlap", fun () -> add_flow(1, [check_overlap]) end}
+       ,{"Add 2 non overlapping flows, no check_overlap", fun () -> add_non_overlapping_flows([]) end}
+       ,{"Add 2 non overlapping flows, check_overlap", fun () -> add_non_overlapping_flows([check_overlap]) end}
+       ,{"Add 2 overlapping flows, no check_overlap", fun add_overlapping_flows/0}
+       ,{"Add 2 with overlapping flow, check_overlap", fun add_overlapping_flow_check_overlap/0}
+       ,{"Add 2 with exact match, reset_counters", fun () -> add_exact_flow([reset_counts]) end}
+       ,{"Add 2 with exact match, no reset_counters", fun () -> add_exact_flow([]) end}
+       ,{"Flow entry priority order", fun flow_priority_order/0}
+       ,{"Modify flow, strict, no reset_counts", fun () -> modify_strict([]) end}
+       ,{"Modify flow, strict, reset_counts", fun () -> modify_strict([reset_counts]) end}
+       ,{"Modify flow, non-strict, cookie no match", fun modify_cookie_no_match/0}
+       ,{"Modify flow, non-strict, cookie match", fun modify_cookie_match/0}
+       ,{"Delete flow, strict", fun delete_strict/0}
+       ,{"Delete flow, non-strict, cookie no match", fun delete_cookie_no_match/0}
+       ,{"Delete flow, non-strict, cookie match", fun delete_cookie_match/0}
+       ,{"Delete flow, non-strict, send flow rem", fun delete_send_flow_rem/0}
+       ,{"Delete flow, outport no match", fun delete_outport_no_match/0}
+       ,{"Delete flow, outport match", fun delete_outport_match/0}
+       ,{"Delete flow, outgroup no match", fun delete_outgroup_no_match/0}
+       ,{"Delete flow, outgroup match", fun delete_outgroup_match/0}
+       ,{"Delete flow, all tables", fun delete_all_tables/0}
+       ,{"Delete where group", fun delete_where_group/0}
+       ,{"Delete where meter", fun delete_where_meter/0}
+      ]}}.
 
 bad_table_id() ->
     %% Create flow_mod record
@@ -1007,20 +1006,19 @@ delete_where_meter() ->
                  linc_us4_flow:get_flow_table(1)).
 
 statistics_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Update lookup counter", fun update_lookup_counter/0}
-      ,{"Update match counter", fun update_match_counter/0}
-      ,{"Update match counter, bad flow_id", fun update_bad_match_counter/0}
-      ,{"Empty flow stats", fun empty_flow_stats/0}
-      ,{"Flow stats 1 table", fun flow_stats_1_table/0}
-      ,{"Flow stats all tables", fun flow_stats_all_tables/0}
-      ,{"Empty aggregate stats", fun empty_aggr_stats/0}
-      ,{"Aggregate stats 1 table", fun aggr_stats_1_table/0}
-      ,{"Aggregate stats all tables", fun aggr_stats_all_tables/0}
-      ,{"Empty table stats", fun empty_table_stats/0}
-     ]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Update lookup counter", fun update_lookup_counter/0}
+       ,{"Update match counter", fun update_match_counter/0}
+       ,{"Update match counter, bad flow_id", fun update_bad_match_counter/0}
+       ,{"Empty flow stats", fun empty_flow_stats/0}
+       ,{"Flow stats 1 table", fun flow_stats_1_table/0}
+       ,{"Flow stats all tables", fun flow_stats_all_tables/0}
+       ,{"Empty aggregate stats", fun empty_aggr_stats/0}
+       ,{"Aggregate stats 1 table", fun aggr_stats_1_table/0}
+       ,{"Aggregate stats all tables", fun aggr_stats_all_tables/0}
+       ,{"Empty table stats", fun empty_table_stats/0}
+      ]}}.
 
 update_lookup_counter() ->
     TableId = 1,
@@ -1182,47 +1180,50 @@ empty_table_stats() ->
                  linc_us4_flow:get_table_stats(#ofp_table_stats_request{})).
 
 timer_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [{"Idle timeout", fun idle_timeout/0}
-      ,{"Hard timeout", fun hard_timeout/0}
-     ]}.
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Idle timeout", fun idle_timeout/0}
+       ,{"Hard timeout", fun hard_timeout/0}
+      ]}}.
 
 idle_timeout() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1},
-                    {idle_timeout,2}],
+                     {idle_timeout,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
     [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(1),
-    timer:sleep(1500),
+    timer:sleep(100),
     [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(1),
     ok = linc_us4_flow:reset_idle_timeout(undefined, FlowId),
-    timer:sleep(500),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(1)),
+    timer:sleep(100),
+    ?assertMatch([#flow_entry{id=FlowId}], linc_us4_flow:get_flow_table(1)),
     timer:sleep(2000),
     ?assertEqual([], linc_us4_flow:get_flow_table(1)).
 
 hard_timeout() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1},
-                    {hard_timeout,1}],
+                     {hard_timeout,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(FlowModAdd1)),
     ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(1)),
-    timer:sleep(2500),
+    timer:sleep(2000),
     ?assertEqual([], linc_us4_flow:get_flow_table(1)).
     
 %% Fixtures --------------------------------------------------------------------
 setup() ->
-    linc_us4_test_utils:mock(?MOCKED),
+    linc_us4_test_utils:mock(?MOCKED).
+
+teardown(_) ->
+    linc_us4_test_utils:unmock(?MOCKED).
+
+foreach_setup() ->
     linc_us4_flow:initialize().
 
-teardown(State) ->
-    linc_us4_test_utils:unmock(?MOCKED),
+foreach_teardown(State) ->
     linc_us4_flow:terminate(State).
 
 %% Helpers ---------------------------------------------------------------------

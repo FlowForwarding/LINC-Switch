@@ -22,7 +22,7 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 
 %% Start the switch.
--callback start(Args :: term()) -> {ok, State :: term()}.
+-callback start(Args :: term()) -> {ok, Version :: integer(), State :: term()}.
 
 %% Stop the switch.
 -callback stop(State :: term()) -> any().

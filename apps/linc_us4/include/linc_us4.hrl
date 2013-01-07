@@ -124,7 +124,7 @@
 -define(MAX_BUFFERED_PACKETS, 0).
 
 -type priority() :: non_neg_integer().
--type flow_id() :: {priority(),reference()}.
+-type flow_id() :: {priority(), reference()}.
 
 -type linc_table_config() :: continue
                            | drop
@@ -138,7 +138,7 @@
 -record(flow_entry, {
           id                       :: flow_id(),
           priority                 :: priority(),
-          match                    :: ofp_match(),
+          match = #ofp_match{}     :: ofp_match(),
           cookie = <<0:64>>        :: binary(),
           flags = []               :: [ofp_flow_mod_flag()],
           install_time             :: erlang:timestamp(),
@@ -157,7 +157,7 @@
          }).
 
 -record(flow_entry_counter, {
-          id                   :: {FlowTableId :: integer(), #flow_entry{}},
+          id                   :: flow_id(),
           received_packets = 0 :: integer(),
           received_bytes   = 0 :: integer()
          }).
@@ -175,7 +175,7 @@
           fields = #ofp_match{}       :: ofp_match(),
           actions = []                :: ordsets:ordset(ofp_action()),
           packet = []                 :: pkt:packet(),
-          size                        :: integer(),
+          size = 0                    :: integer(),
           queue_id = default          :: integer() | default,
           table_id                    :: integer(),
           no_packet_in = false        :: boolean(),

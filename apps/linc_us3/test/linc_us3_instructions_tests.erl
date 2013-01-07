@@ -25,7 +25,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us3.hrl").
 
--define(MOCKED, [actions]).
+-define(MOCKED, []).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -41,9 +41,9 @@ instruction_test_() ->
       {"Empty instruction list", fun empty/0}]}.
 
 apply_actions() ->
+    Pkt = #linc_pkt{},
     ApplyActions = #ofp_instruction_apply_actions{actions = []},
-    linc_us3_instructions:apply(pkt, [ApplyActions]),
-    ?assert(check_if_called({linc_us3_actions, apply_list, 2})).
+    ?assertMatch({stop, Pkt}, linc_us3_instructions:apply(Pkt, [ApplyActions])).
 
 clear_actions() ->
     SomeAction = #ofp_action_output{port = 0},

@@ -20,6 +20,7 @@
 
 -import(linc_us4_test_utils, [mock/1,
                               unmock/1,
+                              mock_reset/1,
                               check_if_called/1,
                               check_output_on_ports/0]).
 
@@ -73,36 +74,36 @@ action_set_output() ->
     ?assertEqual({output, ?INIT_VAL, Pkt}, Output).
 
 actions_test_() ->
-    {foreach,
-     fun setup/0,
-     fun teardown/1,
-     [%% Required actions
-      {"Action Output", fun action_output/0},
-      {"Action Output: controller with reason 'action'",
-       fun action_output_controller_action/0},
-      {"Action Output: controller with reason 'no_match'",
-       fun action_output_controller_nomatch/0},
-      {"Action Group", fun action_group/0},
-      {"Action Experimenter", fun action_experimenter/0},
-      %% Optional actions
-      {"Action Set-Field", fun action_set_field/0},
-      {"Action Set-Queue", fun action_set_queue/0},
+    {setup, fun setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [%% Required actions
+       {"Action Output", fun action_output/0},
+       {"Action Output: controller with reason 'action'",
+        fun action_output_controller_action/0},
+       {"Action Output: controller with reason 'no_match'",
+        fun action_output_controller_nomatch/0},
+       {"Action Group", fun action_group/0},
+       {"Action Experimenter", fun action_experimenter/0},
+       %% Optional actions
+       {"Action Set-Field", fun action_set_field/0},
+       {"Action Set-Queue", fun action_set_queue/0},
 
-      {"Action Push-Tag: PBB", fun action_push_tag_pbb/0},
-      {"Action Pop-Tag: PBB", fun action_pop_tag_pbb/0},
-      {"Action Push-Tag: VLAN", fun action_push_tag_vlan/0},
-      {"Action Pop-Tag: VLAN", fun action_pop_tag_vlan/0},
-      {"Action Push-Tag: MPLS", fun action_push_tag_mpls/0},
-      {"Action Pop-Tag: MPLS", fun action_pop_tag_mpls/0},
+       {"Action Push-Tag: PBB", fun action_push_tag_pbb/0},
+       {"Action Pop-Tag: PBB", fun action_pop_tag_pbb/0},
+       {"Action Push-Tag: VLAN", fun action_push_tag_vlan/0},
+       {"Action Pop-Tag: VLAN", fun action_pop_tag_vlan/0},
+       {"Action Push-Tag: MPLS", fun action_push_tag_mpls/0},
+       {"Action Pop-Tag: MPLS", fun action_pop_tag_mpls/0},
 
-      {"Action Change-TTL: set MPLS TTL", fun action_set_mpls_ttl/0},
-      {"Action Change-TTL: decrement MPLS TTL", fun action_decrement_mpls_ttl/0},
-      {"Action Change-TTL: invalid MPLS TTL", fun invalid_mpls_ttl/0},
-      {"Action Change-TTL: set IP TTL", fun action_set_ip_ttl/0},
-      {"Action Change-TTL: decrement IP TTL", fun action_decrement_ip_ttl/0},
-      {"Action Change-TTL: invalid IP TTL", fun invalid_ip_ttl/0},
-      {"Action Change-TTL: copy TTL outwards", fun action_copy_ttl_outwards/0},
-      {"Action Change-TTL: copy TTL inwards", fun action_copy_ttl_inwards/0}]}.
+       {"Action Change-TTL: set MPLS TTL", fun action_set_mpls_ttl/0},
+       {"Action Change-TTL: decrement MPLS TTL", fun action_decrement_mpls_ttl/0},
+       {"Action Change-TTL: invalid MPLS TTL", fun invalid_mpls_ttl/0},
+       {"Action Change-TTL: set IP TTL", fun action_set_ip_ttl/0},
+       {"Action Change-TTL: decrement IP TTL", fun action_decrement_ip_ttl/0},
+       {"Action Change-TTL: invalid IP TTL", fun invalid_ip_ttl/0},
+       {"Action Change-TTL: copy TTL outwards", fun action_copy_ttl_outwards/0},
+       {"Action Change-TTL: copy TTL inwards", fun action_copy_ttl_inwards/0}
+      ]}}.
 
 action_output() ->
     Pkt = #linc_pkt{},
@@ -386,6 +387,12 @@ setup() ->
 
 teardown(_) ->
     unmock(?MOCKED).
+
+foreach_setup() ->
+    mock_reset(?MOCKED).
+
+foreach_teardown(_) ->
+    ok.
 
 check_action(Action, Packet, NewPacket) ->
     Pkt = #linc_pkt{packet = Packet},

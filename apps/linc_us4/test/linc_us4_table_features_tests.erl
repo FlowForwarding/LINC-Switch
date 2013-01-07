@@ -27,7 +27,7 @@
 
 %% Tests -----------------------------------------------------------------------
 table_features_test_() ->
-    {foreach,
+    {setup,
      fun setup/0,
      fun teardown/1,
      [{"Get table features", fun get_table_features/0}

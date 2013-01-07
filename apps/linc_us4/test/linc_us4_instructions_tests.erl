@@ -27,7 +27,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us4.hrl").
 
--define(MOCKED, [actions, meter]).
+-define(MOCKED, [meter]).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -61,9 +61,9 @@ meter() ->
     ?assertEqual([], NewPacket2#linc_pkt.actions).
 
 apply_actions() ->
+    Pkt = #linc_pkt{},
     ApplyActions = #ofp_instruction_apply_actions{actions = []},
-    linc_us4_instructions:apply(pkt, [ApplyActions]),
-    ?assert(check_if_called({linc_us4_actions, apply_list, 2})).
+    ?assertMatch({stop, Pkt}, linc_us4_instructions:apply(Pkt, [ApplyActions])).
 
 clear_actions() ->
     SomeAction = #ofp_action_output{port = 0},

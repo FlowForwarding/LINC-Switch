@@ -90,7 +90,7 @@ stop_ofconfig() ->
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start the switch.
--spec start(any()) -> {ok, state()}.
+-spec start(any()) -> {ok, Version :: 3, state()}.
 start(_Opts) ->
     BufferState = linc_buffer:initialize(),
     linc_us3_sup:start_backend_sup(),
@@ -291,7 +291,7 @@ ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
                                      {reply, ofp_message(), #state{}}.
 ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
-    Reply = linc_us3_port:get_queue_stats(Request),
+    Reply = linc_us3_queue:get_stats(Request),
     {reply, Reply, State}.
 
 %% @doc Get group statistics.

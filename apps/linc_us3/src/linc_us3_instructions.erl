@@ -47,7 +47,7 @@ apply2(Pkt,
     %% Action Set. This instruction may be used to modify the packet between
     %% two tables or to execute multiple actions of the same type.
     %% The actions are specified as an action list (see 5.8).
-    NewPkt = linc_us3_actions:apply_list(Pkt, Actions),
+    {NewPkt, _SideEffects} = linc_us3_actions:apply_list(Pkt, Actions),
     apply2(NewPkt, InstructionsRest, stop);
 apply2(Pkt,
        [#ofp_instruction_clear_actions{} | InstructionsRest],

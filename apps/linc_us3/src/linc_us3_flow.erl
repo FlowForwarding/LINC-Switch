@@ -318,7 +318,7 @@ update_lookup_counter(TableId) ->
     ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
--spec update_match_counters(TableId :: integer(), FlowId :: integer(),
+-spec update_match_counters(TableId :: integer(), FlowId :: flow_id(),
                             PktByteSize :: integer()) -> ok.
 update_match_counters(TableId, FlowId, PktByteSize) ->
     try
@@ -741,7 +741,8 @@ validate_actions([], _Match) ->
     ok.
 
 validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
-    case MaxLen>?OFPCML_MAX of
+    OFPCMLNoBuffer = 16#ffff,
+    case MaxLen /= OFPCMLNoBuffer andalso MaxLen > ?OFPCML_MAX of
         true ->
             {error,{bad_action,bad_argument}};
         false ->

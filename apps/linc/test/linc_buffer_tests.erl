@@ -24,7 +24,7 @@
 %% Tests -----------------------------------------------------------------------
 
 flow_mod_test_() ->
-    {foreach,
+    {setup,
      fun setup/0,
      fun teardown/1,
      [{"Get when empty", fun get_empty/0}
@@ -44,7 +44,7 @@ expiration() ->
     Pkt = {test, some, more},
     BufferId = linc_buffer:save_buffer(Pkt),
     ?assertMatch(Pkt, linc_buffer:get_buffer(BufferId)),
-    timer:sleep(4100),
+    timer:sleep(3000),
     ?assertEqual(not_found, linc_buffer:get_buffer(BufferId)).
     
 

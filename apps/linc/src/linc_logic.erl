@@ -25,7 +25,7 @@
 -export([send_to_controllers/1]).
 
 %% Internal API
--export([start_link/2]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -42,7 +42,8 @@
           connections = [] :: [{pid(), string(), integer()}],
           xid = 1 :: integer(),
           backend_mod :: atom(),
-          backend_state :: term()
+          backend_state :: term(),
+          switch_id :: integer()
          }).
 
 %%------------------------------------------------------------------------------
@@ -55,24 +56,25 @@ send_to_controllers(Message) ->
     gen_server:cast(?MODULE, {send_to_controllers, Message}).
 
 %% @doc Start the OF Switch logic.
--spec start_link(atom(), term()) -> {ok, pid()} | {error, any()}.
-start_link(BackendMod, BackendOpts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE,
-                          [BackendMod, BackendOpts], []).
+-spec start_link(integer(), atom(), term()) -> {ok, pid()} | {error, any()}.
+start_link(SwitchId, BackendMod, BackendOpts) ->
+    gen_server:start_link(?MODULE, [SwitchId, BackendMod, BackendOpts], []).
 
 %%------------------------------------------------------------------------------
 %% gen_server callbacks
 %%------------------------------------------------------------------------------
 
-init([BackendMod, BackendOpts]) ->
+init([SwitchId, BackendMod, BackendOpts]) ->
     %% We trap exit signals here to handle shutdown initiated by the supervisor
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
+    linc:register(SwitchId, linc_logic, self()),
 
     %% Timeout 0 will send a timeout message to the gen_server to handle
     %% backend initialization before any other message.
     {ok, #state{backend_mod = BackendMod,
-                backend_state = BackendOpts}, 0}.
+                backend_state = BackendOpts,
+                switch_id = SwitchId}, 0}.
 
 handle_call(_Message, _From, State) ->
     {reply, ok, State}.
@@ -84,12 +86,15 @@ handle_cast(_Message, State) ->
     {noreply, State}.
 
 handle_info(timeout, #state{backend_mod = BackendMod,
-                            backend_state = BackendOpts} = State) ->
+                            backend_state = BackendOpts,
+                            switch_id = SwitchId} = State) ->
+    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, []},
+                  permanent, 5000, supervisor, [ofp_channel_sup]},
+    supervisor:start_child(linc:lookup(SwitchId, linc_sup), ChannelSup),
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
     {ok, Version, BackendState} = BackendMod:start(BackendOpts),
-
-    {ok, Controllers} = application:get_env(linc, controllers),
+    Controllers = linc:controllers_for_switch(SwitchId),
     Opts = [{controlling_process, self()}, {version, Version}],
     Ctrls = [case Ctrl of
                  {Host, Port} ->

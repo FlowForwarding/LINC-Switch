@@ -90,7 +90,10 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                             switch_id = SwitchId} = State) ->
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, []},
                   permanent, 5000, supervisor, [ofp_channel_sup]},
-    supervisor:start_child(linc:lookup(SwitchId, linc_sup), ChannelSup),
+    {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
+                                                             linc_sup),
+                                                 ChannelSup),
+    linc:register(SwitchId, channel_sup, ChannelSupPid),
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
     {ok, Version, BackendState} = BackendMod:start(BackendOpts),
@@ -102,7 +105,8 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                  {Host, Port, SysOpts} ->
                      {Host, Port, Opts ++ SysOpts}
              end || Ctrl <- Controllers],
-    [ofp_channel:open(Host, Port, Opt) || {Host, Port, Opt} <- Ctrls],
+    [ofp_channel:open(ChannelSupPid, Host, Port, Opt)
+     || {Host, Port, Opt} <- Ctrls],
 
     {noreply, State#state{backend_state = BackendState}};
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},

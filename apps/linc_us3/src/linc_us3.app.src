@@ -1,7 +1,6 @@
 {application, linc_us3,
  [{description, "LINC Userspace Backend v3"},
   {vsn, "1.0"},
-  {registered, []},
   {applications, [kernel,
                   stdlib,
                   lager,

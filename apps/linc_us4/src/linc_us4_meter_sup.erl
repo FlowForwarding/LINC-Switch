@@ -22,8 +22,8 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0,
-         stop/0]).
+-export([start_link/1,
+         stop/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -35,23 +35,25 @@
 %%------------------------------------------------------------------------------
 
 %% @doc Start the supervisor.
--spec start_link() -> {ok, pid()} | {error, term()}.
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-spec start_link(integer()) -> {ok, pid()} | {error, term()}.
+start_link(SwitchId) ->
+    supervisor:start_link(?MODULE, [SwitchId]).
 
 %% @doc Stop the supervisor.
--spec stop() -> ok.
-stop() ->
-    exit(whereis(?MODULE), normal),
+-spec stop(integer()) -> ok.
+stop(SwitchId) ->
+    Pid = linc:lookup(SwitchId, linc_meter_sup),
+    exit(Pid, normal),
     ok.
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
-init([]) ->
-    ets:new(?ETS, [named_table, public,
-                   {read_concurrency, true}]),
-    MeterSpec = {linc_us4_meter, {linc_us4_meter, start_link, []},
+init([SwitchId]) ->
+    TId = ets:new(?ETS, [public, {read_concurrency, true}]),
+    linc:register(SwitchId, linc_meter_ets, TId),
+    linc:register(SwitchId, linc_meter_sup, self()),
+    MeterSpec = {linc_us4_meter, {linc_us4_meter, start_link, [SwitchId]},
                  permanent, 1000, worker, [linc_us4_meter]},
     {ok, {{simple_one_for_one, 5, 10}, [MeterSpec]}}.

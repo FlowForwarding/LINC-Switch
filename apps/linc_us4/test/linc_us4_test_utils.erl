@@ -46,15 +46,15 @@ mock([logic | Rest]) ->
 mock([meter | Rest]) ->
     ok = meck:new(linc_us4_meter),
     ok = meck:expect(linc_us4_meter, is_valid,
-                     fun (X) when X<8 ->
+                     fun (_, X) when X < 8 ->
                              true;
-                         (_) ->
+                         (_, _) ->
                              false
                      end),
     meck:expect(linc_us4_meter, apply,
-                fun(1, _Pkt) ->
+                fun(_, 1, _Pkt) ->
                         drop;
-                   (_, Pkt) ->
+                   (_, _, Pkt) ->
                         {continue, Pkt}
                 end),
     mock(Rest);

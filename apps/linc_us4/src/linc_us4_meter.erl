@@ -22,18 +22,18 @@
 -behaviour(gen_server).
 
 %% API
--export([modify/1,
-         apply/2,
-         update_flow_count/2,
-         get_stats/1,
-         get_config/1,
+-export([modify/2,
+         apply/3,
+         update_flow_count/3,
+         get_stats/2,
+         get_config/2,
          get_features/0,
-         is_valid/1]).
+         is_valid/2]).
 
 %% Internal API
--export([start/1,
-         stop/1,
-         start_link/1]).
+-export([start/2,
+         stop/2,
+         start_link/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -66,6 +66,7 @@
 
 -record(linc_meter, {
           id :: integer(),
+          ets :: integer(),
           rate_value :: kbps | pktps | {burst, kbps | pktps},
           stats = true :: boolean(),
           bands = [] :: [#linc_meter_band{}],
@@ -76,9 +77,6 @@
           install_ts = now() :: {integer(), integer(), integer()}
          }).
 
--define(ETS, linc_meters).
--define(SUP, linc_us4_meter_sup).
-
 -define(BURST_TIME, timer:seconds(30)).
 
 %%------------------------------------------------------------------------------
@@ -86,12 +84,12 @@
 %%------------------------------------------------------------------------------
 
 %% @doc Add, modify or delete a meter.
--spec modify(#ofp_meter_mod{}) -> noreply |
-                                  {reply, Reply :: ofp_message_body()}.
-modify(#ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
-    case get_meter_pid(Id) of
+-spec modify(integer(), #ofp_meter_mod{}) ->
+                    noreply | {reply, Reply :: ofp_message_body()}.
+modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
-            case start(MeterMod) of
+            case start(SwitchId, MeterMod) of
                 {ok, _Pid} ->
                     noreply;
                 {error, Code} ->
@@ -100,33 +98,33 @@ modify(#ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
         _Pid ->
             {reply, error_msg(meter_exists)}
     end;
-modify(#ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
-    case get_meter_pid(Id) of
+modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             {reply, error_msg(unknown_meter)};
         Pid ->
-            case start(MeterMod) of
+            case start(SwitchId, MeterMod) of
                 {ok, _NewPid} ->
-                    stop(Pid),
+                    stop(SwitchId, Pid),
                     noreply;
                 {error, Code} ->
                     {reply, error_msg(Code)}
             end
     end;
-modify(#ofp_meter_mod{command = delete, meter_id = Id}) ->
+modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}) ->
     linc_us4_flow:delete_where_meter(Id),
-    case get_meter_pid(Id) of
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             ok;
         Pid ->
-            stop(Pid)
+            stop(SwitchId, Pid)
     end,
     noreply.
 
 %% @doc Update flow entry count associated with a meter.
--spec update_flow_count(integer(), integer()) -> any().
-update_flow_count(Id, Incr) ->
-    case get_meter_pid(Id) of
+-spec update_flow_count(integer(), integer(), integer()) -> any().
+update_flow_count(SwitchId, Id, Incr) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             ?DEBUG("Updating flow count of an non existing meter ~p", [Id]);
         Pid ->
@@ -134,9 +132,10 @@ update_flow_count(Id, Incr) ->
     end.
 
 %% @doc Apply meter to a packet.
--spec apply(integer(), #linc_pkt{}) -> {continue, NewPkt :: #linc_pkt{}} | drop.
-apply(Id, Pkt) ->
-    case get_meter_pid(Id) of
+-spec apply(integer(), integer(), #linc_pkt{}) ->
+                   {continue, NewPkt :: #linc_pkt{}} | drop.
+apply(SwitchId, Id, Pkt) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             ?DEBUG("Applying non existing meter ~p", [Id]),
             drop;
@@ -145,13 +144,15 @@ apply(Id, Pkt) ->
     end.
 
 %% @doc Get meter statistics.
--spec get_stats(integer() | all) -> Reply :: #ofp_meter_stats_reply{}.
-get_stats(all) ->
+-spec get_stats(integer(), integer() | all) ->
+                       Reply :: #ofp_meter_stats_reply{}.
+get_stats(SwitchId, all) ->
+    TId = linc:lookup(SwitchId, linc_meter_ets),
     Meters = [gen_server:call(Pid, get_state)
-              || {_, Pid} <- lists:keysort(1, ets:tab2list(?ETS))],
+              || {_, Pid} <- lists:keysort(1, ets:tab2list(TId))],
     #ofp_meter_stats_reply{body = [export_stats(Meter) || Meter <- Meters]};
-get_stats(Id) when is_integer(Id) ->
-    case get_meter_pid(Id) of
+get_stats(SwitchId, Id) when is_integer(Id) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             #ofp_meter_stats_reply{body = []};
         Pid ->
@@ -160,13 +161,15 @@ get_stats(Id) when is_integer(Id) ->
     end.
 
 %% @doc Get meter configuration.
--spec get_config(integer() | all) -> Reply :: #ofp_meter_config_reply{}.
-get_config(all) ->
+-spec get_config(integer(), integer() | all) ->
+                        Reply :: #ofp_meter_config_reply{}.
+get_config(SwitchId, all) ->
+    TId = linc:lookup(SwitchId, linc_meter_ets),
     Meters = [gen_server:call(Pid, get_state)
-              || {_, Pid} <- lists:keysort(1, ets:tab2list(?ETS))],
+              || {_, Pid} <- lists:keysort(1, ets:tab2list(TId))],
     #ofp_meter_config_reply{body = [export_meter(Meter) || Meter <- Meters]};
-get_config(Id) when is_integer(Id)  ->
-    case get_meter_pid(Id) of
+get_config(SwitchId, Id) when is_integer(Id)  ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             #ofp_meter_config_reply{body = []};
         Pid ->
@@ -184,9 +187,9 @@ get_features() ->
                               max_color = 0}.
 
 %% @doc Check if meter with a given id exists.
--spec is_valid(integer()) -> boolean().
-is_valid(Id) ->
-    case get_meter_pid(Id) of
+-spec is_valid(integer(), integer()) -> boolean().
+is_valid(SwitchId, Id) ->
+    case get_meter_pid(SwitchId, Id) of
         undefined ->
             false;
         _Else ->
@@ -197,25 +200,28 @@ is_valid(Id) ->
 %% Internal API functions
 %%------------------------------------------------------------------------------
 
-start(MeterMod) ->
-    supervisor:start_child(?SUP, [MeterMod]).
+start(SwitchId, MeterMod) ->
+    Sup = linc:lookup(SwitchId, linc_meter_sup),
+    supervisor:start_child(Sup, [MeterMod]).
 
-stop(Pid) ->
-    supervisor:terminate_child(?SUP, Pid).
+stop(SwitchId, Pid) ->
+    Sup = linc:lookup(SwitchId, linc_meter_sup),
+    supervisor:terminate_child(Sup, Pid).
 
-start_link(MeterMod) ->
-    gen_server:start_link(?MODULE, [MeterMod], []).
+start_link(SwitchId, MeterMod) ->
+    gen_server:start_link(?MODULE, [SwitchId, MeterMod], []).
 
 %%------------------------------------------------------------------------------
 %% gen_server callbacks
 %%------------------------------------------------------------------------------
 
-init([#ofp_meter_mod{meter_id = Id} = MeterMod]) ->
+init([SwitchId, #ofp_meter_mod{meter_id = Id} = MeterMod]) ->
     process_flag(trap_exit, true),
+    TId = linc:lookup(SwitchId, linc_meter_ets),
     case import_meter(MeterMod) of
         {ok, State} ->
-            ets:insert(?ETS, {Id, self()}),
-            {ok, State};
+            ets:insert(TId, {Id, self()}),
+            {ok, State#linc_meter{ets = TId}};
         {error, Code} ->
             {stop, Code}
     end.
@@ -257,8 +263,9 @@ handle_cast({update_flow_count, Incr},
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, #linc_meter{id = Id}) ->
-    ets:delete_object(?ETS, {Id, self()}),
+terminate(_Reason, #linc_meter{ets = TId,
+                               id = Id}) ->
+    ets:delete_object(TId, {Id, self()}),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -496,8 +503,9 @@ export_values({burst, _}, Rate) ->
 export_values(_Else, Rate) ->
     {Rate, -1}.
 
-get_meter_pid(Id) ->
-    case ets:lookup(?ETS, Id) of
+get_meter_pid(SwitchId, Id) ->
+    TId = linc:lookup(SwitchId, linc_meter_ets),
+    case ets:lookup(TId, Id) of
         [] ->
             undefined;
         [{Id, Pid}] ->

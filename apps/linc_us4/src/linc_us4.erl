@@ -63,7 +63,11 @@
 -include_lib("linc/include/linc_logger.hrl").
 -include("linc_us4.hrl").
 
--record(state, {flow_state, buffer_state}).
+-record(state, {
+          flow_state,
+          buffer_state,
+          switch_id :: integer()
+         }).
 -type state() :: #state{}.
 
 %%%-----------------------------------------------------------------------------
@@ -143,8 +147,9 @@ ofp_features_request(State, #ofp_features_request{}) ->
 -spec ofp_flow_mod(state(), ofp_flow_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_flow_mod(State, #ofp_flow_mod{} = FlowMod) ->
-    case linc_us4_flow:modify(FlowMod) of
+ofp_flow_mod(#state{switch_id = SwitchId} = State,
+             #ofp_flow_mod{} = FlowMod) ->
+    case linc_us4_flow:modify(SwitchId, FlowMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -336,19 +341,22 @@ ofp_group_features_request(State,
 
 %% Meters ----------------------------------------------------------------------
 
-ofp_meter_mod(State, #ofp_meter_mod{} = MeterMod) ->
-    case linc_us4_meter:modify(MeterMod) of
+ofp_meter_mod(#state{switch_id = SwitchId} = State,
+              #ofp_meter_mod{} = MeterMod) ->
+    case linc_us4_meter:modify(SwitchId, MeterMod) of
         noreply ->
             {noreply, State};
         {reply, Reply} ->
             {reply, Reply, State}
     end.
 
-ofp_meter_stats_request(State, #ofp_meter_stats_request{meter_id = Id}) ->
-    {reply, linc_us4_meter:get_stats(Id), State}.
+ofp_meter_stats_request(#state{switch_id = SwitchId} = State,
+                        #ofp_meter_stats_request{meter_id = Id}) ->
+    {reply, linc_us4_meter:get_stats(SwitchId, Id), State}.
 
-ofp_meter_config_request(State, #ofp_meter_config_request{meter_id = Id}) ->
-    {reply, linc_us4_meter:get_config(Id), State}.
+ofp_meter_config_request(#state{switch_id = SwitchId} = State,
+                         #ofp_meter_config_request{meter_id = Id}) ->
+    {reply, linc_us4_meter:get_config(SwitchId, Id), State}.
 
 ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
     {reply, linc_us4_meter:get_features(), State}.

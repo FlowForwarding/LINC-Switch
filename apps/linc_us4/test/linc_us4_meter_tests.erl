@@ -24,6 +24,7 @@
 -include("linc_us4.hrl").
 
 -define(MOD, linc_us4_meter).
+-define(ID, 1).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -98,11 +99,11 @@ add() ->
                               flags = [kbps, stats],
                               meter_id = 1,
                               bands = Bands},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
     ExpectedConfig = meter_config([MeterMod]),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(1)),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(all)).
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, 1)),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, all)).
 
 add_twice() ->
     add(),
@@ -112,27 +113,27 @@ add_twice() ->
                               bands = []},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = meter_exists},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)).
 
 add_with_pktps() ->
     MeterMod = #ofp_meter_mod{command = add,
                               flags = [pktps, stats],
                               meter_id = 1,
                               bands = []},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
-    ?assertEqual(meter_config([MeterMod]), ?MOD:get_config(1)).
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
+    ?assertEqual(meter_config([MeterMod]), ?MOD:get_config(?ID, 1)).
 
 add_with_no_value() ->
     MeterMod = #ofp_meter_mod{command = add,
                               flags = [stats],
                               meter_id = 1,
                               bands = []},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
     MeterMod2 = MeterMod#ofp_meter_mod{flags = [kbps, stats]},
-    ?assertEqual(meter_config([MeterMod2]), ?MOD:get_config(1)).
+    ?assertEqual(meter_config([MeterMod2]), ?MOD:get_config(?ID, 1)).
 
 add_with_two_values() ->
     MeterMod = #ofp_meter_mod{command = add,
@@ -141,8 +142,8 @@ add_with_two_values() ->
                               bands = []},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = bad_flags},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 add_bad_flags() ->
     MeterMod = #ofp_meter_mod{command = add,
@@ -151,8 +152,8 @@ add_bad_flags() ->
                               bands = []},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = bad_flags},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 add_bad_band() ->
     Bands = [#ofp_meter_band_drop{rate = 200},
@@ -165,8 +166,8 @@ add_bad_band() ->
                               bands = Bands},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = bad_band},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 add_with_burst() ->
     Bands = [#ofp_meter_band_drop{burst_size = 2}],
@@ -174,11 +175,11 @@ add_with_burst() ->
                               flags = [kbps, burst, stats],
                               meter_id = 1,
                               bands = Bands},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
     ExpectedConfig = meter_config([MeterMod]),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(1)),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(all)).
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, 1)),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, all)).
 
 add_with_burst_pktps() ->
     Bands = [#ofp_meter_band_drop{burst_size = 1}],
@@ -186,11 +187,11 @@ add_with_burst_pktps() ->
                               flags = [pktps, burst, stats],
                               meter_id = 1,
                               bands = Bands},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
     ExpectedConfig = meter_config([MeterMod]),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(1)),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(all)).
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, 1)),
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, all)).
 
 modify() ->
     add(),
@@ -198,9 +199,9 @@ modify() ->
                               meter_id = 1,
                               flags = [kbps],
                               bands = []},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)),
-    ?assertEqual(meter_config([MeterMod]), ?MOD:get_config(1)).
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)),
+    ?assertEqual(meter_config([MeterMod]), ?MOD:get_config(?ID, 1)).
 
 modify_nonexisting() ->
     MeterMod = #ofp_meter_mod{command = modify,
@@ -209,8 +210,8 @@ modify_nonexisting() ->
                               bands = []},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = unknown_meter},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 modify_bad_flags() ->
     add(),
@@ -220,8 +221,8 @@ modify_bad_flags() ->
                               bands = []},
     Error = #ofp_error_msg{type = meter_mod_failed,
                            code = bad_flags},
-    ?assertEqual({reply, Error}, ?MOD:modify(MeterMod)),
-    ?assert(?MOD:is_valid(1)).
+    ?assertEqual({reply, Error}, ?MOD:modify(?ID, MeterMod)),
+    ?assert(?MOD:is_valid(?ID, 1)).
 
 delete() ->
     add(),
@@ -229,24 +230,24 @@ delete() ->
                               meter_id = 1,
                               flags = [],
                               bands = []},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 delete_nonexisting() ->
     MeterMod = #ofp_meter_mod{command = delete,
                               meter_id = 1,
                               flags = [],
                               bands = []},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
-    ?assertNot(?MOD:is_valid(1)).
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)).
 
 get_config_none() ->
-    ?assertEqual(meter_config([]), ?MOD:get_config(all)),
-    ?assertEqual(meter_config([]), ?MOD:get_config(1)).
+    ?assertEqual(meter_config([]), ?MOD:get_config(?ID, all)),
+    ?assertEqual(meter_config([]), ?MOD:get_config(?ID, 1)).
 
 get_stats_none() ->
-    ?assertEqual(#ofp_meter_stats_reply{body = []}, ?MOD:get_stats(all)),
-    ?assertEqual(#ofp_meter_stats_reply{body = []}, ?MOD:get_stats(1)).
+    ?assertEqual(#ofp_meter_stats_reply{body = []}, ?MOD:get_stats(?ID, all)),
+    ?assertEqual(#ofp_meter_stats_reply{body = []}, ?MOD:get_stats(?ID, 1)).
 
 get_stats_disabled() ->
     Bands = [#ofp_meter_band_drop{rate = 200}],
@@ -254,9 +255,9 @@ get_stats_disabled() ->
                               flags = [kbps],
                               meter_id = 1,
                               bands = Bands},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     ?assertEqual(-1, Stats#ofp_meter_stats.flow_count),
     ?assertEqual(-1, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(-1, Stats#ofp_meter_stats.byte_in_count),
@@ -267,25 +268,25 @@ get_stats_disabled() ->
 update_flow_count() ->
     add(),
 
-    #ofp_meter_stats_reply{body = [Stats1]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats1]} = ?MOD:get_stats(?ID, 1),
     ?assertEqual(0, Stats1#ofp_meter_stats.flow_count),
 
-    ?MOD:update_flow_count(1, 1),
+    ?MOD:update_flow_count(?ID, 1, 1),
 
-    #ofp_meter_stats_reply{body = [Stats2]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats2]} = ?MOD:get_stats(?ID, 1),
     ?assertEqual(1, Stats2#ofp_meter_stats.flow_count).
 
 apply_none() ->
     add(),
 
-    #ofp_meter_stats_reply{body = [Stats1]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats1]} = ?MOD:get_stats(?ID, 1),
     ?assertEqual(0, Stats1#ofp_meter_stats.packet_in_count),
     ?assertEqual(0, Stats1#ofp_meter_stats.byte_in_count),
 
     Pkt = #linc_pkt{size = 1},
-    ?assertEqual({continue, Pkt}, ?MOD:apply(1, Pkt)),
+    ?assertEqual({continue, Pkt}, ?MOD:apply(?ID, 1, Pkt)),
 
-    #ofp_meter_stats_reply{body = [Stats2]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats2]} = ?MOD:get_stats(?ID, 1),
     ?assertEqual(1, Stats2#ofp_meter_stats.packet_in_count),
     ?assertEqual(1, Stats2#ofp_meter_stats.byte_in_count).
 
@@ -293,9 +294,9 @@ apply_drop() ->
     add(),
 
     Pkt = #linc_pkt{size = 30000},
-    ?assertEqual(drop, ?MOD:apply(1, Pkt)),
+    ?assertEqual(drop, ?MOD:apply(?ID, 1, Pkt)),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [Drop, _, _, _] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(30000, Stats#ofp_meter_stats.byte_in_count),
@@ -306,9 +307,9 @@ apply_dscp() ->
     add(),
 
     Pkt = #linc_pkt{size = 15000},
-    ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt))),
+    ?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt))),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [_, Dscp, _, _] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(15000, Stats#ofp_meter_stats.byte_in_count),
@@ -319,9 +320,9 @@ apply_experimenter() ->
     add(),
 
     Pkt = #linc_pkt{size = 7500},
-    ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt))),
+    ?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt))),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [_, _, _, Exp] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(7500, Stats#ofp_meter_stats.byte_in_count),
@@ -334,16 +335,16 @@ apply_pktps() ->
                               flags = [pktps, stats],
                               meter_id = 1,
                               bands = Bands},
-    ?assertEqual(noreply, ?MOD:modify(MeterMod)),
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
 
     Pkt1 = #linc_pkt{size = 200},
-    ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt1))),
+    ?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt1))),
     Pkt2 = #linc_pkt{size = 300},
-    ?assertEqual(continue, element(1, ?MOD:apply(1, Pkt2))),
+    ?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt2))),
     Pkt3 = #linc_pkt{size = 500},
-    ?assertEqual(drop, ?MOD:apply(1, Pkt3)),
+    ?assertEqual(drop, ?MOD:apply(?ID, 1, Pkt3)),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [Drop] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(3, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(1000, Stats#ofp_meter_stats.byte_in_count),
@@ -354,9 +355,9 @@ apply_burst_kbps() ->
     add_with_burst(),
 
     Pkt = #linc_pkt{size = 10000},
-    ?assertEqual(drop, ?MOD:apply(1, Pkt)),
+    ?assertEqual(drop, ?MOD:apply(?ID, 1, Pkt)),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [Drop] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(10000, Stats#ofp_meter_stats.byte_in_count),
@@ -367,13 +368,13 @@ apply_burst_pktps() ->
     add_with_burst_pktps(),
 
     Pkt1 = #linc_pkt{size = 100},
-    [?assertEqual(continue, element(1, ?MOD:apply(1, Pkt1)))
+    [?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt1)))
      || _ <- lists:seq(1, 30)],
 
     Pkt31 = #linc_pkt{size = 200},
-    ?assertEqual(drop, ?MOD:apply(1, Pkt31)),
+    ?assertEqual(drop, ?MOD:apply(?ID, 1, Pkt31)),
 
-    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(1),
+    #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [Drop] = Stats#ofp_meter_stats.band_stats,
     ?assertEqual(31, Stats#ofp_meter_stats.packet_in_count),
     ?assertEqual(3200, Stats#ofp_meter_stats.byte_in_count),
@@ -383,13 +384,15 @@ apply_burst_pktps() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    {ok, Pid} = linc_us4_meter_sup:start_link(),
+    linc:create(?ID),
+    {ok, Pid} = linc_us4_meter_sup:start_link(?ID),
     unlink(Pid),
     Pid.
 
 teardown(Pid) ->
-    linc_us4_meter_sup:stop(),
-    wait_for_teardown(Pid).
+    linc_us4_meter_sup:stop(?ID),
+    wait_for_teardown(Pid),
+    ets:delete(linc_switch_1).
 
 %% Helpers ---------------------------------------------------------------------
 

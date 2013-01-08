@@ -23,7 +23,7 @@
 -export([initialize/0,
          terminate/1,
          table_mod/1,
-         modify/1,
+         modify/2,
          get_flow_table/1,
          delete_where_group/1,
          delete_where_meter/1,
@@ -34,8 +34,7 @@
          get_table_config/1,
          update_lookup_counter/1,
          update_match_counters/3,
-         reset_idle_timeout/2
-        ]).
+         reset_idle_timeout/2]).
 
 %% Internal exports
 -export([check_timers/0]).
@@ -99,26 +98,26 @@ terminate(#state{tref=Tref}) ->
 table_mod(#ofp_table_mod{}) ->
     ok.
 
-%% @doc Handle a flow_mod request from a controller. This may add/modify/delete one or
-%% more flows.
--spec modify(#ofp_flow_mod{}) -> ok | {error, {Type :: atom(), Code :: atom()}}.
-modify(#ofp_flow_mod{command=Cmd, table_id=all})
-  when Cmd==add;Cmd==modify;Cmd==modify_strict ->
+%% @doc Handle a flow_mod request from a controller.
+%% This may add/modify/delete one or more flows.
+-spec modify(integer(), #ofp_flow_mod{}) ->
+                    ok | {error, {Type :: atom(), Code :: atom()}}.
+modify(_SwitchId, #ofp_flow_mod{command = Cmd, table_id = all})
+  when Cmd == add orelse Cmd == modify orelse Cmd == modify_strict ->
     {error, {flow_mod_failed, bad_table_id}};
-
-modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
-  when (Cmd==add orelse Cmd==modify orelse Cmd==modify_strict)
+modify(SwitchId, #ofp_flow_mod{command = Cmd, buffer_id = BufferId} = FlowMod)
+  when (Cmd == add orelse Cmd == modify orelse Cmd == modify_strict)
        andalso BufferId /= no_buffer ->
     %% A buffer_id is provided, we have to first do the flow_mod
     %% and then a packet_out to OFPP_TABLE. This actually means to first
     %% perform the flow_mod and then restart the processing of the buffered
     %% packet starting in flow_table=0.
-    case modify(FlowMod#ofp_flow_mod{buffer_id=no_buffer}) of
+    case modify(SwitchId, FlowMod#ofp_flow_mod{buffer_id = no_buffer}) of
         ok ->
             case linc_buffer:get_buffer(BufferId) of
-                #linc_pkt{}=OfsPkt ->
-                    linc_us4_actions:apply_list(OfsPkt,
-                                                [#ofp_action_output{port=table}]);
+                #linc_pkt{} = OfsPkt ->
+                    Action = #ofp_action_output{port = table},
+                    linc_us4_actions:apply_list(OfsPkt, [Action]);
                 not_found ->
                     %% Buffer has been dropped, ignore
                     ok
@@ -126,21 +125,21 @@ modify(#ofp_flow_mod{command=Cmd, buffer_id=BufferId}=FlowMod)
         Error ->
             Error
     end;
-
-modify(#ofp_flow_mod{command=add,
-                     table_id=TableId,
-                     priority=Priority,
-                     flags=Flags,
-                     match=#ofp_match{fields=Match},
-                     instructions=Instructions}=FlowMod) ->
-    case validate_match_and_instructions(TableId, Match, Instructions) of
+modify(SwitchId, #ofp_flow_mod{command = add,
+                               table_id = TableId,
+                               priority = Priority,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions} = FlowMod) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
         ok ->
-            case lists:member(check_overlap,Flags) of
+            case lists:member(check_overlap, Flags) of
                 true ->
                     %% Check that there are no overlapping flows.
                     case check_overlap(TableId, Priority, Match) of
                         true ->
-                            {error, {flow_mod_failed,overlap}};
+                            {error, {flow_mod_failed, overlap}};
                         false ->
                             add_new_flow(TableId, FlowMod)
                     end;
@@ -148,7 +147,7 @@ modify(#ofp_flow_mod{command=add,
                     %% Check if there is any entry with the exact same 
                     %% priority and match
                     case find_exact_match(TableId, Priority, Match) of
-                        #flow_entry{}=Matching ->
+                        #flow_entry{} = Matching ->
                             replace_existing_flow(TableId, FlowMod,
                                                   Matching, Flags);
                         no_match ->
@@ -158,32 +157,33 @@ modify(#ofp_flow_mod{command=add,
         Error ->
             Error
     end;
-    
-modify(#ofp_flow_mod{command=modify,
-                     cookie=Cookie,
-                     cookie_mask=CookieMask,
-                     table_id=TableId,
-                     flags=Flags,
-                     match=#ofp_match{fields=Match},
-                     instructions=Instructions}) ->
-    case validate_match_and_instructions(TableId, Match, Instructions) of
+modify(SwitchId, #ofp_flow_mod{command = modify,
+                               cookie = Cookie,
+                               cookie_mask = CookieMask,
+                               table_id = TableId,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions}) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
         ok ->
-            modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags),
+            modify_matching_flows(TableId, Cookie, CookieMask,
+                                  Match, Instructions, Flags),
             ok;
         Error ->
             Error
     end;
-
-modify(#ofp_flow_mod{command=modify_strict,
-                     table_id=TableId,
-                     priority=Priority,
-                     flags=Flags,
-                     match=#ofp_match{fields=Match},
-                     instructions=Instructions}) ->
-    case validate_match_and_instructions(TableId, Match, Instructions) of
+modify(SwitchId, #ofp_flow_mod{command = modify_strict,
+                               table_id = TableId,
+                               priority = Priority,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions}) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
         ok ->
             case find_exact_match(TableId, Priority, Match) of
-                #flow_entry{}=Flow ->
+                #flow_entry{} = Flow ->
                     modify_flow(TableId, Flow, Instructions, Flags);
                 no_match ->
                     %% Do nothing
@@ -192,44 +192,43 @@ modify(#ofp_flow_mod{command=modify_strict,
         Error ->
             Error
     end;
-
-modify(#ofp_flow_mod{command=Cmd,
-                     table_id=all}=FlowMod)
-  when Cmd==delete; Cmd==delete_strict ->
-    [modify(FlowMod#ofp_flow_mod{table_id=Id}) || Id <- lists:seq(0, ?OFPTT_MAX)],
+modify(SwitchId, #ofp_flow_mod{command = Cmd, table_id = all} = FlowMod)
+  when Cmd == delete; Cmd == delete_strict ->
+    [modify(SwitchId, FlowMod#ofp_flow_mod{table_id = Id})
+     || Id <- lists:seq(0, ?OFPTT_MAX)],
     ok;
-
-modify(#ofp_flow_mod{command=delete,
-                     table_id=TableId,
-                     cookie=Cookie,
-                     cookie_mask=CookieMask,
-                     out_port=OutPort,
-                     out_group=OutGroup,
-                     match=#ofp_match{fields=Match}}) ->
-    delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup),
+modify(_SwitchId, #ofp_flow_mod{command = delete,
+                                table_id = TableId,
+                                cookie = Cookie,
+                                cookie_mask = CookieMask,
+                                out_port = OutPort,
+                                out_group = OutGroup,
+                                match = #ofp_match{fields = Match}}) ->
+    delete_matching_flows(TableId, Cookie, CookieMask,
+                          Match, OutPort, OutGroup),
     ok;
-
-modify(#ofp_flow_mod{command=delete_strict,
-                     table_id=TableId,
-                     priority=Priority,
-                     match=#ofp_match{fields=Match}}) ->
-            case find_exact_match(TableId, Priority, Match) of
-                #flow_entry{}=FlowEntry ->
-                    delete_flow(TableId, FlowEntry, delete);
-                _ ->
-                    %% Do nothing
-                    ok
-            end.
+modify(_SwitchId, #ofp_flow_mod{command = delete_strict,
+                                table_id = TableId,
+                                priority = Priority,
+                                match = #ofp_match{fields = Match}}) ->
+    case find_exact_match(TableId, Priority, Match) of
+        #flow_entry{} = FlowEntry ->
+            delete_flow(TableId, FlowEntry, delete);
+        _ ->
+            %% Do nothing
+            ok
+    end.
 
 %% @doc Get all entries in one flow table.
--spec get_flow_table(TableId :: integer()) -> [FlowTableEntryRepresentation :: term()].
+-spec get_flow_table(integer()) -> [FlowTableEntryRepr :: term()].
 get_flow_table(TableId) ->
     lists:reverse(ets:tab2list(flow_table_name(TableId))).
 
 %% @doc Delete all flow entries that are using a specific group.
--spec delete_where_group(GroupId :: integer()) -> ok.
+-spec delete_where_group(integer()) -> ok.
 delete_where_group(GroupId) ->
-    [delete_where_group(GroupId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    [delete_where_group(GroupId, TableId)
+     || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
 %% @doc Delete all flow entries that are pointing to a given meter.
@@ -510,10 +509,11 @@ create_flow_entry(#ofp_flow_mod{priority = Priority,
                 %% seq number as a first element.
                 instructions = lists:keysort(2, Instructions)}.
 
-validate_match_and_instructions(TableId, Match, Instructions) ->
+validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
     case validate_match(Match) of
         ok ->
-            case validate_instructions(TableId,Instructions,Match) of
+            case validate_instructions(SwitchId, TableId,
+                                       Instructions, Match) of
                 ok ->
                     ok;
                 Error ->
@@ -678,16 +678,16 @@ test_prereq(none, _Previous) ->
 %% invalid group
 %% invalid value in set-field
 %% operation inconsistent with match, 
-validate_instructions(TableId, Instructions, Match) ->
+validate_instructions(SwitchId, TableId, Instructions, Match) ->
     case check_occurances(Instructions) of
         ok ->
-            do_validate_instructions(TableId, Instructions, Match);
+            do_validate_instructions(SwitchId, TableId, Instructions, Match);
         Error ->
             Error
     end.
 
 check_occurances(Instructions) ->
-    case lists:all(fun (Type) ->
+    case lists:all(fun(Type) ->
                            check_occurrences(Type, Instructions)
                    end, ?INSTRUCTIONS) of
         true ->
@@ -699,54 +699,64 @@ check_occurances(Instructions) ->
     end.
 
 check_occurrences(ofp_instruction_goto_table, Instructions) ->
-    1 >= length([x||#ofp_instruction_goto_table{}<-Instructions]);
+    1 >= length([x || #ofp_instruction_goto_table{} <- Instructions]);
 check_occurrences(ofp_instruction_write_metadata, Instructions) ->
-    1 >= length([x||#ofp_instruction_write_metadata{}<-Instructions]);
+    1 >= length([x || #ofp_instruction_write_metadata{} <- Instructions]);
 check_occurrences(ofp_instruction_write_actions, Instructions) ->
-    1 >= length([x||#ofp_instruction_write_actions{}<-Instructions]);
+    1 >= length([x || #ofp_instruction_write_actions{} <- Instructions]);
 check_occurrences(ofp_instruction_apply_actions, Instructions) ->
-    1 >= length([x||#ofp_instruction_apply_actions{}<-Instructions]);
+    1 >= length([x || #ofp_instruction_apply_actions{} <- Instructions]);
 check_occurrences(ofp_instruction_clear_actions, Instructions) ->
-    1 >= length([x||#ofp_instruction_clear_actions{}<-Instructions]);
+    1 >= length([x || #ofp_instruction_clear_actions{} <- Instructions]);
 check_occurrences(ofp_instruction_experimenter, Instructions) ->
-    1 >= length([x||#ofp_instruction_experimenter{}<-Instructions]).
+    1 >= length([x || #ofp_instruction_experimenter{} <- Instructions]).
                 
-do_validate_instructions(TableId, [Instruction|Instructions], Match) ->
-    case validate_instruction(TableId, Instruction, Match) of
+do_validate_instructions(SwitchId, TableId,
+                         [Instruction | Instructions], Match) ->
+    case validate_instruction(SwitchId, TableId, Instruction, Match) of
         ok ->
-            do_validate_instructions(TableId, Instructions, Match);
+            do_validate_instructions(SwitchId, TableId, Instructions, Match);
         Error ->
             Error
     end;
-do_validate_instructions(_TableId, [], _Match) ->
+do_validate_instructions(_SwitchId, _TableId, [], _Match) ->
     ok.
 
-validate_instruction(_TableId, #ofp_instruction_meter{meter_id=MeterId}, _Match) ->
-    case linc_us4_meter:is_valid(MeterId) of
+validate_instruction(SwitchId, _TableId,
+                     #ofp_instruction_meter{meter_id = MeterId}, _Match) ->
+    case linc_us4_meter:is_valid(SwitchId, MeterId) of
         true ->
             ok;
         false ->
             %% There is not suitable error code
             {error,{bad_instruction,unsup_inst}}
     end;
-validate_instruction(TableId, #ofp_instruction_goto_table{table_id=NextTable}, _Match)
-  when is_integer(TableId), TableId<NextTable, TableId<?OFPTT_MAX ->
+validate_instruction(_SwitchId, TableId,
+                     #ofp_instruction_goto_table{table_id=NextTable}, _Match)
+  when is_integer(TableId), TableId < NextTable, TableId < ?OFPTT_MAX ->
     ok;
-validate_instruction(_TableId, #ofp_instruction_goto_table{}, _Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_goto_table{}, _Match) ->
     %% goto-table with invalid next-table-id
     {error,{bad_action,bad_table_id}};
-
-validate_instruction(_TableId, #ofp_instruction_write_metadata{}, _Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_write_metadata{}, _Match) ->
     ok;
-validate_instruction(_TableId, #ofp_instruction_write_actions{actions=Actions}, Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_write_actions{actions = Actions},
+                     Match) ->
     validate_actions(Actions, Match);
-validate_instruction(_TableId, #ofp_instruction_apply_actions{actions=Actions}, Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_apply_actions{actions = Actions},
+                     Match) ->
     validate_actions(Actions, Match);
-validate_instruction(_TableId, #ofp_instruction_clear_actions{}, _Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_clear_actions{}, _Match) ->
     ok;
-validate_instruction(_TableId, #ofp_instruction_experimenter{}, _Match) ->
+validate_instruction(_SwitchId, _TableId,
+                     #ofp_instruction_experimenter{}, _Match) ->
     {error,{bad_instruction,unknown_inst}};
-validate_instruction(_TableId, _Unknown, _Match) ->
+validate_instruction(_SwitchId, _TableId, _Unknown, _Match) ->
     %% unknown instruction
     {error,{bad_instruction,unknown_inst}}.
 

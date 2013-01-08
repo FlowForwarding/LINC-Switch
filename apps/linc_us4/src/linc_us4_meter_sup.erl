@@ -28,8 +28,6 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--define(ETS, linc_meters).
-
 %%------------------------------------------------------------------------------
 %% API functions
 %%------------------------------------------------------------------------------
@@ -51,7 +49,7 @@ stop(SwitchId) ->
 %%------------------------------------------------------------------------------
 
 init([SwitchId]) ->
-    TId = ets:new(?ETS, [public, {read_concurrency, true}]),
+    TId = ets:new(linc_meters, [public, {read_concurrency, true}]),
     linc:register(SwitchId, linc_meter_ets, TId),
     linc:register(SwitchId, linc_meter_sup, self()),
     MeterSpec = {linc_us4_meter, {linc_us4_meter, start_link, [SwitchId]},

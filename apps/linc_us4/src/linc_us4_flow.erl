@@ -742,14 +742,14 @@ validate_instruction(_SwitchId, _TableId,
 validate_instruction(_SwitchId, _TableId,
                      #ofp_instruction_write_metadata{}, _Match) ->
     ok;
-validate_instruction(_SwitchId, _TableId,
+validate_instruction(SwitchId, _TableId,
                      #ofp_instruction_write_actions{actions = Actions},
                      Match) ->
-    validate_actions(Actions, Match);
-validate_instruction(_SwitchId, _TableId,
+    validate_actions(SwitchId, Actions, Match);
+validate_instruction(SwitchId, _TableId,
                      #ofp_instruction_apply_actions{actions = Actions},
                      Match) ->
-    validate_actions(Actions, Match);
+    validate_actions(SwitchId, Actions, Match);
 validate_instruction(_SwitchId, _TableId,
                      #ofp_instruction_clear_actions{}, _Match) ->
     ok;
@@ -762,17 +762,18 @@ validate_instruction(_SwitchId, _TableId, _Unknown, _Match) ->
 
 %% unsupported instruction {error,{bad_instruction,unsup_inst}},
 
-validate_actions([Action|Actions], Match) ->
-    case validate_action(Action, Match) of
+validate_actions(SwitchId, [Action|Actions], Match) ->
+    case validate_action(SwitchId, Action, Match) of
         ok ->
-            validate_actions(Actions, Match);
+            validate_actions(SwitchId, Actions, Match);
         Error ->
             Error
     end;
-validate_actions([], _Match) ->
+validate_actions(_SwitchId, [], _Match) ->
     ok.
 
-validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
+validate_action(_SwitchId,
+                #ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
     OFPCMLNoBuffer = 16#ffff,
     case MaxLen /= OFPCMLNoBuffer andalso MaxLen > ?OFPCML_MAX of
         true ->
@@ -780,56 +781,56 @@ validate_action(#ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
         false ->
             ok
     end;
-validate_action(#ofp_action_output{port=Port}, _Match) ->
-    case linc_us4_port:is_valid(Port) of
+validate_action(SwitchId, #ofp_action_output{port=Port}, _Match) ->
+    case linc_us4_port:is_valid(SwitchId, Port) of
         true ->
             ok;
         false ->
             {error,{bad_action,bad_out_port}}
     end;
-validate_action(#ofp_action_group{group_id=GroupId}, _Match) ->
+validate_action(_SwitchId, #ofp_action_group{group_id=GroupId}, _Match) ->
     case linc_us4_groups:is_valid(GroupId) of
         true ->
             ok;
         false ->
             {error,{bad_action,bad_out_group}}
     end;
-validate_action(#ofp_action_set_queue{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_set_queue{}, _Match) ->
     ok;
-validate_action(#ofp_action_set_mpls_ttl{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_set_mpls_ttl{}, _Match) ->
     ok;
-validate_action(#ofp_action_dec_mpls_ttl{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_dec_mpls_ttl{}, _Match) ->
     ok;
-validate_action(#ofp_action_set_nw_ttl{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_set_nw_ttl{}, _Match) ->
     ok;
-validate_action(#ofp_action_dec_nw_ttl{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_dec_nw_ttl{}, _Match) ->
     ok;
-validate_action(#ofp_action_copy_ttl_out{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_copy_ttl_out{}, _Match) ->
     ok;
-validate_action(#ofp_action_copy_ttl_in{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_copy_ttl_in{}, _Match) ->
     ok;
-validate_action(#ofp_action_push_vlan{ethertype=Ether}, _Match)
+validate_action(_SwitchId, #ofp_action_push_vlan{ethertype=Ether}, _Match)
   when Ether == 16#8100; Ether==16#88A8 ->
     ok;
-validate_action(#ofp_action_push_vlan{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_push_vlan{}, _Match) ->
     {error,{bad_action,bad_argument}};
-validate_action(#ofp_action_pop_vlan{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_pop_vlan{}, _Match) ->
     ok;
-validate_action(#ofp_action_push_mpls{ethertype=Ether}, _Match)
+validate_action(_SwitchId, #ofp_action_push_mpls{ethertype=Ether}, _Match)
   when Ether == 16#8100; Ether==16#88A8 ->
     ok;
-validate_action(#ofp_action_push_mpls{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_push_mpls{}, _Match) ->
     {error,{bad_action,bad_argument}};
-validate_action(#ofp_action_pop_mpls{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_pop_mpls{}, _Match) ->
     ok;
-validate_action(#ofp_action_set_field{field=Field}, Match) ->
+validate_action(_SwitchId, #ofp_action_set_field{field=Field}, Match) ->
     case check_prerequisites(Field,Match) of
         true ->
             ok;
         false ->
             {error,{bad_action,bad_argument}}
     end;
-validate_action(#ofp_action_experimenter{}, _Match) ->
+validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
     {error,{bad_action,bad_type}}.
 
 %% Check that field value is in the allowed domain

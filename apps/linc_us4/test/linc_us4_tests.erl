@@ -50,7 +50,7 @@ no_ofconfig() ->
 
 with_ofconfig() ->
     add_logic_path(),
-    %% Default sshd port is 830 and requires root or cap_net_admin capability 
+    %% Default sshd port is 830 and requires root or cap_net_admin capability
     %% on the beam to open the port, thus we change it to value above 1024.
 
     application:load(linc),

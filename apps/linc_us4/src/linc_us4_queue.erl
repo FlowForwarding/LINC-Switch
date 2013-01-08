@@ -20,15 +20,15 @@
 -module(linc_us4_queue).
 
 %% Queue API
--export([attach_all/3,
-         detach_all/1,
-         get_stats/1,
-         send/3]).
+-export([attach_all/4,
+         detach_all/2,
+         get_stats/2,
+         send/4]).
 
 %% Internal API
--export([start_link/1,
-         initialize/0,
-         terminate/0]).
+-export([start_link/2,
+         initialize/1,
+         terminate/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -57,14 +57,15 @@
                 max_rate :: integer(),
                 history,
                 send_fun,
+                switch_id :: integer(),
                 throttling_ets}).
 
 %%------------------------------------------------------------------------------
 %% Queue API
 %%------------------------------------------------------------------------------
 
--spec attach_all(ofp_port_no(), fun(), [term()]) -> ok.
-attach_all(PortNo, SendFun, QueuesConfig) ->
+-spec attach_all(integer(), ofp_port_no(), fun(), [term()]) -> ok.
+attach_all(SwitchId, PortNo, SendFun, QueuesConfig) ->
     ThrottlingETS = ets:new(queue_throttling,
                             [public,
                              {read_concurrency, true},
@@ -72,69 +73,71 @@ attach_all(PortNo, SendFun, QueuesConfig) ->
                               #linc_queue_throttling.queue_no}]),
 
     case lists:keyfind(PortNo, 2, QueuesConfig) of
-        {port, PortNo, PortOpts} ->    
+        {port, PortNo, PortOpts} ->
             {port_rate, PortRateDesc} = lists:keyfind(port_rate, 1, PortOpts),
             {port_queues, PortQueues} = lists:keyfind(port_queues, 1, PortOpts);
         false ->
             PortRateDesc = {1000, mbps},
             PortQueues = []
     end,
-    
+    Sup = linc:lookup(SwitchId, linc_us4_queue_sup),
     lists:foreach(fun({QueueId, QueueProps}) ->
-                             Args = [{PortNo, QueueId}, PortRateDesc,
-                                     ThrottlingETS,
-                                     SendFun, QueueProps],
-                             supervisor:start_child(linc_us4_queue_sup, [Args])
-                     end, [{?DEFAULT_QUEUE, []}] ++ PortQueues).
+                          Args = [{PortNo, QueueId}, PortRateDesc,
+                                  ThrottlingETS,
+                                  SendFun, QueueProps],
+                          supervisor:start_child(Sup, [Args])
+                  end, [{?DEFAULT_QUEUE, []}] ++ PortQueues).
 
--spec send(ofp_port_no(), ofp_queue_id(), binary()) -> ok | bad_queue.
-send(PortNo, QueueId, Frame) ->
-    case ets:lookup(linc_port_queue, {PortNo, QueueId}) of
+-spec detach_all(integer(), ofp_port_no()) -> ok.
+detach_all(SwitchId, PortNo) ->
+    lists:foreach(fun(#linc_port_queue{queue_pid = Pid}) ->
+                          gen_server:call(Pid, detach)
+                  end, get_queues(SwitchId, PortNo)).
+
+%% @doc Return queue stats for the given OF port and queue id.
+-spec get_stats(integer(), ofp_queue_stats_request()) -> ofp_queue_stats_reply().
+get_stats(SwitchId, #ofp_queue_stats_request{port_no = PortNo,
+                                             queue_id = QueueId}) ->
+    match_queue(SwitchId, PortNo, QueueId).
+
+-spec send(integer(), ofp_port_no(), ofp_queue_id(), binary()) -> ok | bad_queue.
+send(SwitchId, PortNo, QueueId, Frame) ->
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+    case ets:lookup(LincPortQueue, {PortNo, QueueId}) of
         [#linc_port_queue{queue_pid = Pid}] ->
             gen_server:cast(Pid, {send, Frame});
         [] ->
             bad_queue
     end.
 
--spec detach_all(ofp_port_no()) -> ok.
-detach_all(PortNo) ->
-    lists:foreach(fun(#linc_port_queue{queue_pid = Pid}) ->
-                          gen_server:call(Pid, detach)
-                  end, get_queues(PortNo)).
-
-%% @doc Return queue stats for the given OF port and queue id.
--spec get_stats(ofp_queue_stats_request()) -> ofp_queue_stats_reply().
-get_stats(#ofp_queue_stats_request{port_no = PortNo,
-                                   queue_id = QueueId}) ->
-    match_queue(PortNo, QueueId).
-
 %%------------------------------------------------------------------------------
 %% Internal API
 %%------------------------------------------------------------------------------
 
-initialize() ->
-    linc_port_queue = ets:new(linc_port_queue,
-                              [named_table, public,
-                               {keypos, #linc_port_queue.key},
-                               {read_concurrency, true}]),
-    
-    QueueSup = {linc_us4_queue_sup, {linc_us4_queue_sup, start_link, []},
+initialize(SwitchId) ->
+    LincPortQueue = ets:new(linc_port_queue,
+                            [public,
+                             {keypos, #linc_port_queue.key},
+                             {read_concurrency, true}]),
+    linc:register(SwitchId, linc_port_queue, LincPortQueue),
+    QueueSup = {linc_us4_queue_sup,
+                {linc_us4_queue_sup, start_link, [SwitchId]},
                 permanent, 5000, supervisor, [linc_us4_queue_sup]},
-    supervisor:start_child(linc_us4_sup, QueueSup).
+    supervisor:start_child(linc:lookup(SwitchId, linc_us4_sup), QueueSup).
 
-terminate() ->
-    true = ets:delete(linc_port_queue),
+terminate(SwitchId) ->
+    true = ets:delete(linc:lookup(SwitchId, linc_port_queue)),
     ok.
 
-start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
+start_link(SwitchId, QueueOpts) ->
+    gen_server:start_link(?MODULE, [SwitchId, QueueOpts], []).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
 
-init([{_PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
-      SendFun, QueueProps]) ->
+init([SwitchId, [{_PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
+                 SendFun, QueueProps]]) ->
 
     History = linc_us4_sliding_window:new(?HIST_BUCKET_COUNT, ?HIST_BUCKET_SIZE),
 
@@ -145,23 +148,27 @@ init([{_PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
     MinRate = bps_to_bphistlen(MinRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
     PortRate = bps_to_bphistlen(PortRateBps),
-    ets:insert(linc_port_queue, #linc_port_queue{key = Key,
-                                                 properties = QueueProps,
-                                                 queue_pid = self(),
-                                                 install_time = erlang:now()}),
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+    ets:insert(LincPortQueue, #linc_port_queue{key = Key,
+                                               properties = QueueProps,
+                                               queue_pid = self(),
+                                               install_time = erlang:now()}),
     ets:insert(ThrottlingETS, #linc_queue_throttling{queue_no = QueueNo,
-                                                        min_rate = MinRate,
-                                                        max_rate = MaxRate,
-                                                        rate = 0}),
+                                                     min_rate = MinRate,
+                                                     max_rate = MaxRate,
+                                                     rate = 0}),
     {ok, #state{queue_key = Key, port_rate = PortRate,
                 min_rate = MinRate, max_rate = MaxRate,
                 history = History, send_fun = SendFun,
+                switch_id = SwitchId,
                 throttling_ets = ThrottlingETS}}.
 
 handle_call(detach, _From, #state{queue_key = QueueKey,
+                                  switch_id = SwitchId,
                                   throttling_ets = ThrottlingETS} = State) ->
     {_PortNo, QueueId} = QueueKey,
-    ets:delete(linc_port_queue, QueueKey),
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+    ets:delete(LincPortQueue, QueueKey),
     ets:delete(ThrottlingETS, QueueId),
     {reply, ok, State}.
 
@@ -169,11 +176,12 @@ handle_cast({send, Frame}, #state{queue_key = QueueKey,
                                   min_rate = MinRate, max_rate = MaxRate,
                                   port_rate = PortRate, history = History,
                                   send_fun = SendFun,
+                                  switch_id = SwitchId,
                                   throttling_ets = ThrottlingETS} = State) ->
     NewHistory = sleep_and_send(QueueKey, MinRate, MaxRate,
                                 PortRate, ThrottlingETS,
                                 History, SendFun, Frame),
-    update_queue_tx_counters(QueueKey, byte_size(Frame)),
+    update_queue_tx_counters(SwitchId, QueueKey, byte_size(Frame)),
     {noreply, State#state{history = NewHistory}}.
 
 handle_info(_Info, State) ->
@@ -244,10 +252,11 @@ bps_to_bphistlen(Bps) when is_integer(Bps) ->
 bps_to_bphistlen(Special) when is_atom(Special) ->
     Special.
 
--spec update_queue_tx_counters({ofp_port_no(), ofp_queue_id()},
+-spec update_queue_tx_counters(integer(), {ofp_port_no(), ofp_queue_id()},
                                integer()) -> any().
-update_queue_tx_counters({PortNum, Queue} = Key, Bytes) ->
-    try ets:update_counter(linc_port_queue, Key,
+update_queue_tx_counters(SwitchId, {PortNum, Queue} = Key, Bytes) ->
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+    try ets:update_counter(LincPortQueue, Key,
                            [{#linc_port_queue.tx_packets, 1},
                             {#linc_port_queue.tx_bytes, Bytes}])
     catch
@@ -256,28 +265,30 @@ update_queue_tx_counters({PortNum, Queue} = Key, Bytes) ->
                    "cannot update queue stats", [Queue, PortNum, E1, E2])
     end.
 
--spec get_queues(ofp_port_no()) -> list(#linc_port_queue{}).
-get_queues(PortNo) ->
+-spec get_queues(integer(), ofp_port_no()) -> list(#linc_port_queue{}).
+get_queues(SwitchId, PortNo) ->
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
     MatchSpec = #linc_port_queue{key = {PortNo, '_'}, _ = '_'},
-    ets:match_object(linc_port_queue, MatchSpec).
+    ets:match_object(LincPortQueue, MatchSpec).
 
-match_queue(any, all) ->
-    match_queue(any, '_', '_');
-match_queue(any, QueueMatch) ->
-    match_queue(any, '_', QueueMatch);
-match_queue(PortNo, all) ->
-    match_queue(PortNo, PortNo, '_');
-match_queue(PortMatch, QueueMatch) ->
-    match_queue(PortMatch, PortMatch, QueueMatch).
+match_queue(SwitchId, any, all) ->
+    match_queue(SwitchId, any, '_', '_');
+match_queue(SwitchId, any, QueueMatch) ->
+    match_queue(SwitchId, any, '_', QueueMatch);
+match_queue(SwitchId, PortNo, all) ->
+    match_queue(SwitchId, PortNo, PortNo, '_');
+match_queue(SwitchId, PortMatch, QueueMatch) ->
+    match_queue(SwitchId, PortMatch, PortMatch, QueueMatch).
 
-match_queue(PortNo, PortMatch, QueueMatch) ->
-    case linc_us4_port:is_valid(PortNo) of
+match_queue(SwitchId, PortNo, PortMatch, QueueMatch) ->
+    case linc_us4_port:is_valid(SwitchId, PortNo) of
         false ->
             #ofp_error_msg{type = bad_request, code = bad_port};
         true ->
             MatchSpec = #linc_port_queue{key = {PortMatch, QueueMatch},
                                          _ = '_'},
-            case catch ets:match_object(linc_port_queue, MatchSpec) of
+            LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+            case catch ets:match_object(LincPortQueue, MatchSpec) of
                 [] ->
                     #ofp_error_msg{type = bad_request, code = bad_queue};
                 {'EXIT', _} ->

@@ -20,7 +20,7 @@
 
 -module(linc_us4_instructions).
 
--export([apply/3]).
+-export([apply/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -32,19 +32,17 @@
 -type instructions_apply_output() :: {instructions_apply_result(),
                                       NewPkt :: linc_pkt()}.
 
--spec apply(integer(),
-            Pkt :: linc_pkt(),
+-spec apply(Pkt :: linc_pkt(),
             Instructions :: list(ofp_instruction()))
            -> instructions_apply_output().
-apply(SwitchId, Pkt, Instructions) ->
-    apply2(SwitchId, Pkt, Instructions, stop).
+apply(Pkt, Instructions) ->
+    apply2(Pkt, Instructions, stop).
 
--spec apply2(integer(),
-             Pkt :: linc_pkt(),
+-spec apply2(Pkt :: linc_pkt(),
              Instructions :: list(ofp_instruction()),
              TerminationType :: instructions_apply_result())
             -> instructions_apply_output().
-apply2(SwitchId, Pkt,
+apply2(#linc_pkt{switch_id = SwitchId} = Pkt,
        [#ofp_instruction_meter{meter_id = MeterId} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 15:
@@ -57,8 +55,8 @@ apply2(SwitchId, Pkt,
                                     {continue, P} ->
                                         {P, stop}
                                 end,
-    apply2(SwitchId, NewPkt, InstructionsRest, TerminationType);
-apply2(SwitchId, Pkt,
+    apply2(NewPkt, InstructionsRest, TerminationType);
+apply2(Pkt,
        [#ofp_instruction_apply_actions{actions = Actions} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 15:
@@ -67,14 +65,14 @@ apply2(SwitchId, Pkt,
     %% two tables or to execute multiple actions of the same type.
     %% The actions are specified as an action list (see 5.11).
     {NewPkt, _SideEffects} = linc_us4_actions:apply_list(Pkt, Actions),
-    apply2(SwitchId, NewPkt, InstructionsRest, stop);
-apply2(SwitchId, Pkt,
+    apply2(NewPkt, InstructionsRest, stop);
+apply2(Pkt,
        [#ofp_instruction_clear_actions{} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 15:
     %% Clears all the actions in the action set immediately.
-    apply2(SwitchId, Pkt#linc_pkt{actions = []}, InstructionsRest, stop);
-apply2(SwitchId, #linc_pkt{actions = OldActions} = Pkt,
+    apply2(Pkt#linc_pkt{actions = []}, InstructionsRest, stop);
+apply2(#linc_pkt{actions = OldActions} = Pkt,
        [#ofp_instruction_write_actions{actions = Actions} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 15:
@@ -83,8 +81,8 @@ apply2(SwitchId, #linc_pkt{actions = OldActions} = Pkt,
     %% otherwise add it.
     UActions = lists:ukeysort(2, Actions),
     NewActions = lists:ukeymerge(2, UActions, OldActions),
-    apply2(SwitchId, Pkt#linc_pkt{actions = NewActions}, InstructionsRest, stop);
-apply2(SwitchId, #linc_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
+    apply2(Pkt#linc_pkt{actions = NewActions}, InstructionsRest, stop);
+apply2(#linc_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
        [#ofp_instruction_write_metadata{metadata = NewMetadata,
                                         metadata_mask = Mask} | InstructionsRest],
        stop) ->
@@ -100,21 +98,21 @@ apply2(SwitchId, #linc_pkt{fields = #ofp_match{fields = Fields}} = Pkt,
                end,
     MetadataField = #ofp_field{name = metadata, value = Metadata},
     Fields2 = lists:keystore(metadata, #ofp_field.name, Fields, MetadataField),
-    apply2(SwitchId, Pkt#linc_pkt{fields = #ofp_match{fields = Fields2}},
+    apply2(Pkt#linc_pkt{fields = #ofp_match{fields = Fields2}},
            InstructionsRest, stop);
-apply2(SwitchId, Pkt,
+apply2(Pkt,
        [#ofp_instruction_goto_table{table_id = Id} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 17:
     %% Indicates the next table in the processing pipeline. The table-id must
     %% be greater than the current table-id. The flows of last table of the
     %% pipeline can not include this instruction (see 5.1).
-    apply2(SwitchId, Pkt, InstructionsRest, {goto, Id});
-apply2(_SwitchId, Pkt, _Instructions, drop) ->
+    apply2(Pkt, InstructionsRest, {goto, Id});
+apply2(Pkt, _Instructions, drop) ->
     {stop, Pkt};
-apply2(_SwitchId, Pkt, [], stop) ->
+apply2(Pkt, [], stop) ->
     {stop, Pkt};
-apply2(_SwitchId, Pkt, [], {goto, Id}) ->
+apply2(Pkt, [], {goto, Id}) ->
     {{goto, Id}, Pkt}.
 
 %%%-----------------------------------------------------------------------------

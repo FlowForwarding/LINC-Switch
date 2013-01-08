@@ -33,7 +33,7 @@
 
 -spec start_link(integer(), atom()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(SwitchId, BackendMod) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [SwitchId, BackendMod]).
+    supervisor:start_link(?MODULE, [SwitchId, BackendMod]).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
@@ -42,8 +42,6 @@ start_link(SwitchId, BackendMod) ->
 init([SwitchId, BackendMod]) ->
     linc:create(SwitchId),
     linc:register(SwitchId, linc_sup, self()),
-
     Logic = {linc_logic, {linc_logic, start_link, [SwitchId, BackendMod, []]},
              permanent, 5000, worker, [linc_logic]},
-
     {ok, {{one_for_all, 5, 10}, [Logic]}}.

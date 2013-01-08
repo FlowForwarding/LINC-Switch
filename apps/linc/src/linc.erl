@@ -26,9 +26,11 @@
          stop/1]).
 
 -export([create/1,
+         delete/1,
          register/3,
          lookup/2,
-         controllers_for_switch/1]).
+         controllers_for_switch/1,
+         ports_for_switch/1]).
 
 %%------------------------------------------------------------------------------
 %% Application callbacks
@@ -51,32 +53,46 @@ stop(_State) ->
 %%------------------------------------------------------------------------------
 
 -spec create(integer()) -> ets:tid().
-create(Id) ->
-    ets:new(name(Id), [named_table, public,
-                       {read_concurrency, true}]).
+create(SwitchId) ->
+    ets:new(name(SwitchId), [named_table, public,
+                             {read_concurrency, true}]).
+
+-spec delete(integer()) -> ok.
+delete(SwitchId) ->
+    ets:delete(name(SwitchId)).
 
 -spec register(integer(), atom(), pid()) -> true.
-register(Id, Name, Pid) ->
-    true = ets:insert(name(Id), {Name, Pid}).
+register(SwitchId, Name, Pid) ->
+    true = ets:insert(name(SwitchId), {Name, Pid}).
 
--spec lookup(integer(), atom()) -> pid().
-lookup(Id, Name) ->
-    [{Name, Pid}] = ets:lookup(name(Id), Name),
+-spec lookup(integer(), atom()) -> term().
+lookup(SwitchId, Name) ->
+    [{Name, Pid}] = ets:lookup(name(SwitchId), Name),
     Pid.
 
 -spec controllers_for_switch(integer()) -> list(tuple()).
-controllers_for_switch(_Id) ->
+controllers_for_switch(_SwitchId) ->
     {ok, Controllers} = application:get_env(linc, controllers),
     Controllers.
+
+ports_for_switch(SwitchId) ->
+    case application:get_env(linc, backends_opts) of
+        {ok, Backends} ->
+            {linc_us4, Opts} = lists:keyfind(linc_us4, 1, Backends),
+            {ports, UserspacePorts} = lists:keyfind(ports, 1, Opts),
+            UserspacePorts;
+        undefined ->
+            []
+    end.
 
 %%------------------------------------------------------------------------------
 %% Local helpers
 %%------------------------------------------------------------------------------
 
-name(Id) ->
-    list_to_atom("linc_switch_" ++ integer_to_list(Id)).
+name(SwitchId) ->
+    list_to_atom("linc_switch_" ++ integer_to_list(SwitchId)).
 
 -spec backend_for_switch(integer()) -> atom().
-backend_for_switch(_Id) ->
+backend_for_switch(_SwitchId) ->
     {ok, BackendMod} = application:get_env(linc, backend),
     BackendMod.

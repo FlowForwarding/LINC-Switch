@@ -28,6 +28,7 @@
 -include("linc_us4.hrl").
 
 -define(MOCKED, [port_native]).
+-define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -46,19 +47,19 @@ queue_stats_request() ->
 
     StatsRequest1 = #ofp_queue_stats_request{port_no = BadPort,
                                              queue_id = BadQueue},
-    StatsReply1 = linc_us4_queue:get_stats(StatsRequest1),
+    StatsReply1 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest1),
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_port},
                  StatsReply1),
 
     StatsRequest2 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = BadQueue},
-    StatsReply2 = linc_us4_queue:get_stats(StatsRequest2),
+    StatsReply2 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest2),
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_queue},
                  StatsReply2),
 
     StatsRequest3 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = ValidQueue},
-    StatsReply3 = linc_us4_queue:get_stats(StatsRequest3),
+    StatsReply3 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest3),
     ?assertMatch(#ofp_queue_stats_reply{}, StatsReply3),
     [QueueStats] = StatsReply3#ofp_queue_stats_reply.body,
     ?assertEqual(0, QueueStats#ofp_queue_stats.duration_sec),
@@ -66,19 +67,19 @@ queue_stats_request() ->
 
     StatsRequest4 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = all},
-    StatsReply4 = linc_us4_queue:get_stats(StatsRequest4),
+    StatsReply4 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest4),
     ?assertMatch(#ofp_queue_stats_reply{}, StatsReply4),
     ?assertEqual(2, length(StatsReply4#ofp_queue_stats_reply.body)),
 
     StatsRequest5 = #ofp_queue_stats_request{port_no = any,
                                              queue_id = 1},
-    StatsReply5 = linc_us4_queue:get_stats(StatsRequest5),
+    StatsReply5 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest5),
     ?assertMatch(#ofp_queue_stats_reply{}, StatsReply5),
     ?assertEqual(1, length(StatsReply5#ofp_queue_stats_reply.body)),
 
     StatsRequest6 = #ofp_queue_stats_request{port_no = any,
                                              queue_id = all},
-    StatsReply6 = linc_us4_queue:get_stats(StatsRequest6),
+    StatsReply6 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest6),
     ?assertMatch(#ofp_queue_stats_reply{}, StatsReply6),
     ?assertEqual(2, length(StatsReply6#ofp_queue_stats_reply.body)).
 
@@ -89,7 +90,8 @@ sending() ->
 
 setup() ->
     mock(?MOCKED),
-    application:unset_env(linc, backends),
+    linc:create(?SWITCH_ID),
+    {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
     Queues = [{port, 1, [{port_rate, {100, kbps}},
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
@@ -100,11 +102,10 @@ setup() ->
                           {queues, Queues}
                          ]},
     application:set_env(linc, backends_opts, [Backend]),
-    linc_us4_sup:start_link(),
-    linc_us4_port:initialize(),
+    linc_us4_port:initialize(?SWITCH_ID),
     ok.
 
 teardown(ok) ->
-    linc_us4_port:terminate(),
+    linc_us4_port:terminate(?SWITCH_ID),
     unmock(?MOCKED),
     ok.

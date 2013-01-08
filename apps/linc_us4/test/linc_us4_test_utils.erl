@@ -65,9 +65,9 @@ mock([port | Rest]) ->
                              ok
                      end),
     ok = meck:expect(linc_us4_port, is_valid,
-                     fun (X) when X>32 ->
+                     fun (_, X) when X>32 ->
                              false;
-                         (_) ->
+                         (_, _) ->
                              true
                      end),
     mock(Rest);

@@ -39,7 +39,9 @@
 -define(INTERVAL, 1). % In seconds
 -define(MAX_AGE, 2).  % In seconds
 
--record(state, {tref}).
+-record(state, {linc_buffers :: ets:tid(),
+                linc_buffer_id :: ets:tid(),
+                tref :: timer:tref()}).
 
 %%%===================================================================
 %%% API
@@ -47,26 +49,30 @@
 
 -spec initialize() -> #state{}.
 initialize() ->
-    linc_buffers = ets:new(linc_buffers,
+    LincBuffers = ets:new(linc_buffers,
+                          [named_table,
+                           public,
+                           {keypos, #linc_buffer.id}]),
+
+    LincBufferId = ets:new(linc_buffer_id,
                            [named_table,
                             public,
-                            {keypos, #linc_buffer.id}]),
-
-    linc_buffer_id = ets:new(linc_buffer_id,
-                             [named_table,
-                              public,
-                              {keypos, #linc_buffer_id.key}]),
-
-    ets:insert(linc_buffer_id, #linc_buffer_id{key=key, id_num=0}),
+                            {keypos, #linc_buffer_id.key}]),
+    
+    ets:insert(LincBufferId, #linc_buffer_id{key=key, id_num=0}),
 
     {ok,Tref} = timer:apply_interval(timer:seconds(?INTERVAL),
                                      ?MODULE, expire_buffers, []),
-    #state{tref=Tref}.
+    #state{linc_buffers = LincBuffers,
+           linc_buffer_id = LincBufferId,
+           tref=Tref}.
 
-terminate(#state{tref=Tref}) ->
+terminate(#state{linc_buffers = LincBuffers,
+                 linc_buffer_id = LincBufferId,
+                 tref=Tref}) ->
     timer:cancel(Tref),
-    ets:delete(linc_buffers),
-    ets:delete(linc_buffer_id).
+    ets:delete(LincBuffers),
+    ets:delete(LincBufferId).
 
 %% @doc Save a packet.
 %% @end
@@ -93,7 +99,8 @@ get_buffer(BufferId) ->
 %%% Internal functions
 %%%===================================================================
 next_id() ->
-    ets:update_counter(linc_buffer_id, key, {#linc_buffer_id.id_num, 1, ?MAX_ID, 0}).
+    ets:update_counter(linc_buffer_id, key,
+                       {#linc_buffer_id.id_num, 1, ?MAX_ID, 0}).
 
 expiration_time() ->
     {Mega,Secs,Micro} = os:timestamp(),

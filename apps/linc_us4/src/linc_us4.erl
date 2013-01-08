@@ -22,7 +22,7 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([start_ofconfig/0,
+-export([start_ofconfig/1,
          stop_ofconfig/0]).
 
 %% gen_switch callbacks
@@ -74,18 +74,18 @@
 %%% Switch API
 %%%-----------------------------------------------------------------------------
 
-start_ofconfig() ->
+start_ofconfig(SwitchId) ->
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
             start_dependency(ssh),
             start_dependency(enetconf),
-            linc_us4_ofconfig:start();
+            linc_us4_ofconfig:start(SwitchId);
         _ ->
             ok
     end.
 
 stop_ofconfig() ->
-    %% Don't stop dependent applications (ssh, enetconf) even when they were 
+    %% Don't stop dependent applications (ssh, enetconf) even when they were
     %% started by the corresponding start_ofconfig/0 function.
     %% Rationale: stop_ofconfig/0 is called from the context of
     %% application:stop(linc) and subsequent attempt to stop another application
@@ -103,21 +103,25 @@ stop_ofconfig() ->
 
 %% @doc Start the switch.
 -spec start(any()) -> {ok, Version :: 4, state()}.
-start(_Opts) ->
+start(BackendOpts) ->
+    {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
     BufferState = linc_buffer:initialize(),
-    linc_us4_sup:start_backend_sup(),
-    start_ofconfig(),
+    {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
+    start_ofconfig(SwitchId),
     linc_us4_groups:create(),
     FlowState = linc_us4_flow:initialize(),
-    linc_us4_port:initialize(),
+    linc_us4_port:initialize(SwitchId),
     {ok, 4, #state{flow_state = FlowState,
-                   buffer_state = BufferState}}.
+                   buffer_state = BufferState,
+                   switch_id = SwitchId}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
-stop(#state{flow_state = FlowState, buffer_state = BufferState}) ->
+stop(#state{flow_state = FlowState,
+            buffer_state = BufferState,
+            switch_id = SwitchId}) ->
     stop_ofconfig(),
-    linc_us4_port:terminate(),
+    linc_us4_port:terminate(SwitchId),
     linc_us4_flow:terminate(FlowState),
     linc_us4_groups:destroy(),
     linc_buffer:terminate(BufferState),

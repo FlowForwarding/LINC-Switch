@@ -21,10 +21,12 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-define(SWITCH_ID, 0).
+
 %% Tests -----------------------------------------------------------------------
 
 flow_mod_test_() ->
-    {setup,
+    {foreach,
      fun setup/0,
      fun teardown/1,
      [{"Get when empty", fun get_empty/0}
@@ -33,27 +35,27 @@ flow_mod_test_() ->
      ]}.
 
 get_empty() ->
-    ?assertEqual(not_found, linc_buffer:get_buffer(1)).
+    ?assertEqual(not_found, linc_buffer:get_buffer(?SWITCH_ID, 1)).
 
 save_and_get() ->
     Pkt = {test,some,more},
-    BufferId = linc_buffer:save_buffer(Pkt),
-    ?assertMatch(Pkt, linc_buffer:get_buffer(BufferId)).
+    BufferId = linc_buffer:save_buffer(?SWITCH_ID, Pkt),
+    ?assertMatch(Pkt, linc_buffer:get_buffer(?SWITCH_ID, BufferId)).
 
 expiration() ->
     Pkt = {test, some, more},
-    BufferId = linc_buffer:save_buffer(Pkt),
-    ?assertMatch(Pkt, linc_buffer:get_buffer(BufferId)),
+    BufferId = linc_buffer:save_buffer(?SWITCH_ID, Pkt),
+    ?assertMatch(Pkt, linc_buffer:get_buffer(?SWITCH_ID, BufferId)),
     timer:sleep(3000),
-    ?assertEqual(not_found, linc_buffer:get_buffer(BufferId)).
-    
-
+    ?assertEqual(not_found, linc_buffer:get_buffer(?SWITCH_ID, BufferId)).
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
-    linc_buffer:initialize().
+    linc:create(?SWITCH_ID),
+    linc_buffer:initialize(?SWITCH_ID).
 
 teardown(State) ->
+    linc:delete(?SWITCH_ID),
     linc_buffer:terminate(State).
 
 %% Helpers ---------------------------------------------------------------------

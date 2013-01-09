@@ -20,24 +20,24 @@
 -module(linc_us4_flow).
 
 %% API
--export([initialize/0,
+-export([initialize/1,
          terminate/1,
          table_mod/1,
          modify/2,
-         get_flow_table/1,
-         delete_where_group/1,
-         delete_where_meter/1,
-         get_stats/1,
-         get_aggregate_stats/1,
-         get_table_stats/1,
+         get_flow_table/2,
+         delete_where_group/2,
+         delete_where_meter/2,
+         get_stats/2,
+         get_aggregate_stats/2,
+         get_table_stats/2,
          set_table_config/2,
-         get_table_config/1,
-         update_lookup_counter/1,
-         update_match_counters/3,
+         get_table_config/2,
+         update_lookup_counter/2,
+         update_match_counters/4,
          reset_idle_timeout/2]).
 
 %% Internal exports
--export([check_timers/0]).
+-export([check_timers/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -50,46 +50,55 @@
                        ofp_instruction_write_actions, ofp_instruction_apply_actions,
                        ofp_instruction_clear_actions, ofp_instruction_experimenter]).
 
--record(state,{tref}).
+-record(state,{switch_id :: integer(),
+               tref}).
 
 %% @doc Initialize the flow tables module. Only to be called on system startup.
--spec initialize() -> State::term().
-initialize() ->
-    %% Flows
-    ets:new(flow_table_counters,
-            [named_table, public,
-             {keypos, #flow_table_counter.id},
-             {write_concurrency, true}]),
+-spec initialize(integer()) -> State::term().
+initialize(SwitchId) ->
+    FlowTableCounters = ets:new(flow_table_counters,
+                                [public,
+                                 {keypos, #flow_table_counter.id},
+                                 {write_concurrency, true}]),
+    linc:register(SwitchId, flow_table_counters, FlowTableCounters),
 
-    ets:new(flow_table_config,
-            [named_table, public,
-             {keypos, #flow_table_config.id},
-             {read_concurrency, true}]),
+    FlowTableConfig = ets:new(flow_table_config,
+                              [public,
+                               {keypos, #flow_table_config.id},
+                               {read_concurrency, true}]),
+    linc:register(SwitchId, flow_table_config, FlowTableConfig),
 
-    [create_flow_table(Id) || Id <- lists:seq(0, ?OFPTT_MAX)],
+    [create_flow_table(SwitchId, TableId)
+     || TableId <- lists:seq(0, ?OFPTT_MAX)],
 
-    ets:new(flow_timers,
-            [named_table, public,
-             {keypos, #flow_timer.id},
-             {write_concurrency, true}]),
+    FlowTimers = ets:new(flow_timers,
+                         [public,
+                          {keypos, #flow_timer.id},
+                          {write_concurrency, true}]),
+    linc:register(SwitchId, flow_timers, FlowTimers),
+    {ok,Tref} = timer:apply_interval(1000, linc_us4_flow,
+                                     check_timers, [SwitchId]),
 
-    {ok,Tref} = timer:apply_interval(1000, linc_us4_flow, check_timers, []),
-
-    ets:new(flow_entry_counters,
-            [named_table, public,
-             {keypos, #flow_entry_counter.id},
-             {write_concurrency, true}]),
-    #state{tref=Tref}.
+    FlowEntryCounters = ets:new(flow_entry_counters,
+                                [public,
+                                 {keypos, #flow_entry_counter.id},
+                                 {write_concurrency, true}]),
+    linc:register(SwitchId, flow_entry_counters, FlowEntryCounters),
+    #state{switch_id = SwitchId,
+           tref=Tref}.
 
 %% @doc Terminate the flow table module. Only to be called on system shutdown.
 -spec terminate(#state{}) -> ok.
-terminate(#state{tref=Tref}) ->
+terminate(#state{switch_id = SwitchId, tref=Tref}) ->
     timer:cancel(Tref),
-    [ets:delete(flow_table_name(Id)) || Id <- lists:seq(0, ?OFPTT_MAX)],
-    ets:delete(flow_table_config),
-    ets:delete(flow_table_counters),
-    ets:delete(flow_timers),
-    ets:delete(flow_entry_counters),
+    [begin
+         TId = flow_table_ets(SwitchId, TableId),
+         ets:delete(TId)
+     end || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    ets:delete(linc:lookup(SwitchId, flow_table_config)),
+    ets:delete(linc:lookup(SwitchId, flow_table_counters)),
+    ets:delete(linc:lookup(SwitchId, flow_timers)),
+    ets:delete(linc:lookup(SwitchId, flow_entry_counters)),
     ok.
 
 %% @doc Handle ofp_table_mod request
@@ -114,7 +123,7 @@ modify(SwitchId, #ofp_flow_mod{command = Cmd, buffer_id = BufferId} = FlowMod)
     %% packet starting in flow_table=0.
     case modify(SwitchId, FlowMod#ofp_flow_mod{buffer_id = no_buffer}) of
         ok ->
-            case linc_buffer:get_buffer(BufferId) of
+            case linc_buffer:get_buffer(SwitchId, BufferId) of
                 #linc_pkt{} = OfsPkt ->
                     Action = #ofp_action_output{port = table},
                     linc_us4_actions:apply_list(OfsPkt, [Action]);
@@ -137,21 +146,22 @@ modify(SwitchId, #ofp_flow_mod{command = add,
             case lists:member(check_overlap, Flags) of
                 true ->
                     %% Check that there are no overlapping flows.
-                    case check_overlap(TableId, Priority, Match) of
+                    case check_overlap(SwitchId, TableId, Priority, Match) of
                         true ->
                             {error, {flow_mod_failed, overlap}};
                         false ->
-                            add_new_flow(TableId, FlowMod)
+                            add_new_flow(SwitchId, TableId, FlowMod)
                     end;
                 false ->
                     %% Check if there is any entry with the exact same 
                     %% priority and match
-                    case find_exact_match(TableId, Priority, Match) of
+                    case find_exact_match(SwitchId, TableId,
+                                          Priority, Match) of
                         #flow_entry{} = Matching ->
-                            replace_existing_flow(TableId, FlowMod,
+                            replace_existing_flow(SwitchId, TableId, FlowMod,
                                                   Matching, Flags);
                         no_match ->
-                            add_new_flow(TableId, FlowMod)
+                            add_new_flow(SwitchId, TableId, FlowMod)
                     end
             end;
         Error ->
@@ -167,7 +177,7 @@ modify(SwitchId, #ofp_flow_mod{command = modify,
     case validate_match_and_instructions(SwitchId, TableId,
                                          Match, Instructions) of
         ok ->
-            modify_matching_flows(TableId, Cookie, CookieMask,
+            modify_matching_flows(SwitchId, TableId, Cookie, CookieMask,
                                   Match, Instructions, Flags),
             ok;
         Error ->
@@ -182,9 +192,9 @@ modify(SwitchId, #ofp_flow_mod{command = modify_strict,
     case validate_match_and_instructions(SwitchId, TableId,
                                          Match, Instructions) of
         ok ->
-            case find_exact_match(TableId, Priority, Match) of
+            case find_exact_match(SwitchId, TableId, Priority, Match) of
                 #flow_entry{} = Flow ->
-                    modify_flow(TableId, Flow, Instructions, Flags);
+                    modify_flow(SwitchId, TableId, Flow, Instructions, Flags);
                 no_match ->
                     %% Do nothing
                     ok
@@ -197,101 +207,99 @@ modify(SwitchId, #ofp_flow_mod{command = Cmd, table_id = all} = FlowMod)
     [modify(SwitchId, FlowMod#ofp_flow_mod{table_id = Id})
      || Id <- lists:seq(0, ?OFPTT_MAX)],
     ok;
-modify(_SwitchId, #ofp_flow_mod{command = delete,
-                                table_id = TableId,
-                                cookie = Cookie,
-                                cookie_mask = CookieMask,
-                                out_port = OutPort,
-                                out_group = OutGroup,
-                                match = #ofp_match{fields = Match}}) ->
-    delete_matching_flows(TableId, Cookie, CookieMask,
+modify(SwitchId, #ofp_flow_mod{command = delete,
+                               table_id = TableId,
+                               cookie = Cookie,
+                               cookie_mask = CookieMask,
+                               out_port = OutPort,
+                               out_group = OutGroup,
+                               match = #ofp_match{fields = Match}}) ->
+    delete_matching_flows(SwitchId, TableId, Cookie, CookieMask,
                           Match, OutPort, OutGroup),
     ok;
-modify(_SwitchId, #ofp_flow_mod{command = delete_strict,
+modify(SwitchId, #ofp_flow_mod{command = delete_strict,
                                 table_id = TableId,
                                 priority = Priority,
                                 match = #ofp_match{fields = Match}}) ->
-    case find_exact_match(TableId, Priority, Match) of
+    case find_exact_match(SwitchId, TableId, Priority, Match) of
         #flow_entry{} = FlowEntry ->
-            delete_flow(TableId, FlowEntry, delete);
+            delete_flow(SwitchId, TableId, FlowEntry, delete);
         _ ->
             %% Do nothing
             ok
     end.
 
 %% @doc Get all entries in one flow table.
--spec get_flow_table(integer()) -> [FlowTableEntryRepr :: term()].
-get_flow_table(TableId) ->
-    lists:reverse(ets:tab2list(flow_table_name(TableId))).
+-spec get_flow_table(integer(), integer()) -> [FlowTableEntryRepr :: term()].
+get_flow_table(SwitchId, TableId) ->
+    lists:reverse(ets:tab2list(flow_table_ets(SwitchId, TableId))).
 
 %% @doc Delete all flow entries that are using a specific group.
--spec delete_where_group(integer()) -> ok.
-delete_where_group(GroupId) ->
-    [delete_where_group(GroupId, TableId)
+-spec delete_where_group(integer(), integer()) -> ok.
+delete_where_group(SwitchId, GroupId) ->
+    [delete_where_group(SwitchId, GroupId, TableId)
      || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
 %% @doc Delete all flow entries that are pointing to a given meter.
--spec delete_where_meter(integer()) -> ok.
-delete_where_meter(MeterId) ->
-    [delete_where_meter(MeterId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+-spec delete_where_meter(integer(), integer()) -> ok.
+delete_where_meter(SwitchId, MeterId) ->
+    [delete_where_meter(SwitchId, MeterId, TableId)
+     || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
 %% @doc Get flow statistics.
--spec get_stats(#ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
-get_stats(#ofp_flow_stats_request{table_id = all,
-                                  out_port = OutPort,
-                                  out_group = OutGroup,
-                                  cookie = Cookie,
-                                  cookie_mask = CookieMask,
-                                  match = #ofp_match{fields=Match}}) ->
-    Stats = [get_flow_stats(TableId,
-                            Cookie,
-                            CookieMask,
-                            Match,
-                            OutPort,
+-spec get_stats(integer(), #ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
+get_stats(SwitchId, #ofp_flow_stats_request{table_id = all,
+                                            out_port = OutPort,
+                                            out_group = OutGroup,
+                                            cookie = Cookie,
+                                            cookie_mask = CookieMask,
+                                            match = #ofp_match{fields=Match}}) ->
+    Stats = [get_flow_stats(SwitchId, TableId, Cookie, CookieMask,
+                            Match, OutPort,
                             OutGroup) || TableId <- lists:seq(0, ?OFPTT_MAX)],
-    #ofp_flow_stats_reply{body = lists:concat(Stats)};    
+    #ofp_flow_stats_reply{body = lists:concat(Stats)};
 
-get_stats(#ofp_flow_stats_request{table_id = TableId,
-                                  out_port = OutPort,
-                                  out_group = OutGroup,
-                                  cookie = Cookie,
-                                  cookie_mask = CookieMask,
-                                  match = #ofp_match{fields=Match}}) ->
+get_stats(SwitchId, #ofp_flow_stats_request{table_id = TableId,
+                                            out_port = OutPort,
+                                            out_group = OutGroup,
+                                            cookie = Cookie,
+                                            cookie_mask = CookieMask,
+                                            match = #ofp_match{fields=Match}}) ->
     %%TODO
-    Stats = get_flow_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup),
+    Stats = get_flow_stats(SwitchId, TableId,Cookie, CookieMask,
+                           Match, OutPort, OutGroup),
     #ofp_flow_stats_reply{body = Stats}.
 
 %% @doc Get aggregate statistics.
--spec get_aggregate_stats(#ofp_aggregate_stats_request{}) -> #ofp_aggregate_stats_reply{}.
-get_aggregate_stats(#ofp_aggregate_stats_request{
-                       table_id = all,
-                       out_port = OutPort,
-                       out_group = OutGroup,
-                       cookie = Cookie,
-                       cookie_mask = CookieMask,
-                       match = #ofp_match{fields=Match}}) ->
+-spec get_aggregate_stats(integer(), #ofp_aggregate_stats_request{}) ->
+                                 #ofp_aggregate_stats_reply{}.
+get_aggregate_stats(SwitchId, #ofp_aggregate_stats_request{
+                                 table_id = all,
+                                 out_port = OutPort,
+                                 out_group = OutGroup,
+                                 cookie = Cookie,
+                                 cookie_mask = CookieMask,
+                                 match = #ofp_match{fields=Match}}) ->
     %%TODO
-    Stats = [get_aggregate_stats(TableId,
-                                 Cookie,
-                                 CookieMask,
-                                 Match,
-                                 OutPort,
-                                 OutGroup) || TableId <- lists:seq(0, ?OFPTT_MAX)],
+    Stats = [get_aggregate_stats(SwitchId, TableId, Cookie, CookieMask,
+                                 Match, OutPort, OutGroup)
+             || TableId <- lists:seq(0, ?OFPTT_MAX)],
     %% TODO: merge results
     {PacketCount,ByteCount,FlowCount} = merge_aggregate_stats(Stats),
     #ofp_aggregate_stats_reply{packet_count = PacketCount,
                                byte_count = ByteCount,
                                flow_count = FlowCount};
-get_aggregate_stats(#ofp_aggregate_stats_request{
-                       table_id = TableId,
-                       out_port = OutPort,
-                       out_group = OutGroup,
-                       cookie = Cookie,
-                       cookie_mask = CookieMask,
-                       match = #ofp_match{fields=Match}}) ->
-    {PacketCount,ByteCount,FlowCount} = get_aggregate_stats(TableId,
+get_aggregate_stats(SwitchId, #ofp_aggregate_stats_request{
+                                 table_id = TableId,
+                                 out_port = OutPort,
+                                 out_group = OutGroup,
+                                 cookie = Cookie,
+                                 cookie_mask = CookieMask,
+                                 match = #ofp_match{fields=Match}}) ->
+    {PacketCount,ByteCount,FlowCount} = get_aggregate_stats(SwitchId,
+                                                            TableId,
                                                             Cookie,
                                                             CookieMask,
                                                             Match,
@@ -302,9 +310,10 @@ get_aggregate_stats(#ofp_aggregate_stats_request{
                                flow_count = FlowCount}.
 
 %% @doc Get table statistics.
--spec get_table_stats(#ofp_table_stats_request{}) -> #ofp_table_stats_reply{}.
-get_table_stats(#ofp_table_stats_request{}) ->
-    #ofp_table_stats_reply{body=get_table_stats()}.
+-spec get_table_stats(integer(), #ofp_table_stats_request{}) ->
+                             #ofp_table_stats_reply{}.
+get_table_stats(SwitchId, #ofp_table_stats_request{}) ->
+    #ofp_table_stats_reply{body = get_table_stats(SwitchId)}.
 
 -spec set_table_config(TableId :: integer(), linc_table_config()) -> ok.
 set_table_config(TableId, Config) ->
@@ -312,9 +321,9 @@ set_table_config(TableId, Config) ->
                       #flow_table_config{id = TableId, config = Config}),
     ok.
 
--spec get_table_config(TableId :: integer()) -> linc_table_config().
-get_table_config(TableId) ->
-    case ets:lookup(flow_table_config, TableId) of
+-spec get_table_config(integer(), integer()) -> linc_table_config().
+get_table_config(SwitchId, TableId) ->
+    case ets:lookup(linc:lookup(SwitchId, flow_table_config), TableId) of
         [#flow_table_config{config = Config}] ->
             Config;
         [] ->
@@ -322,21 +331,21 @@ get_table_config(TableId) ->
     end.
 
 %% @doc Update the table lookup statistics counters for a table.
--spec update_lookup_counter(TableId :: integer()) -> ok.
-update_lookup_counter(TableId) ->
-    ets:update_counter(flow_table_counters, TableId,
+-spec update_lookup_counter(integer(), integer()) -> ok.
+update_lookup_counter(SwitchId, TableId) ->
+    ets:update_counter(linc:lookup(SwitchId, flow_table_counters), TableId,
                        [{#flow_table_counter.packet_lookups, 1, ?MAX64, 0}]),
     ok.
 
 %% @doc Update the match lookup statistics counters for a specific flow.
--spec update_match_counters(TableId :: integer(), FlowId :: flow_id(),
-                            PktByteSize :: integer()) -> ok.
-update_match_counters(TableId, FlowId, PktByteSize) ->
+-spec update_match_counters(SwitchId :: integer(), TableId :: integer(),
+                            FlowId :: flow_id(), PktByteSize :: integer()) -> ok.
+update_match_counters(SwitchId, TableId, FlowId, PktByteSize) ->
     try
-        ets:update_counter(flow_table_counters, TableId,
+        ets:update_counter(linc:lookup(SwitchId, flow_table_counters), TableId,
                            [{#flow_table_counter.packet_lookups, 1, ?MAX64, 0},
                             {#flow_table_counter.packet_matches, 1, ?MAX64, 0}]),
-        ets:update_counter(flow_entry_counters,
+        ets:update_counter(linc:lookup(SwitchId, flow_entry_counters),
                            FlowId,[{#flow_entry_counter.received_packets,
                                     1, ?MAX64, 0},
                                    {#flow_entry_counter.received_bytes, 
@@ -348,38 +357,48 @@ update_match_counters(TableId, FlowId, PktByteSize) ->
     end.
 
 %% @doc Reset the idle timeout timer for a specific flow.
--spec reset_idle_timeout(TableId :: integer(), FlowId :: integer()) -> ok.
-reset_idle_timeout(_TableId, FlowId) ->
-    case get_flow_timer(FlowId) of
+-spec reset_idle_timeout(integer(), integer()) -> ok.
+reset_idle_timeout(SwitchId, FlowId) ->
+    case get_flow_timer(SwitchId, FlowId) of
         #flow_timer{idle_timeout = 0} ->
             ok;
         #flow_timer{idle_timeout = IdleTimeout}=_R ->
             Now = os:timestamp(),
             Next = calc_timeout(Now, IdleTimeout),
-            true = ets:update_element(flow_timers,FlowId,
+            true = ets:update_element(linc:lookup(SwitchId, flow_timers),
+                                      FlowId,
                                       {#flow_timer.expire, Next}),
             ok
     end.
 
 %%=============================================================================
 
-%% Return flow table name for table Id.
-flow_table_name(Id) ->
-    list_to_atom(lists:concat([flow_table_,Id])).
+%% Return flow table name for table id.
+flow_table_name(TableId) ->
+    list_to_atom(lists:concat([flow_table_,TableId])).
+
+%% Return flow table ETS tid for given switch id and table id.
+flow_table_ets(SwitchId, TableId) ->
+    TableName = flow_table_name(TableId),
+    linc:lookup(SwitchId, TableName).
 
 %% Create an ETS table for flow table Id, also initialize flow table counters
 %% for the table.
-create_flow_table(Id) ->
-    Tid = ets:new(flow_table_name(Id), [ordered_set, named_table, public,
-                                        {keypos, #flow_entry.id},
-                                        {read_concurrency, true}]),
-    ets:insert(flow_table_counters, #flow_table_counter{id = Id}),
+create_flow_table(SwitchId, TableId) ->
+    TableName = flow_table_name(TableId),
+    Tid = ets:new(TableName, [ordered_set, public,
+                              {keypos, #flow_entry.id},
+                              {read_concurrency, true}]),
+    linc:register(SwitchId, TableName, Tid),
+    ets:insert(linc:lookup(SwitchId, flow_table_counters),
+               #flow_table_counter{id = TableId}),
     Tid.
 
 %% Check if there exists a flowin flow table=TableId with priority=Priority with
 %% a match that overlaps with Match.
-check_overlap(TableId, Priority, NewMatch) ->
-    ExistingMatches = lists:sort(get_matches_by_priority(TableId, Priority)),
+check_overlap(SwitchId, TableId, Priority, NewMatch) ->
+    ExistingMatches = lists:sort(get_matches_by_priority(SwitchId, TableId,
+                                                         Priority)),
     SortedNewMatch = lists:sort(NewMatch),
     lists:any(fun (ExistingMatch) ->
                       overlaps(SortedNewMatch, lists:sort(ExistingMatch))
@@ -433,35 +452,37 @@ overlaps(_V1,_V2) ->
     true.
 
 %% Add a new flow entry.
-add_new_flow(TableId, #ofp_flow_mod{idle_timeout=IdleTime,
-                                    hard_timeout=HardTime,
-                                    instructions=Instructions}=FlowMod) ->
+add_new_flow(SwitchId, TableId,
+             #ofp_flow_mod{idle_timeout=IdleTime,
+                           hard_timeout=HardTime,
+                           instructions=Instructions} = FlowMod) ->
     NewEntry = create_flow_entry(FlowMod),
     %% Create counter before inserting flow in flow table to avoid race.
-    create_flow_entry_counter(NewEntry#flow_entry.id),
-    create_flow_timer(TableId, NewEntry#flow_entry.id, IdleTime, HardTime),
-    ets:insert(flow_table_name(TableId), NewEntry),
+    create_flow_entry_counter(SwitchId, NewEntry#flow_entry.id),
+    create_flow_timer(SwitchId, TableId, NewEntry#flow_entry.id,
+                      IdleTime, HardTime),
+    ets:insert(flow_table_ets(SwitchId, TableId), NewEntry),
     increment_group_ref_count(Instructions),
     ok.
 
 %% Delete a flow
-delete_flow(TableId,
-            #flow_entry{id=FlowId,instructions=Instructions, flags=Flags}=Flow,
-           Reason) ->
+delete_flow(SwitchId, TableId,
+            #flow_entry{id=FlowId, instructions=Instructions, flags=Flags}=Flow,
+            Reason) ->
     case lists:member(send_flow_rem, Flags) andalso Reason/=no_event of
         true ->
-            send_flow_removed(TableId,Flow,Reason);
+            send_flow_removed(SwitchId, TableId, Flow, Reason);
         false ->
             %% Do nothing
             ok
     end,
-    ets:delete(flow_table_name(TableId), FlowId),
-    ets:delete(flow_entry_counters, FlowId),
-    delete_flow_timer(FlowId),
+    ets:delete(flow_table_ets(SwitchId, TableId), FlowId),
+    ets:delete(linc:lookup(SwitchId, flow_entry_counters), FlowId),
+    delete_flow_timer(SwitchId, FlowId),
     decrement_group_ref_count(Instructions),
     ok.
 
-send_flow_removed(TableId,
+send_flow_removed(SwitchId, TableId,
                   #flow_entry{id = FlowId,
                               cookie = Cookie,
                               priority = Priority,
@@ -470,11 +491,13 @@ send_flow_removed(TableId,
                   Reason) ->
     DurationMs = timer:now_diff(os:timestamp(),InstallTime),
     [#flow_entry_counter{
-       received_packets = Packets,
-       received_bytes   = Bytes}] = ets:lookup(flow_entry_counters,FlowId),
+        received_packets = Packets,
+        received_bytes   = Bytes}] = ets:lookup(linc:lookup(SwitchId,
+                                                            flow_entry_counters),
+                                                FlowId),
 
     #flow_timer{idle_timeout = IdleTimeout,
-                hard_timeout = HardTimeout} = get_flow_timer(FlowId),
+                hard_timeout = HardTimeout} = get_flow_timer(SwitchId, FlowId),
 
     Body = #ofp_flow_removed{
               cookie = Cookie,
@@ -841,7 +864,7 @@ validate_value(#ofp_field{name=_Name,value=_Value}) ->
 %% Replace a flow with a new one, possibly keeping the counters
 %% from the old one. This is used when adding a flow with exactly
 %% the same match as an existing one.
-replace_existing_flow(TableId,
+replace_existing_flow(SwitchId, TableId,
                       #ofp_flow_mod{instructions=NewInstructions}=FlowMod,
                       #flow_entry{id=Id,instructions=PrevInstructions}=Existing,
                       Flags) ->
@@ -849,30 +872,31 @@ replace_existing_flow(TableId,
         true ->
             %% Reset flow counters
             %% Store new flow and remove the previous one
-            add_new_flow(TableId, FlowMod),
-            delete_flow(TableId, Existing, no_event);
+            add_new_flow(SwitchId, TableId, FlowMod),
+            delete_flow(SwitchId, TableId, Existing, no_event);
         false ->
             %% Do not reset the flow counters
             %% Just store the new flow with the previous FlowId
             increment_group_ref_count(NewInstructions),
             decrement_group_ref_count(PrevInstructions),
             NewEntry = create_flow_entry(FlowMod),
-            ets:insert(flow_table_name(TableId), NewEntry#flow_entry{id=Id}),
+            ets:insert(flow_table_ets(SwitchId, TableId),
+                       NewEntry#flow_entry{id=Id}),
             ok
     end.
 
 %% Modify an existing flow. This only modifies the instructions, leaving all other
 %% fields unchanged.
-modify_flow(TableId, #flow_entry{id=Id,instructions=PrevInstructions},
+modify_flow(SwitchId, TableId, #flow_entry{id=Id,instructions=PrevInstructions},
             NewInstructions, Flags) ->
-    ets:update_element(flow_table_name(TableId),
-                       Id, 
+    ets:update_element(flow_table_ets(SwitchId, TableId),
+                       Id,
                        {#flow_entry.instructions, NewInstructions}),
     increment_group_ref_count(NewInstructions),
     decrement_group_ref_count(PrevInstructions),
     case lists:member(reset_counts, Flags) of
         true ->
-            true = ets:insert(flow_entry_counters,
+            true = ets:insert(linc:lookup(SwitchId, flow_entry_counters),
                               #flow_entry_counter{id = Id}),
             ok;
         false ->
@@ -882,11 +906,12 @@ modify_flow(TableId, #flow_entry{id=Id,instructions=PrevInstructions},
 
 %%============================================================================
 %% Various counter functions
-create_flow_entry_counter(FlowId) ->
-    true = ets:insert(flow_entry_counters,
+create_flow_entry_counter(SwitchId, FlowId) ->
+    true = ets:insert(linc:lookup(SwitchId, flow_entry_counters),
                       #flow_entry_counter{id = FlowId}).
 
-get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
+get_flow_stats(SwitchId, TableId, Cookie, CookieMask,
+               Match, OutPort, OutGroup) ->
     ets:foldl(fun (#flow_entry{id = FlowId,
                                cookie = MyCookie,
                                priority = Priority,
@@ -901,14 +926,14 @@ get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                       of
                           true ->
                               DurationMs = timer:now_diff(os:timestamp(),InstallTime),
-                              Counters = ets:lookup(flow_entry_counters,FlowId),
+                              Counters = ets:lookup(linc:lookup(SwitchId, flow_entry_counters), FlowId),
                               [#flow_entry_counter{
                                   received_packets = Packets,
                                   received_bytes   = Bytes}] = Counters,
 
                               #flow_timer{idle_timeout = IdleTimeout,
-                                          hard_timeout = HardTimeout} = get_flow_timer(FlowId),
-                                  
+                                          hard_timeout = HardTimeout} = get_flow_timer(SwitchId, FlowId),
+                              
                               Stats = #ofp_flow_stats{
                                          table_id = TableId,
                                          duration_sec = DurationMs div 1000000,
@@ -925,9 +950,10 @@ get_flow_stats(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                           false ->
                               Acc
                       end
-              end, [], flow_table_name(TableId)).
+              end, [], flow_table_ets(SwitchId, TableId)).
 
-get_aggregate_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup) ->
+get_aggregate_stats(SwitchId, TableId,Cookie, CookieMask,
+                    Match, OutPort, OutGroup) ->
     ets:foldl(fun (#flow_entry{id = FlowId,
                                cookie = MyCookie,
                                instructions = Instructions}=FlowEntry, 
@@ -939,7 +965,9 @@ get_aggregate_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                                        Instructions)
                       of
                           true ->
-                              Counters = ets:lookup(flow_entry_counters,FlowId),
+                              FlowEntryCounters = linc:lookup(SwitchId,
+                                                              flow_entry_counters),
+                              Counters = ets:lookup(FlowEntryCounters, FlowId),
                               [#flow_entry_counter{
                                   received_packets = Packets,
                                   received_bytes   = Bytes}] = Counters,
@@ -947,32 +975,32 @@ get_aggregate_stats(TableId,Cookie, CookieMask, Match, OutPort, OutGroup) ->
                           false ->
                               Acc
                       end
-              end, {0,0,0}, flow_table_name(TableId)).
+              end, {0,0,0}, flow_table_ets(SwitchId, TableId)).
 
 merge_aggregate_stats(Stats) ->
     lists:foldl(fun ({Packets,Bytes,Flows}, {PacketsAcc,BytesAcc,FlowsAcc}) ->
                         {PacketsAcc+Packets, BytesAcc+Bytes, FlowsAcc+Flows}
                 end,{0,0,0},Stats).
 
-get_table_stats() ->
-    [get_table_stats1(TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)].
+get_table_stats(SwitchId) ->
+    [get_table_stats1(SwitchId, TableId) || TableId <- lists:seq(0, ?OFPTT_MAX)].
 
-get_table_stats1(TableId) ->
+get_table_stats1(SwitchId, TableId) ->
     [#flow_table_counter{packet_lookups = Lookups,
                          packet_matches = Matches}]
-        = ets:lookup(flow_table_counters, TableId),
+        = ets:lookup(linc:lookup(SwitchId, flow_table_counters), TableId),
     #ofp_table_stats{
        table_id = TableId,
-       active_count = ets:info(flow_table_name(TableId),size),
+       active_count = ets:info(flow_table_ets(SwitchId, TableId), size),
        lookup_count = Lookups,
        matched_count = Matches}.
 
 %%============================================================================
 %% Various timer functions
 
-create_flow_timer(TableId, FlowId, IdleTime, HardTime) ->
+create_flow_timer(SwitchId, TableId, FlowId, IdleTime, HardTime) ->
     Now = os:timestamp(),
-    true = ets:insert(flow_timers,
+    true = ets:insert(linc:lookup(SwitchId, flow_timers),
                       #flow_timer{id = FlowId,
                                   table = TableId,
                                   idle_timeout = IdleTime,
@@ -981,16 +1009,16 @@ create_flow_timer(TableId, FlowId, IdleTime, HardTime) ->
                                   remove = calc_timeout(Now, HardTime)
                                  }).
 
-get_flow_timer(FlowId) ->
-    case ets:lookup(flow_timers,FlowId) of
+get_flow_timer(SwitchId, FlowId) ->
+    case ets:lookup(linc:lookup(SwitchId, flow_timers), FlowId) of
         [Rec] ->
             Rec;
         [] ->
             undefined
     end.
 
-delete_flow_timer(FlowId) ->
-    ets:delete(flow_timers,FlowId).
+delete_flow_timer(SwitchId, FlowId) ->
+    ets:delete(linc:lookup(SwitchId, flow_timers), FlowId).
 
 calc_timeout(_Now, 0) ->
     infinity;
@@ -1002,81 +1030,89 @@ calc_timeout({Mega,Secs,Micro},Time) ->
             {Mega,S,Micro}
     end.
 
-check_timers() ->
+check_timers(SwitchId) ->
     Now = os:timestamp(),
     ets:foldl(fun (Flow, ok) ->
-                      case hard_timeout(Now, Flow) of
+                      case hard_timeout(SwitchId, Now, Flow) of
                           false ->
-                              idle_timeout(Now, Flow),
+                              idle_timeout(SwitchId, Now, Flow),
                               ok;
                           true ->
                               ok
                       end
-              end, ok, flow_timers).
+              end, ok, linc:lookup(SwitchId, flow_timers)).
 
-hard_timeout(_Now, #flow_timer{remove = infinity}) ->
+hard_timeout(_SwitchId, _Now, #flow_timer{remove = infinity}) ->
     false;
-hard_timeout(Now, #flow_timer{id = FlowId, table = TableId, remove = Remove})
-  when Remove<Now ->
-    delete_flow(TableId, get_flow(TableId, FlowId), hard_timeout),
+hard_timeout(SwitchId, Now,
+             #flow_timer{id = FlowId, table = TableId, remove = Remove})
+  when Remove < Now ->
+    delete_flow(SwitchId, TableId, get_flow(SwitchId, TableId, FlowId),
+                hard_timeout),
     true;
-hard_timeout(_Now, _Flow) ->
+hard_timeout(_SwitchId, _Now, _Flow) ->
     false.
 
-idle_timeout(_Now, #flow_timer{expire = infinity}) ->
+idle_timeout(_SwitchId, _Now, #flow_timer{expire = infinity}) ->
     false;
-idle_timeout(Now, #flow_timer{id = FlowId, table = TableId, expire = Expire})
-  when Expire<Now ->
-    delete_flow(TableId, get_flow(TableId, FlowId), idle_timeout),
+idle_timeout(SwitchId, Now,
+             #flow_timer{id = FlowId, table = TableId, expire = Expire})
+  when Expire < Now ->
+    delete_flow(SwitchId, TableId, get_flow(SwitchId, TableId, FlowId),
+                idle_timeout),
     true;
-idle_timeout(_Now, _Flow) ->
+idle_timeout(_SwitchId, _Now, _Flow) ->
     false.
 
 %%============================================================================
 %% Various lookup functions
 
-get_flow(TableId, FlowId) ->
-    [Flow] = ets:lookup(flow_table_name(TableId), FlowId),
-    Flow.
+get_flow(SwitchId, TableId, FlowId) ->
+    hd(ets:lookup(flow_table_ets(SwitchId, TableId), FlowId)).
 
 %% Get the match pattern from all flows with Priority.
-get_matches_by_priority(TableId, Priority) ->
+get_matches_by_priority(SwitchId, TableId, Priority) ->
     Pattern = #flow_entry{id = {Priority,'_'},
                           priority = Priority,
                           match = #ofp_match{fields='$1'},
                           _ = '_'
                          },
-    [M || [M] <- ets:match(flow_table_name(TableId), Pattern)].
+    [M || [M] <- ets:match(flow_table_ets(SwitchId, TableId), Pattern)].
 
 %% Find an existing flow with the same Priority and the exact same match expression.
--spec find_exact_match(ofp_table_id(),non_neg_integer(),ofp_match()) -> flow_id()|no_match.
-find_exact_match(TableId, Priority, Match) ->
+-spec find_exact_match(integer(), ofp_table_id(),
+                       non_neg_integer(), ofp_match()) -> flow_id() | no_match.
+find_exact_match(SwitchId, TableId, Priority, Match) ->
     Pattern = ets:fun2ms(fun (#flow_entry{id={Prio,_},
                                           match=#ofp_match{fields=Fields}}=Flow)
                                when Prio==Priority, Fields==Match ->
                                  Flow
                          end),
-    case ets:select(flow_table_name(TableId), Pattern) of
+    FlowTable = flow_table_ets(SwitchId, TableId),
+    case ets:select(FlowTable, Pattern) of
         [Flow|_] =_Match->
             Flow;
         [] ->
             no_match
     end.
 
-%% Modify flows that are matching 
-modify_matching_flows(TableId, Cookie, CookieMask, Match, Instructions, Flags) ->
+%% Modify flows that are matching
+modify_matching_flows(SwitchId, TableId, Cookie, CookieMask,
+                      Match, Instructions, Flags) ->
     ets:foldl(fun (#flow_entry{cookie=MyCookie}=FlowEntry, Acc) ->
                       case cookie_match(MyCookie, Cookie, CookieMask)
                           andalso non_strict_match(FlowEntry, Match) of
                           true ->
-                              modify_flow(TableId, FlowEntry, Instructions, Flags);
+                              modify_flow(SwitchId, TableId, FlowEntry,
+                                          Instructions, Flags);
                           false ->
                               Acc
                       end
-              end, [], flow_table_name(TableId)).
+              end, [], flow_table_ets(SwitchId, TableId)).
 
 %% Delete flows that are matching 
-delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
+delete_matching_flows(SwitchId, TableId, Cookie, CookieMask,
+                      Match, OutPort, OutGroup) ->
     ets:foldl(fun (#flow_entry{cookie=MyCookie,
                                instructions=Instructions}=FlowEntry, Acc) ->
                       case cookie_match(MyCookie, Cookie, CookieMask)
@@ -1086,11 +1122,11 @@ delete_matching_flows(TableId, Cookie, CookieMask, Match, OutPort, OutGroup) ->
                                                        Instructions)
                       of
                           true ->
-                              delete_flow(TableId, FlowEntry, delete);
+                              delete_flow(SwitchId, TableId, FlowEntry, delete);
                           false ->
                               Acc
                       end
-              end, [], flow_table_name(TableId)).
+              end, [], flow_table_ets(SwitchId, TableId)).
 
 non_strict_match(#flow_entry{match = #ofp_match{fields = EntryFields}},
                  FlowModFields) ->
@@ -1168,26 +1204,28 @@ port_and_group_match_actions(_OutPort,_OutGroup,[]) ->
     false.
 
 %% Remove all flows that have output to GroupId.
-delete_where_group(GroupId, TableId) ->
+delete_where_group(SwitchId, GroupId, TableId) ->
     ets:foldl(fun (#flow_entry{instructions=Instructions}=FlowEntry, Acc) ->
                       case port_and_group_match(any, GroupId, Instructions) of
                           true ->
-                              delete_flow(TableId, FlowEntry, group_delete);
+                              delete_flow(SwitchId, TableId,
+                                          FlowEntry, group_delete);
                           false ->
                               Acc
                       end
-              end, ok, flow_table_name(TableId)).
+              end, ok, flow_table_ets(SwitchId, TableId)).
 
 %% Remove all flows that use MeterId.
-delete_where_meter(MeterId, TableId) ->
+delete_where_meter(SwitchId, MeterId, TableId) ->
     ets:foldl(fun (#flow_entry{instructions=Instructions}=FlowEntry, Acc) ->
                       case meter_match(MeterId, Instructions) of
                           true ->
-                              delete_flow(TableId, FlowEntry, group_delete);
+                              delete_flow(SwitchId, TableId,
+                                          FlowEntry, group_delete);
                           false ->
                               Acc
                       end
-              end, ok, flow_table_name(TableId)).
+              end, ok, flow_table_ets(SwitchId, TableId)).
 
 meter_match(MeterId, Instructions) ->
     [MeterId] == [Id || #ofp_instruction_meter{meter_id=Id} <- Instructions, Id==MeterId].

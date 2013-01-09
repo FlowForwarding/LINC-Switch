@@ -105,11 +105,11 @@ stop_ofconfig() ->
 -spec start(any()) -> {ok, Version :: 4, state()}.
 start(BackendOpts) ->
     {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
-    BufferState = linc_buffer:initialize(),
+    BufferState = linc_buffer:initialize(SwitchId),
     {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
     start_ofconfig(SwitchId),
     linc_us4_groups:create(),
-    FlowState = linc_us4_flow:initialize(),
+    FlowState = linc_us4_flow:initialize(SwitchId),
     linc_us4_port:initialize(SwitchId),
     {ok, 4, #state{flow_state = FlowState,
                    buffer_state = BufferState,

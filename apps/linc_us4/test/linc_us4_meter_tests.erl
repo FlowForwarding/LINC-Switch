@@ -53,7 +53,7 @@ meters_test_() ->
         {setup,
          fun() -> meck:new(linc_us4_flow),
                   meck:expect(linc_us4_flow, delete_where_meter,
-                              fun(_) -> ok end) end,
+                              fun(_, _) -> ok end) end,
          fun(_) -> meck:unload(linc_us4_flow) end,
          [{"Delete", fun delete/0},
           {"Delete non-existing", fun delete_nonexisting/0}]},

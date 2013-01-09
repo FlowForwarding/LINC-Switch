@@ -112,7 +112,7 @@ modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
             end
     end;
 modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}) ->
-    linc_us4_flow:delete_where_meter(Id),
+    linc_us4_flow:delete_where_meter(SwitchId, Id),
     case get_meter_pid(SwitchId, Id) of
         undefined ->
             ok;

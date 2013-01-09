@@ -32,7 +32,7 @@ mock([]) ->
 mock([flow | Rest]) ->
     ok = meck:new(linc_us4_flow),
     ok = meck:expect(linc_us4_flow, delete_where_group,
-                     fun(_) ->
+                     fun(_, _) ->
                              ok
                      end),
     mock(Rest);

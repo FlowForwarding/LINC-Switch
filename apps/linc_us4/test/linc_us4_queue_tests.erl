@@ -64,7 +64,7 @@ queue_stats_request() ->
     [QueueStats] = StatsReply3#ofp_queue_stats_reply.body,
     ?assertEqual(0, QueueStats#ofp_queue_stats.duration_sec),
     ?assertNot(QueueStats#ofp_queue_stats.duration_nsec == 0),
-
+    
     StatsRequest4 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = all},
     StatsReply4 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest4),
@@ -107,5 +107,6 @@ setup() ->
 
 teardown(ok) ->
     linc_us4_port:terminate(?SWITCH_ID),
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED),
     ok.

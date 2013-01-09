@@ -27,6 +27,7 @@
 -include("linc_us4.hrl").
 
 -define(MOCKED, [flow, port]).
+-define(SWITCH_ID, 0).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
@@ -66,7 +67,7 @@ add_group() ->
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
 
     %% check that time elapsed isn't zero
-	G1StatsTime = stats_get(G1Stats, 1, time),
+    G1StatsTime = stats_get(G1Stats, 1, time),
     ?assert(0 < G1StatsTime),
 
     %% send a random package
@@ -77,9 +78,9 @@ add_group() ->
     G2Stats = linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
 
-	%% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
-	timer:sleep(1),
-	G2StatsTime = stats_get(G2Stats, 1, time),
+    %% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
+    timer:sleep(1),
+    G2StatsTime = stats_get(G2Stats, 1, time),
     ?assert(G1StatsTime + 1000 =< G2StatsTime),
 
     ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
@@ -90,7 +91,7 @@ modify_group() ->
     M1 = call_group_mod(add, 1, all, [B1]),
     ?assertEqual(ok, M1),
 
-	%% Duplicate group should fail
+    %% Duplicate group should fail
     M1Err = call_group_mod(add, 1, all, [B1]),
     ?assertMatch({error, #ofp_error_msg{}}, M1Err),
 
@@ -244,10 +245,10 @@ group_exists(GroupId) ->
     end.
 
 call_group_mod(Command, GroupId, Type, Buckets) ->
-    linc_us4_groups:modify(#ofp_group_mod{
-                              command = Command, group_id = GroupId,
-                              type = Type, buckets = Buckets
-                             }).
+    linc_us4_groups:modify(?SWITCH_ID, #ofp_group_mod{
+                                          command = Command, group_id = GroupId,
+                                          type = Type, buckets = Buckets
+                                         }).
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.

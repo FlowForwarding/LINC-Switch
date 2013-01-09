@@ -46,7 +46,7 @@ expiration() ->
     Pkt = {test, some, more},
     BufferId = linc_buffer:save_buffer(?SWITCH_ID, Pkt),
     ?assertMatch(Pkt, linc_buffer:get_buffer(?SWITCH_ID, BufferId)),
-    timer:sleep(3000),
+    timer:sleep(3500),
     ?assertEqual(not_found, linc_buffer:get_buffer(?SWITCH_ID, BufferId)).
 
 %% Fixtures --------------------------------------------------------------------

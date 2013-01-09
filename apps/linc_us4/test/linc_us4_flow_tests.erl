@@ -102,19 +102,19 @@ prerequisite_field_present() ->
                     table_id = 0,command = add,idle_timeout = 0,
                     hard_timeout = 0,priority = 5,buffer_id = no_buffer,
                     out_port = any,out_group = any,flags = [],
-                    match = 
+                    match =
                         #ofp_match{
-                           fields = 
+                           fields =
                                [#ofp_field{
                                    name = eth_type,
                                    value = <<8,0>>},
                                 #ofp_field{
                                    name = ip_proto,
                                    value = <<8>>}]},
-                    instructions = 
+                    instructions =
                         [#ofp_instruction_write_actions{
                             seq = 3,
-                            actions = 
+                            actions =
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     %% Add flow
@@ -127,19 +127,19 @@ prerequisite_field_present_bad_val() ->
                     table_id = 0,command = add,idle_timeout = 0,
                     hard_timeout = 0,priority = 5,buffer_id = no_buffer,
                     out_port = any,out_group = any,flags = [],
-                    match = 
+                    match =
                         #ofp_match{
-                           fields = 
+                           fields =
                                [#ofp_field{
                                    name = eth_type,
                                    value = <<8,8>>},
                                 #ofp_field{
                                    name = ip_proto,
                                    value = <<8>>}]},
-                    instructions = 
+                    instructions =
                         [#ofp_instruction_write_actions{
                             seq = 3,
-                            actions = 
+                            actions =
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     ?assertEqual({error,{bad_match,bad_prereq}},
@@ -152,15 +152,15 @@ prerequisite_field_missing() ->
                     table_id = 0,command = add,idle_timeout = 0,
                     hard_timeout = 0,priority = 5,buffer_id = no_buffer,
                     out_port = any,out_group = any,flags = [],
-                    match = 
+                    match =
                         #ofp_match{
-                           fields = 
+                           fields =
                                [#ofp_field{
                                    name = ip_proto,
                                    value = <<8>>}]},
-                    instructions = 
+                    instructions =
                         [#ofp_instruction_write_actions{
-                            actions = 
+                            actions =
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     ?assertEqual({error,{bad_match,bad_prereq}},
@@ -254,7 +254,7 @@ dupl_instruction() ->
                     {write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
     ?assertEqual({error,{bad_instruction, unknown_inst}},
                  linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)).
-    
+
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
     FlowModAdd = ofp_v4_utils:flow_add(
@@ -284,13 +284,15 @@ add_flow(TableId, Flags) ->
 
     [#flow_entry{id=Id,
                  match=Match1,
-                 instructions=Instructions1}] = linc_us4_flow:get_flow_table(TableId),
+                 instructions=Instructions1}] =
+        linc_us4_flow:get_flow_table(?SWITCH_ID, TableId),
 
     ?assertEqual(Match, Match1),
     ?assertEqual(Instructions, Instructions1),
 
     %% Check that counters entry has been created
-    ?assertMatch([#flow_entry_counter{}], ets:lookup(flow_entry_counters,Id)).
+    FlowEntryCounters = linc:lookup(?SWITCH_ID, flow_entry_counters),
+    ?assertMatch([#flow_entry_counter{}], ets:lookup(FlowEntryCounters, Id)).
 
 %% Add two non overlapping flows, this should always succeed, independent of
 %% if the check_overlap flag is set
@@ -322,7 +324,8 @@ add_non_overlapping_flows(Flags) ->
                   instructions=Instructions2} = FlowModAdd2,
 
     [#flow_entry{match=GotMatch1, instructions=GotInstructions1},
-     #flow_entry{match=GotMatch2, instructions=GotInstructions2}]=linc_us4_flow:get_flow_table(TableId),
+     #flow_entry{match=GotMatch2, instructions=GotInstructions2}] =
+        linc_us4_flow:get_flow_table(?SWITCH_ID, TableId),
     ?assertEqual(lists:sort([{Match1,Instructions1},{Match2, Instructions2}]),
                  lists:sort([{GotMatch1,GotInstructions1},{GotMatch2, GotInstructions2}])).
 
@@ -360,7 +363,7 @@ add_overlapping_flows() ->
                  instructions=GotInstructions1},
      #flow_entry{match=GotMatch2,
                  instructions=GotInstructions2}]
-        = linc_us4_flow:get_flow_table(TableId),
+        = linc_us4_flow:get_flow_table(?SWITCH_ID, TableId),
     ?assertEqual(lists:sort([{Match1,Instructions1},
                              {Match2, Instructions2}]),
                  lists:sort([{GotMatch1,GotInstructions1},
@@ -400,9 +403,9 @@ add_overlapping_flow_check_overlap() ->
 
     ?assertMatch([#flow_entry{match=Match1,
                               instructions=Instructions1}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
-add_exact_flow(Flags) ->    
+add_exact_flow(Flags) ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -428,17 +431,20 @@ add_exact_flow(Flags) ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId1}] = linc_us4_flow:get_flow_table(TableId),
+    [#flow_entry{id=FlowId1}] = linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                             TableId),
 
     %% Increments flow counters
     PacketSize = 1024,
-    linc_us4_flow:update_match_counters(TableId,FlowId1,PacketSize),
+    linc_us4_flow:update_match_counters(?SWITCH_ID, TableId,
+                                        FlowId1, PacketSize),
 
     %% Check that counters are updated
+    FlowEntryCounters = linc:lookup(?SWITCH_ID, flow_entry_counters),
     [#flow_entry_counter{
         id=FlowId1,
         received_packets=1,
-        received_bytes=PacketSize}] = ets:lookup(flow_entry_counters,FlowId1),
+        received_bytes=PacketSize}] = ets:lookup(FlowEntryCounters, FlowId1),
 
     %% Add second flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd2)),
@@ -449,7 +455,8 @@ add_exact_flow(Flags) ->
 
     [#flow_entry{id = FlowId2,
                  match = M2,
-                 instructions = I2}] = linc_us4_flow:get_flow_table(TableId),
+                 instructions = I2}] = linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                                    TableId),
 
     ?assertEqual(M1,M2),
     ?assertEqual(I1,I2),
@@ -457,12 +464,12 @@ add_exact_flow(Flags) ->
     %% Check that counters entry is correct
     case Flags of
         [reset_counts] ->
-            [Stats] = ets:lookup(flow_entry_counters,FlowId2),
+            [Stats] = ets:lookup(FlowEntryCounters, FlowId2),
             ?assertMatch(#flow_entry_counter{received_packets=0,
                                              received_bytes=0},
                          Stats);
         [] ->
-            [Stats] = ets:lookup(flow_entry_counters,FlowId1),
+            [Stats] = ets:lookup(FlowEntryCounters, FlowId1),
             ?assertMatch(#flow_entry_counter{received_packets=1,
                                              received_bytes=PacketSize},
                          Stats)
@@ -500,8 +507,8 @@ flow_priority_order() ->
                   #flow_entry{priority=100,
                               match=Match1,
                               instructions=Instructions1}],
-                 linc_us4_flow:get_flow_table(TableId)).
-    
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
+
 modify_strict(Flags) ->
     TableId = 4,
     Priority = 6,
@@ -528,18 +535,21 @@ modify_strict(Flags) ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(TableId),
+    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                            TableId),
 
     %% Increments flow counters
     PacketSize = 1024,
-    linc_us4_flow:update_match_counters(TableId,FlowId,PacketSize),
+    linc_us4_flow:update_match_counters(?SWITCH_ID, TableId,
+                                        FlowId, PacketSize),
 
     %% Check that counters are updated
+    FlowEntryCounters = linc:lookup(?SWITCH_ID, flow_entry_counters),
     ?assertMatch([#flow_entry_counter{
                      id=FlowId,
                      received_packets=1,
                      received_bytes=PacketSize}],
-                 ets:lookup(flow_entry_counters,FlowId)),
+                 ets:lookup(FlowEntryCounters, FlowId)),
 
     %% Modify flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowMod)),
@@ -548,21 +558,21 @@ modify_strict(Flags) ->
     #ofp_flow_mod{match=M1, instructions=I1} = FlowMod,
 
     ?assertMatch([#flow_entry{id=FlowId, match = M1, instructions = I1}],
-                 linc_us4_flow:get_flow_table(TableId)),
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)),
 
     %% Check that counters entry is correct
     case Flags of
         [reset_counts] ->
             ?assertMatch([#flow_entry_counter{received_packets=0,
                                               received_bytes=0}],
-                         ets:lookup(flow_entry_counters,FlowId));
+                         ets:lookup(FlowEntryCounters, FlowId));
         [] ->
             ?assertMatch([#flow_entry_counter{received_packets=1,
                                               received_bytes=PacketSize}],
-                         ets:lookup(flow_entry_counters,FlowId))
+                         ets:lookup(FlowEntryCounters, FlowId))
     end.
 
-modify_cookie_no_match() ->    
+modify_cookie_no_match() ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -585,7 +595,8 @@ modify_cookie_no_match() ->
 
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Modify flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowMod)),
@@ -596,9 +607,9 @@ modify_cookie_no_match() ->
 
     ?assertMatch([#flow_entry{match = M1,
                               instructions = I1}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
-modify_cookie_match() ->    
+modify_cookie_match() ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -628,7 +639,8 @@ modify_cookie_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
 
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Modify flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd2)),
@@ -639,9 +651,9 @@ modify_cookie_match() ->
 
     ?assertMatch([#flow_entry{match = M,
                               instructions = I}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
-delete_strict() ->    
+delete_strict() ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -664,13 +676,13 @@ delete_strict() ->
     %% Add flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Check that flow was added
-    [#flow_entry{}] = linc_us4_flow:get_flow_table(TableId),
+    [#flow_entry{}] = linc_us4_flow:get_flow_table(?SWITCH_ID, TableId),
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
     %% Check that flow was deleted
-    ?assertEqual([], linc_us4_flow:get_flow_table(TableId)).
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
-delete_cookie_no_match() ->    
+delete_cookie_no_match() ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -698,7 +710,8 @@ delete_cookie_no_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
@@ -709,9 +722,9 @@ delete_cookie_no_match() ->
 
     ?assertMatch([#flow_entry{match = M1,
                               instructions = I1}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
-delete_cookie_match() ->    
+delete_cookie_match() ->
     TableId = 4,
     Priority = 6,
     Match = [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#7>>}],
@@ -739,13 +752,14 @@ delete_cookie_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
 
     %% Check that the the flow was deleted
-    ?assertEqual([], linc_us4_flow:get_flow_table(TableId)).
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
 delete_send_flow_rem() ->
     TableId = 4,
@@ -775,17 +789,18 @@ delete_send_flow_rem() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
 
     %% Check that the the flow was deleted
-    ?assertEqual([], linc_us4_flow:get_flow_table(TableId)).
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
     %% FIXME: Cannot mock linc_logic module that belongs to another application
     %% ?assertEqual(true,linc_us4_test_utils:check_if_called({linc_logic,send_to_controllers,1})).
-    
-    
+
+
 delete_outport_no_match() ->
     TableId = 4,
     Priority = 6,
@@ -811,7 +826,8 @@ delete_outport_no_match() ->
 
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
@@ -821,7 +837,7 @@ delete_outport_no_match() ->
                   instructions=I1} = FlowModAdd1,
 
     ?assertMatch([#flow_entry{match = M1, instructions = I1}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
 delete_outport_match() ->
     TableId = 4,
@@ -848,13 +864,14 @@ delete_outport_match() ->
 
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
 
     %% Check that the the flow was deleted
-    ?assertEqual([], linc_us4_flow:get_flow_table(TableId)).
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
 delete_outgroup_no_match() ->
     TableId = 4,
@@ -882,7 +899,8 @@ delete_outgroup_no_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
@@ -891,7 +909,7 @@ delete_outgroup_no_match() ->
     #ofp_flow_mod{match=M1, instructions=I1} = FlowModAdd1,
 
     ?assertMatch([#flow_entry{match = M1, instructions = I1}],
-                 linc_us4_flow:get_flow_table(TableId)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
 delete_outgroup_match() ->
     TableId = 4,
@@ -919,13 +937,14 @@ delete_outgroup_match() ->
     %% Add first flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
     %% Get FlowId
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(TableId)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                               TableId)),
 
     %% Delete flow
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
 
     %% Check that the the flow was deleted
-    ?assertEqual([], linc_us4_flow:get_flow_table(TableId)).
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, TableId)).
 
 delete_all_tables() ->
     %% Create flow_mod record
@@ -944,8 +963,8 @@ delete_all_tables() ->
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd2)),
 
     %% Check if the flows were added correctly...
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(1)),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(2)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID, 1)),
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID, 2)),
 
     %% Delete all flows
     FlowDel = ofp_v4_utils:flow_delete(
@@ -955,10 +974,10 @@ delete_all_tables() ->
                 []),
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowDel)),
 
-    ?assertEqual([],linc_us4_flow:get_flow_table(1)),
-    ?assertEqual([],linc_us4_flow:get_flow_table(2)).
+    ?assertEqual([],linc_us4_flow:get_flow_table(?SWITCH_ID, 1)),
+    ?assertEqual([],linc_us4_flow:get_flow_table(?SWITCH_ID, 2)).
 
-delete_where_group() ->    
+delete_where_group() ->
     %% Create flow_mod record
     FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
@@ -977,13 +996,13 @@ delete_where_group() ->
                   instructions=Instructions2} = FlowModAdd2,
 
     %% Delete all referencing group 3
-    ?assertEqual(ok, linc_us4_flow:delete_where_group(3)),
+    ?assertEqual(ok, linc_us4_flow:delete_where_group(?SWITCH_ID, 3)),
 
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
-                 linc_us4_flow:get_flow_table(1)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, 1)).
 
-delete_where_meter() ->    
+delete_where_meter() ->
     %% Create flow_mod record
     FlowModAdd1 = ofp_v4_utils:flow_add(
                     [{table_id,1}],
@@ -1002,11 +1021,11 @@ delete_where_meter() ->
                   instructions=Instructions2} = FlowModAdd2,
 
     %% Delete all referencing meter 4
-    ?assertEqual(ok, linc_us4_flow:delete_where_meter(4)),
+    ?assertEqual(ok, linc_us4_flow:delete_where_meter(?SWITCH_ID, 4)),
 
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
-                 linc_us4_flow:get_flow_table(1)).
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, 1)).
 
 statistics_test_() ->
     {setup, fun setup/0, fun teardown/1,
@@ -1025,9 +1044,10 @@ statistics_test_() ->
 
 update_lookup_counter() ->
     TableId = 1,
-    ?assertEqual(ok, linc_us4_flow:update_lookup_counter(TableId)),
+    FlowTableCounters = linc:lookup(?SWITCH_ID, flow_table_counters),
+    ?assertEqual(ok, linc_us4_flow:update_lookup_counter(?SWITCH_ID, TableId)),
     ?assertMatch([#flow_table_counter{packet_lookups=1}],
-                 ets:lookup(flow_table_counters,TableId)).
+                 ets:lookup(FlowTableCounters, TableId)).
 
 
 update_match_counter() ->
@@ -1041,15 +1061,18 @@ update_match_counter() ->
 
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)),
 
-    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(TableId),
+    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                            TableId),
 
     %% Increments flow counters
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(TableId,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         TableId,
                                                          FlowId,
                                                          PacketSize)),
 
-    [Stats] = ets:lookup(flow_entry_counters,FlowId),
+    FlowEntryCounters = linc:lookup(?SWITCH_ID, flow_entry_counters),
+    [Stats] = ets:lookup(FlowEntryCounters, FlowId),
     ?assertMatch(#flow_entry_counter{received_packets=1,
                                      received_bytes=PacketSize},
                  Stats).
@@ -1058,16 +1081,18 @@ update_bad_match_counter() ->
     TableId = undefined,
     FlowId = undefined,
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(TableId,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         TableId,
                                                          FlowId,PacketSize)),
-
-    ?assertEqual([], ets:lookup(flow_entry_counters,FlowId)).
+    FlowEntryCounters = linc:lookup(?SWITCH_ID, flow_entry_counters),
+    ?assertEqual([], ets:lookup(FlowEntryCounters, FlowId)).
 
 empty_flow_stats() ->
     StatsReq = ofp_v4_utils:flow_stats(
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
-    ?assertEqual(#ofp_flow_stats_reply{body=[]}, linc_us4_flow:get_stats(StatsReq)).
+    ?assertEqual(#ofp_flow_stats_reply{body=[]},
+                 linc_us4_flow:get_stats(?SWITCH_ID, StatsReq)).
 
 flow_stats_1_table() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
@@ -1084,7 +1109,7 @@ flow_stats_1_table() ->
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
     ?assertMatch(#ofp_flow_stats_reply{body=[#ofp_flow_stats{}]},
-                 linc_us4_flow:get_stats(StatsReq)).
+                 linc_us4_flow:get_stats(?SWITCH_ID, StatsReq)).
 
 flow_stats_all_tables() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
@@ -1102,7 +1127,7 @@ flow_stats_all_tables() ->
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
     ?assertMatch(#ofp_flow_stats_reply{body=[#ofp_flow_stats{},
                                               #ofp_flow_stats{}]},
-                 linc_us4_flow:get_stats(StatsReq)).
+                 linc_us4_flow:get_stats(?SWITCH_ID, StatsReq)).
 
 empty_aggr_stats() ->
     StatsReq = ofp_v4_utils:aggr_stats(
@@ -1111,7 +1136,7 @@ empty_aggr_stats() ->
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=0,
                                             byte_count=0,
                                             flow_count=0},
-                 linc_us4_flow:get_aggregate_stats(StatsReq)).
+                 linc_us4_flow:get_aggregate_stats(?SWITCH_ID, StatsReq)).
 
 aggr_stats_1_table() ->
     TableId = 1,
@@ -1127,14 +1152,17 @@ aggr_stats_1_table() ->
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd2)),
 
     [#flow_entry{id=FlowId1},
-     #flow_entry{id=FlowId2}] = linc_us4_flow:get_flow_table(TableId),
+     #flow_entry{id=FlowId2}] = linc_us4_flow:get_flow_table(?SWITCH_ID,
+                                                             TableId),
 
     %% Increments flow counters
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(TableId,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         TableId,
                                                          FlowId1,
                                                          PacketSize)),
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(TableId,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         TableId,
                                                          FlowId2,
                                                          PacketSize)),
     %% This will only match one of the flows
@@ -1144,7 +1172,7 @@ aggr_stats_1_table() ->
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=1,
                                             byte_count=1024,
                                             flow_count=1},
-                 linc_us4_flow:get_aggregate_stats(StatsReq)).
+                 linc_us4_flow:get_aggregate_stats(?SWITCH_ID, StatsReq)).
 
 aggr_stats_all_tables() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
@@ -1158,15 +1186,17 @@ aggr_stats_all_tables() ->
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd2)),
 
-    [#flow_entry{id=FlowId1}] = linc_us4_flow:get_flow_table(1),
-    [#flow_entry{id=FlowId2}] = linc_us4_flow:get_flow_table(2),
+    [#flow_entry{id=FlowId1}] = linc_us4_flow:get_flow_table(?SWITCH_ID, 1),
+    [#flow_entry{id=FlowId2}] = linc_us4_flow:get_flow_table(?SWITCH_ID, 2),
 
     %% Increments flow counters
     PacketSize = 1024,
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(1,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         1,
                                                          FlowId1,
                                                          PacketSize)),
-    ?assertEqual(ok, linc_us4_flow:update_match_counters(2,
+    ?assertEqual(ok, linc_us4_flow:update_match_counters(?SWITCH_ID,
+                                                         2,
                                                          FlowId2,
                                                          PacketSize)),
     %% This will matchboth flows
@@ -1176,11 +1206,12 @@ aggr_stats_all_tables() ->
     ?assertEqual(#ofp_aggregate_stats_reply{packet_count=2,
                                             byte_count=2048,
                                             flow_count=2},
-                 linc_us4_flow:get_aggregate_stats(StatsReq)).
+                 linc_us4_flow:get_aggregate_stats(?SWITCH_ID, StatsReq)).
 
 empty_table_stats() ->
     ?assertMatch(#ofp_table_stats_reply{body=[#ofp_table_stats{}|_]},
-                 linc_us4_flow:get_table_stats(#ofp_table_stats_request{})).
+                 linc_us4_flow:get_table_stats(?SWITCH_ID,
+                                               #ofp_table_stats_request{})).
 
 timer_test_() ->
     {setup, fun setup/0, fun teardown/1,
@@ -1196,14 +1227,15 @@ idle_timeout() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(1),
+    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(?SWITCH_ID, 1),
     timer:sleep(100),
-    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(1),
-    ok = linc_us4_flow:reset_idle_timeout(undefined, FlowId),
+    [#flow_entry{id=FlowId}] = linc_us4_flow:get_flow_table(?SWITCH_ID, 1),
+    ok = linc_us4_flow:reset_idle_timeout(?SWITCH_ID, FlowId),
     timer:sleep(100),
-    ?assertMatch([#flow_entry{id=FlowId}], linc_us4_flow:get_flow_table(1)),
-    timer:sleep(2000),
-    ?assertEqual([], linc_us4_flow:get_flow_table(1)).
+    ?assertMatch([#flow_entry{id=FlowId}],
+                 linc_us4_flow:get_flow_table(?SWITCH_ID, 1)),
+    timer:sleep(2500),
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, 1)).
 
 hard_timeout() ->
     FlowModAdd1 = ofp_v4_utils:flow_add(
@@ -1212,19 +1244,21 @@ hard_timeout() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(1)),
-    timer:sleep(2000),
-    ?assertEqual([], linc_us4_flow:get_flow_table(1)).
-    
+    ?assertMatch([#flow_entry{}], linc_us4_flow:get_flow_table(?SWITCH_ID, 1)),
+    timer:sleep(2500),
+    ?assertEqual([], linc_us4_flow:get_flow_table(?SWITCH_ID, 1)).
+
 %% Fixtures --------------------------------------------------------------------
 setup() ->
+    linc:create(?SWITCH_ID),
     linc_us4_test_utils:mock(?MOCKED).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     linc_us4_test_utils:unmock(?MOCKED).
 
 foreach_setup() ->
-    linc_us4_flow:initialize().
+    linc_us4_flow:initialize(?SWITCH_ID).
 
 foreach_teardown(State) ->
     linc_us4_flow:terminate(State).

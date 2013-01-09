@@ -22,7 +22,7 @@
 %% API
 -export([create/0,
          destroy/0,
-         modify/1,
+         modify/2,
          apply/2,
          get_stats/1,
          get_desc/1,
@@ -119,13 +119,14 @@ apply(GroupId, Pkt) ->
     end.
 
 %%--------------------------------------------------------------------
--spec modify(#ofp_group_mod{}) -> ok | {error, Type :: atom(), Code :: atom()}.
+-spec modify(integer(), #ofp_group_mod{}) -> ok |
+                                             {error, Type :: atom(), Code :: atom()}.
 
 %%------ group_mod ADD GROUP
-modify(#ofp_group_mod{ command = add,
-                       group_id = Id,
-                       type = Type,
-                       buckets = Buckets }) ->
+modify(_SwitchId, #ofp_group_mod{ command = add,
+                                  group_id = Id,
+                                  type = Type,
+                                  buckets = Buckets }) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
@@ -153,7 +154,7 @@ modify(#ofp_group_mod{ command = add,
     end;
 
 %%------ group_mod MODIFY GROUP
-modify(#ofp_group_mod{ command = modify,
+modify(_SwitchId, #ofp_group_mod{ command = modify,
                        group_id = Id,
                        type = Type,
                        buckets = Buckets }) ->
@@ -184,8 +185,8 @@ modify(#ofp_group_mod{ command = modify,
     end;
 
 %%------ group_mod DELETE GROUP
-modify(#ofp_group_mod{ command = delete,
-                       group_id = Id }) ->
+modify(SwitchId, #ofp_group_mod{ command = delete,
+                                 group_id = Id }) ->
     %% Deletes existing entry in the group table, if entry with given group id
     %% is not in the table, no error is recorded. Flows containing given
     %% group id are removed along with it.
@@ -201,7 +202,7 @@ modify(#ofp_group_mod{ command = delete,
             %% TODO: Should we support this case at all?
             ok;
         Id ->
-            group_delete(Id)
+            group_delete(SwitchId, Id)
     end,
     ok.
 
@@ -591,16 +592,16 @@ group_enum_groups_2(K, Accum) ->
 %% @internal
 %% @doc Deletes a group by Id, also deletes all groups and flows referring
 %% to this group
-group_delete(Id) ->
-    group_delete_2(Id, ordsets:new()).
+group_delete(SwitchId, Id) ->
+    group_delete_2(SwitchId, Id, ordsets:new()).
 
 %% @internal
 %% @doc Does recursive deletion taking into account groups already processed to
 %% avoid infinite loops. Returns false o
--spec group_delete_2(Id :: integer(), ProcessedGroups :: ordsets:ordset()) ->
+-spec group_delete_2(SwitchId :: integer(), Id :: integer(),
+                     ProcessedGroups :: ordsets:ordset()) ->
                             ordsets:ordset().
-
-group_delete_2(Id, ProcessedGroups) ->
+group_delete_2(SwitchId, Id, ProcessedGroups) ->
     case ordsets:is_element(Id, ProcessedGroups) of
         true ->
             ProcessedGroups;
@@ -609,20 +610,20 @@ group_delete_2(Id, ProcessedGroups) ->
             ReferringGroups = group_find_groups_that_refer_to(
                                 Id, ets:first(group_table), ordsets:new()),
 
-			%% Delete group timers and bucket timers
-			group_delete_timers(Id),
+            %% Delete group timers and bucket timers
+            group_delete_timers(Id),
 
             %% Delete group stats and remove the group
             group_reset_stats(Id),
             ets:delete(group_table, Id),
 
             %% Remove flows containing given group along with it
-            linc_us4_flow:delete_where_group(Id),
+            linc_us4_flow:delete_where_group(SwitchId, Id),
 
             PG2 = ordsets:add_element(Id, ProcessedGroups),
 
             %% Remove referring groups
-            RFunc = fun(X, Accum) -> group_delete_2(X, Accum) end,
+            RFunc = fun(X, Accum) -> group_delete_2(SwitchId, X, Accum) end,
             lists:foldl(RFunc, PG2, ReferringGroups)
     end.
 

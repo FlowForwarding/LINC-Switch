@@ -97,13 +97,13 @@ mock([group | Rest]) ->
                              ok
                      end),
     ok = meck:expect(linc_us4_groups, is_valid,
-                     fun (X) when X>32 ->
+                     fun (_, X) when X>32 ->
                              false;
-                         (_) ->
+                         (_, _) ->
                              true
                      end),
     ok = meck:expect(linc_us4_groups, update_reference_count,
-                     fun(_GroupId, _Incr) ->
+                     fun(_SwitchId, _GroupId, _Incr) ->
                              ok
                      end),
     mock(Rest);

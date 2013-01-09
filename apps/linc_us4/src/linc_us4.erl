@@ -108,7 +108,7 @@ start(BackendOpts) ->
     BufferState = linc_buffer:initialize(SwitchId),
     {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
     start_ofconfig(SwitchId),
-    linc_us4_groups:create(),
+    linc_us4_groups:initialize(SwitchId),
     FlowState = linc_us4_flow:initialize(SwitchId),
     linc_us4_port:initialize(SwitchId),
     {ok, 4, #state{flow_state = FlowState,
@@ -123,7 +123,7 @@ stop(#state{flow_state = FlowState,
     stop_ofconfig(),
     linc_us4_port:terminate(SwitchId),
     linc_us4_flow:terminate(FlowState),
-    linc_us4_groups:destroy(),
+    linc_us4_groups:terminate(SwitchId),
     linc_buffer:terminate(BufferState),
     ok.
 

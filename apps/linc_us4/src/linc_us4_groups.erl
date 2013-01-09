@@ -20,15 +20,15 @@
 -module(linc_us4_groups).
 
 %% API
--export([create/0,
-         destroy/0,
+-export([initialize/1,
+         terminate/1,
          modify/2,
          apply/2,
-         get_stats/1,
-         get_desc/1,
+         get_stats/2,
+         get_desc/2,
          get_features/1,
-         update_reference_count/2,
-         is_valid/1]).
+         update_reference_count/3,
+         is_valid/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -67,11 +67,12 @@
 %%%==============================================================
 
 %% @doc Module startup
-create() ->
-    group_table = ets:new(group_table, [named_table, public,
-                                        {keypos, #linc_group.id},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
+initialize(SwitchId) ->
+    GroupTable = ets:new(group_table, [public,
+                                       {keypos, #linc_group.id},
+                                       {read_concurrency, true},
+                                       {write_concurrency, true}]),
+    linc:register(SwitchId, group_table, GroupTable),
     %% Stats are stored in form of #linc_group_stats{key, value}, key is a tuple
     %% {group, GroupId, packet_count}
     %% {group, GroupId, byte_count}
@@ -79,41 +80,42 @@ create() ->
     %% {bucket, GroupId, BucketId, byte_count}
     %% and value is 32 or 64 bit unsigned counter, which wraps when reaching max
     %% value for 32 or 64 bit.
-    group_stats = ets:new(group_stats, [named_table, public,
-                                        {keypos, #linc_group_stats.key},
-                                        {read_concurrency, true},
-                                        {write_concurrency, true}]),
+    GroupStats = ets:new(group_stats, [public,
+                                       {keypos, #linc_group_stats.key},
+                                       {read_concurrency, true},
+                                       {write_concurrency, true}]),
+    linc:register(SwitchId, group_stats, GroupStats),
 
-    %% Time for groups is stored in the same way as stats, but holds unix microtime
-    %% instead of counter
+    %% Time for groups is stored in the same way as stats, but holds unix
+    %% microtime instead of counter
     ok.
 
 %%--------------------------------------------------------------------
 %% @doc Module shutdown
-destroy() ->
-    ets:delete(group_table),
-    ets:delete(group_stats),
+terminate(SwitchId) ->
+    ets:delete(linc:lookup(SwitchId, group_table)),
+    ets:delete(linc:lookup(SwitchId, group_stats)),
     ok.
 
 %%--------------------------------------------------------------------
 %% @doc Modifies group reference count by Increment
 %% NOTE: will not wrap to 0xFFFFFFFF if accidentaly went below zero, the
 %% counter will remain negative, but will wrap if overflows 32bit
-update_reference_count(GroupId, Increment) ->
-    group_update_stats(GroupId, reference_count, Increment).
+update_reference_count(SwitchId, GroupId, Increment) ->
+    group_update_stats(SwitchId, GroupId, reference_count, Increment).
 
 %%--------------------------------------------------------------------
 %% @doc Applies group GroupId to packet Pkt, result should be list of
 %% packets and ports where they are destined or 'drop' atom. Packet is
 %% cloned if multiple ports are the destination.
 -spec apply(GroupId :: integer(), Pkt :: #linc_pkt{}) -> ok.
-apply(GroupId, Pkt) ->
-    case group_get(GroupId) of
+apply(GroupId, #linc_pkt{switch_id = SwitchId} = Pkt) ->
+    case group_get(SwitchId, GroupId) of
         not_found -> ok;
         Group     ->
             %% update group stats
-            group_update_stats(GroupId, packet_count, 1),
-            group_update_stats(GroupId, byte_count, Pkt#linc_pkt.size),
+            group_update_stats(SwitchId, GroupId, packet_count, 1),
+            group_update_stats(SwitchId, GroupId, byte_count, Pkt#linc_pkt.size),
 
             apply_group_type_to_packet(Group, Pkt)
     end.
@@ -123,10 +125,10 @@ apply(GroupId, Pkt) ->
                                              {error, Type :: atom(), Code :: atom()}.
 
 %%------ group_mod ADD GROUP
-modify(_SwitchId, #ofp_group_mod{ command = add,
-                                  group_id = Id,
-                                  type = Type,
-                                  buckets = Buckets }) ->
+modify(SwitchId, #ofp_group_mod{ command = add,
+                                 group_id = Id,
+                                 type = Type,
+                                 buckets = Buckets }) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
@@ -138,15 +140,15 @@ modify(_SwitchId, #ofp_group_mod{ command = add,
                total_weight = calculate_total_weight(Buckets),
                refers_to_groups = RefersToGroups
               },
-    case ets:insert_new(group_table, Entry) of
+    case ets:insert_new(linc:lookup(SwitchId, group_table), Entry) of
         true ->
             %% just in case, zero stats
-            group_reset_stats(Id),
-            group_reset_timers(Id),
+            group_reset_stats(SwitchId, Id),
+            group_reset_timers(SwitchId, Id),
             lists:foreach(
               fun(Bucket) ->
                       BucketId = Bucket#linc_bucket.unique_id,
-                      group_reset_bucket_stats(BucketId)
+                      group_reset_bucket_stats(SwitchId, BucketId)
               end, OFSBuckets);
         false ->
             {error, #ofp_error_msg{type = group_mod_failed,
@@ -154,10 +156,10 @@ modify(_SwitchId, #ofp_group_mod{ command = add,
     end;
 
 %%------ group_mod MODIFY GROUP
-modify(_SwitchId, #ofp_group_mod{ command = modify,
-                       group_id = Id,
-                       type = Type,
-                       buckets = Buckets }) ->
+modify(SwitchId, #ofp_group_mod{ command = modify,
+                                 group_id = Id,
+                                 type = Type,
+                                 buckets = Buckets }) ->
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
     Entry = #linc_group{
@@ -168,19 +170,20 @@ modify(_SwitchId, #ofp_group_mod{ command = modify,
               },
     %% Reset group counters
     %% Delete stats for buckets
-    case group_get(Id) of
+    case group_get(SwitchId, Id) of
         not_found ->
             {error, #ofp_error_msg{type = group_mod_failed,
                                    code = unknown_group}};
         OldGroup ->
             lists:foreach(
               fun(B) ->
-                      group_reset_bucket_stats(B#linc_bucket.unique_id)
+                      group_reset_bucket_stats(SwitchId,
+                                               B#linc_bucket.unique_id)
               end, OldGroup#linc_group.buckets),
 
-            group_reset_stats(Id),
-            group_delete_timers(Id),
-            ets:insert(group_table, Entry),
+            group_reset_stats(SwitchId, Id),
+            group_delete_timers(SwitchId, Id),
+            ets:insert(linc:lookup(SwitchId, group_table), Entry),
             ok
     end;
 
@@ -196,8 +199,8 @@ modify(SwitchId, #ofp_group_mod{ command = delete,
     case Id of
         all ->
             %% Reset group counters
-            ets:delete_all_objects(group_table),
-            ets:delete_all_objects(group_stats);
+            ets:delete_all_objects(linc:lookup(SwitchId, group_table)),
+            ets:delete_all_objects(linc:lookup(SwitchId, group_stats));
         any ->
             %% TODO: Should we support this case at all?
             ok;
@@ -210,23 +213,25 @@ modify(SwitchId, #ofp_group_mod{ command = delete,
 %% @doc Responds with stats for given group or special atom 'all' requests
 %% stats for all groups in a list
 %% Returns no error, if the requested id doesn't exist, would return empty list
--spec get_stats(#ofp_group_stats_request{}) ->
+-spec get_stats(integer(), #ofp_group_stats_request{}) ->
                        #ofp_group_stats_reply{}.
-get_stats(R) ->
+get_stats(SwitchId, #ofp_group_stats_request{group_id = GroupId}) ->
     %% Special groupid 'all' requests all groups stats
-    case R#ofp_group_stats_request.group_id of
-        all -> IdList = [];
-        Id -> IdList = [Id]
-    end,
-    Stats = [group_get_stats(Id) || Id <- IdList],
+    IdList = case GroupId of
+                 all ->
+                     [];
+                 Id ->
+                     [Id]
+             end,
+    Stats = [group_get_stats(SwitchId, Id) || Id <- IdList],
     #ofp_group_stats_reply{body = lists:flatten(Stats)}.
 
 %%--------------------------------------------------------------------
--spec get_desc(#ofp_group_desc_request{}) ->
+-spec get_desc(integer(), #ofp_group_desc_request{}) ->
                       #ofp_group_desc_reply{}.
-get_desc(_R) ->
+get_desc(SwitchId, #ofp_group_desc_request{}) ->
     #ofp_group_desc_reply{
-       body = group_enum_groups()
+       body = group_enum_groups(SwitchId)
       }.
 
 %%--------------------------------------------------------------------
@@ -243,9 +248,9 @@ get_features(#ofp_group_features_request{ flags = _F }) ->
 
 %%--------------------------------------------------------------------
 %% @doc Test if a group exists.
--spec is_valid(integer()) -> boolean().
-is_valid(GroupId) ->
-    ets:member(group_table, GroupId).
+-spec is_valid(integer(), integer()) -> boolean().
+is_valid(SwitchId, GroupId) ->
+    ets:member(linc:lookup(SwitchId ,group_table), GroupId).
 
 %%%==============================================================
 %%% Tool Functions
@@ -312,11 +317,11 @@ apply_group_type_to_packet(#linc_group{type = ff, buckets = Buckets},
     %% trip to the controller. If no buckets are live, packets are dropped. This
     %% group type must implement a liveness mechanism (see 6.9 of OF1.2 spec)
     case pick_live_bucket(Buckets) of
-        false -> 
+        false ->
             ok;
         Bucket ->
             ok = apply_bucket(Bucket, Pkt),
-            ok      
+            ok
     end.
 
 %%--------------------------------------------------------------------
@@ -334,11 +339,11 @@ pick_live_bucket([Bucket | _]) -> Bucket.
 
 apply_bucket(#linc_bucket{
                 unique_id = BucketId,
-                bucket = #ofp_bucket{actions = Actions}
-               }, Pkt) ->
+                bucket = #ofp_bucket{actions = Actions}},
+             #linc_pkt{switch_id = SwitchId} = Pkt) ->
     %% update bucket stats no matter where packet goes
-    group_update_bucket_stats(BucketId, packet_count, 1),
-    group_update_bucket_stats(BucketId, byte_count, Pkt#linc_pkt.size),
+    group_update_bucket_stats(SwitchId, BucketId, packet_count, 1),
+    group_update_bucket_stats(SwitchId, BucketId, byte_count, Pkt#linc_pkt.size),
 
     %%ActionsSet = ordsets:from_list(Actions),
     case linc_us4_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
@@ -391,80 +396,84 @@ create_unique_id_for_bucket(B) ->
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Deletes all stats for group but not the buckets!
-group_reset_stats(GroupId) ->
+group_reset_stats(SwitchId, GroupId) ->
     %% Delete stats for group
-    ets:delete(group_stats, {group, GroupId, reference_count}),
-    ets:delete(group_stats, {group, GroupId, packet_count}),
-    ets:delete(group_stats, {group, GroupId, byte_count}),
+    GroupStats = linc:lookup(SwitchId, group_stats),
+    ets:delete(GroupStats, {group, GroupId, reference_count}),
+    ets:delete(GroupStats, {group, GroupId, packet_count}),
+    ets:delete(GroupStats, {group, GroupId, byte_count}),
     ok.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Resets group stats starting time to current Unix time (in microsec)
-group_reset_timers(GroupId) ->
+group_reset_timers(SwitchId, GroupId) ->
     %% Set timer of the group to current time
     {Mega, Sec, Micro} = os:timestamp(),
     NowMicro = (Mega * 1000000 + Sec) * 1000000 + Micro,
-    ets:insert(group_stats, #linc_group_stats{
-                 key   = {group_start_time, GroupId},
-                 value = NowMicro
-                }),
+    ets:insert(linc:lookup(SwitchId, group_stats),
+               #linc_group_stats{
+                  key   = {group_start_time, GroupId},
+                  value = NowMicro
+                 }),
     ok.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Deletes timer from ETS
-group_delete_timers(GroupId) ->
-    ets:delete(group_stats, {group_start_time, GroupId}).
+group_delete_timers(SwitchId, GroupId) ->
+    ets:delete(linc:lookup(SwitchId ,group_stats), {group_start_time, GroupId}).
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Updates stat counter in ETS for group
--spec group_update_stats(GroupId :: integer(),
+-spec group_update_stats(SwitchId :: integer(),
+                         GroupId :: integer(),
                          Stat :: atom(),
                          Increment :: integer()) -> ok.
-
-group_update_stats(GroupId, Stat, Increment) ->
+group_update_stats(SwitchId, GroupId, Stat, Increment) ->
     Threshold = (1 bsl group_stat_bitsize(Stat)) - 1,
     try
-        ets:update_counter(group_stats,
+        ets:update_counter(linc:lookup(SwitchId, group_stats),
                            {group, GroupId, Stat},
                            {#linc_group_stats.value, Increment, Threshold, 0})
     catch
         error:badarg ->
-            ets:insert(group_stats, #linc_group_stats{
-                                       key = {group, GroupId, Stat},
-                                       value = Increment
-                                      })
+            ets:insert(linc:lookup(SwitchId, group_stats),
+                       #linc_group_stats{
+                          key = {group, GroupId, Stat},
+                          value = Increment
+                         })
     end,
     ok.
-
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Requests full group stats
--spec group_get_stats(integer()) -> list(#ofp_group_stats{}).
-group_get_stats(GroupId) ->
-    case group_get(GroupId) of
+-spec group_get_stats(integer(), integer()) -> list(#ofp_group_stats{}).
+group_get_stats(SwitchId, GroupId) ->
+    case group_get(SwitchId, GroupId) of
         not_found ->
             [];
         G ->
             BStats = [#ofp_bucket_counter{
-                         packet_count = group_get_bucket_stat(Bucket#linc_bucket.unique_id,
+                         packet_count = group_get_bucket_stat(SwitchId,
+                                                              Bucket#linc_bucket.unique_id,
                                                               packet_count),
-                         byte_count = group_get_bucket_stat(Bucket#linc_bucket.unique_id,
+                         byte_count = group_get_bucket_stat(SwitchId,
+                                                            Bucket#linc_bucket.unique_id,
                                                             byte_count)
                         } || Bucket <- G#linc_group.buckets],
 
-			{MicroNowMS, MicroNowS, MicroNowMicroS} = os:timestamp(),
-			MicroNow = (MicroNowMS * 1000000 + MicroNowS) * 1000000 + MicroNowMicroS,
-            GroupTime = MicroNow - group_get_time(GroupId),
+            {MicroNowMS, MicroNowS, MicroNowMicroS} = os:timestamp(),
+            MicroNow = (MicroNowMS * 1000000 + MicroNowS) * 1000000 + MicroNowMicroS,
+            GroupTime = MicroNow - group_get_time(SwitchId, GroupId),
 
             [#ofp_group_stats{
                 group_id      = GroupId,
-                ref_count     = group_get_stat(GroupId, reference_count),
-                packet_count  = group_get_stat(GroupId, packet_count),
-                byte_count    = group_get_stat(GroupId, byte_count),
+                ref_count     = group_get_stat(SwitchId, GroupId, reference_count),
+                packet_count  = group_get_stat(SwitchId, GroupId, packet_count),
+                byte_count    = group_get_stat(SwitchId, GroupId, byte_count),
                 bucket_stats  = BStats,
                 duration_sec  = GroupTime / 1000000,           % seconds
                 duration_nsec = (GroupTime rem 1000000) * 1000 % microsec * 1000 = nsec
@@ -474,17 +483,21 @@ group_get_stats(GroupId) ->
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Retrieves one stat for group, zero if stat or group doesn't exist
-group_get_stat(GroupId, Stat) ->
-    case ets:lookup(group_stats, {group, GroupId, Stat}) of
-        []      -> 0;
-        [{linc_group_stats, {group, GroupId, Stat}, Value}] -> Value
+group_get_stat(SwitchId, GroupId, Stat) ->
+    case ets:lookup(linc:lookup(SwitchId, group_stats),
+                    {group, GroupId, Stat}) of
+        [] ->
+            0;
+        [{linc_group_stats, {group, GroupId, Stat}, Value}] ->
+            Value
     end.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Retrieves life duration of group. Record not found is error
-group_get_time(GroupId) ->
-    case ets:lookup(group_stats, {group_start_time, GroupId}) of
+group_get_time(SwitchId, GroupId) ->
+    case ets:lookup(linc:lookup(SwitchId, group_stats),
+                    {group_start_time, GroupId}) of
         [] ->
             erlang:error({?MODULE, group_get_time, not_found, GroupId});
         [{linc_group_stats, {group_start_time, GroupId}, Value}] ->
@@ -495,51 +508,55 @@ group_get_time(GroupId) ->
 %% @internal
 %% @doc Retrieves one stat for bucket (group id is part of bucket id),
 %% returns zero if stat or group or bucket doesn't exist
-group_get_bucket_stat(BucketId, Stat) ->
-    case ets:lookup(group_stats, {bucket, BucketId, Stat}) of
-        []      -> 0;
-        [Value] -> Value
+group_get_bucket_stat(SwitchId, BucketId, Stat) ->
+    case ets:lookup(linc:lookup(SwitchId, group_stats),
+                    {bucket, BucketId, Stat}) of
+        [] ->
+            0;
+        [Value] ->
+            Value
     end.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Deletes bucket stats for groupid and bucketid
--spec group_reset_bucket_stats(linc_bucket_id()) -> ok.
-
-group_reset_bucket_stats(BucketId) ->
-    ets:delete(group_stats, {bucket, BucketId, packet_count}),
-    ets:delete(group_stats, {bucket, BucketId, byte_count}),
+-spec group_reset_bucket_stats(integer(), linc_bucket_id()) -> ok.
+group_reset_bucket_stats(SwitchId, BucketId) ->
+    ets:delete(linc:lookup(SwitchId, group_stats),
+               {bucket, BucketId, packet_count}),
+    ets:delete(linc:lookup(SwitchId, group_stats),
+               {bucket, BucketId, byte_count}),
     ok.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Updates stat counter in ETS for bucket in group
--spec group_update_bucket_stats(BucketId :: linc_bucket_id(),
+-spec group_update_bucket_stats(SwitchId :: integer(),
+                                BucketId :: linc_bucket_id(),
                                 Stat :: atom(),
                                 Increment :: integer()) -> ok.
-
-group_update_bucket_stats(BucketId, Stat, Increment) ->
+group_update_bucket_stats(SwitchId, BucketId, Stat, Increment) ->
     Threshold = (1 bsl group_bucket_stat_bitsize(Stat)) - 1,
     try
-        ets:update_counter(group_stats,
+        ets:update_counter(linc:lookup(SwitchId, group_stats),
                            {bucket, BucketId, Stat},
                            {#linc_group_stats.value, Increment, Threshold, 0})
     catch
         error:badarg ->
-            ets:insert(group_stats, #linc_group_stats{
-                                       key = {bucket, BucketId, Stat},
-                                       value = Increment
-                                      })
+            ets:insert(linc:lookup(SwitchId, group_stats),
+                       #linc_group_stats{
+                          key = {bucket, BucketId, Stat},
+                          value = Increment
+                         })
     end,
     ok.
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Reads group from ETS or returns not_found
--spec group_get(integer()) -> not_found | #linc_group{}.
-
-group_get(GroupId) ->
-    case ets:lookup(group_table, GroupId) of
+-spec group_get(integer(), integer()) -> not_found | #linc_group{}.
+group_get(SwitchId, GroupId) ->
+    case ets:lookup(linc:lookup(SwitchId, group_table), GroupId) of
         [] -> not_found;
         [Group] -> Group
     end.
@@ -550,34 +567,35 @@ group_get(GroupId) ->
 group_stat_bitsize(reference_count) -> 32;
 group_stat_bitsize(packet_count)    -> 64;
 group_stat_bitsize(byte_count)      -> 64.
-%group_stat_bitsize(X) ->
-%    erlang:raise(exit, {badarg, X}).
-    
+                                                %group_stat_bitsize(X) ->
+                                                %    erlang:raise(exit, {badarg, X}).
+
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Returns bit width of counter fields for bucket
 group_bucket_stat_bitsize(packet_count) -> 64;
 group_bucket_stat_bitsize(byte_count)   -> 64.
-%group_bucket_stat_bitsize(X) ->
-%    erlang:raise(exit, {badarg, X}).
+                                                %group_bucket_stat_bitsize(X) ->
+                                                %    erlang:raise(exit, {badarg, X}).
 
 
 %%--------------------------------------------------------------------
 %% @internal
 %% @doc Iterates over all keys of groups table and creates list of
 %% #ofp_group_desc_stats{} standard records for group stats response
--spec group_enum_groups() -> [#ofp_group_desc_stats{}].
-group_enum_groups() ->
-    group_enum_groups_2(ets:first(group_table), []).
+-spec group_enum_groups(integer()) -> [#ofp_group_desc_stats{}].
+group_enum_groups(SwitchId) ->
+    GroupTable = linc:lookup(SwitchId, group_table),
+    group_enum_groups_2(GroupTable, ets:first(GroupTable), []).
 
 %% @internal
 %% @hidden
 %% @doc (does the iteration job for group_enum_groups/0)
-group_enum_groups_2('$end_of_table', Accum) ->
+group_enum_groups_2(_GroupTable, '$end_of_table', Accum) ->
     lists:reverse(Accum);
-group_enum_groups_2(K, Accum) ->
+group_enum_groups_2(GroupTable, K, Accum) ->
     %% record must always exist, as we are iterating over table keys
-    [Group] = ets:lookup(group_table, K),
+    [Group] = ets:lookup(GroupTable, K),
     %% unwrap wrapped buckets
     Buckets = [B#linc_bucket.bucket || B <- Group#linc_group.buckets],
     %% create standard structure
@@ -586,7 +604,8 @@ group_enum_groups_2(K, Accum) ->
                    type = Group#linc_group.type,
                    buckets = Buckets
                   },
-    group_enum_groups_2(ets:next(group_table, K), [GroupDesc | Accum]).
+    group_enum_groups_2(GroupTable, ets:next(GroupTable, K),
+                        [GroupDesc | Accum]).
 
 %%--------------------------------------------------------------------
 %% @internal
@@ -607,15 +626,19 @@ group_delete_2(SwitchId, Id, ProcessedGroups) ->
             ProcessedGroups;
 
         false ->
-            ReferringGroups = group_find_groups_that_refer_to(
-                                Id, ets:first(group_table), ordsets:new()),
+            GroupTable = linc:lookup(SwitchId, group_table),
+            FirstGroup = ets:first(GroupTable),
+            ReferringGroups = group_find_groups_that_refer_to(SwitchId,
+                                                              Id,
+                                                              FirstGroup,
+                                                              ordsets:new()),
 
             %% Delete group timers and bucket timers
-            group_delete_timers(Id),
+            group_delete_timers(SwitchId, Id),
 
             %% Delete group stats and remove the group
-            group_reset_stats(Id),
-            ets:delete(group_table, Id),
+            group_reset_stats(SwitchId, Id),
+            ets:delete(GroupTable, Id),
 
             %% Remove flows containing given group along with it
             linc_us4_flow:delete_where_group(SwitchId, Id),
@@ -631,20 +654,20 @@ group_delete_2(SwitchId, Id, ProcessedGroups) ->
 %% @internal
 %% @doc Iterates over groups table, filters out groups which refer to the
 %% group id 'Id' using cached field in #linc_group{} record
-group_find_groups_that_refer_to(_Id, '$end_of_table', OrdSet) ->
+group_find_groups_that_refer_to(_SwitchId, _Id, '$end_of_table', OrdSet) ->
     OrdSet;
-
-group_find_groups_that_refer_to(Id, EtsKey, OrdSet) ->
+group_find_groups_that_refer_to(SwitchId, Id, EtsKey, OrdSet) ->
     %% this should never crash, as we are iterating over existing keys
-    [G] = ets:lookup(group_table, EtsKey),
+    GroupTable = linc:lookup(SwitchId, group_table),
+    [G] = ets:lookup(GroupTable, EtsKey),
 
-    NextKey = ets:next(group_table, EtsKey),
+    NextKey = ets:next(GroupTable, EtsKey),
     case ordsets:is_element(Id, G#linc_group.refers_to_groups) of
         false ->
-            group_find_groups_that_refer_to(Id, NextKey, OrdSet);
+            group_find_groups_that_refer_to(SwitchId, Id, NextKey, OrdSet);
         true ->
             OrdSet2 = ordsets:add_element(EtsKey, OrdSet),
-            group_find_groups_that_refer_to(Id, NextKey, OrdSet2)
+            group_find_groups_that_refer_to(SwitchId, Id, NextKey, OrdSet2)
     end.
 
 %%--------------------------------------------------------------------

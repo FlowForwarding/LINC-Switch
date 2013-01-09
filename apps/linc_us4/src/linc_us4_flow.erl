@@ -30,7 +30,7 @@
          get_stats/2,
          get_aggregate_stats/2,
          get_table_stats/2,
-         set_table_config/2,
+         set_table_config/3,
          get_table_config/2,
          update_lookup_counter/2,
          update_match_counters/4,
@@ -315,9 +315,9 @@ get_aggregate_stats(SwitchId, #ofp_aggregate_stats_request{
 get_table_stats(SwitchId, #ofp_table_stats_request{}) ->
     #ofp_table_stats_reply{body = get_table_stats(SwitchId)}.
 
--spec set_table_config(TableId :: integer(), linc_table_config()) -> ok.
-set_table_config(TableId, Config) ->
-    true = ets:insert(flow_table_config,
+-spec set_table_config(integer(), integer(), linc_table_config()) -> ok.
+set_table_config(SwitchId, TableId, Config) ->
+    true = ets:insert(linc:lookup(SwitchId, flow_table_config),
                       #flow_table_config{id = TableId, config = Config}),
     ok.
 
@@ -462,7 +462,7 @@ add_new_flow(SwitchId, TableId,
     create_flow_timer(SwitchId, TableId, NewEntry#flow_entry.id,
                       IdleTime, HardTime),
     ets:insert(flow_table_ets(SwitchId, TableId), NewEntry),
-    increment_group_ref_count(Instructions),
+    increment_group_ref_count(SwitchId, Instructions),
     ok.
 
 %% Delete a flow
@@ -479,7 +479,7 @@ delete_flow(SwitchId, TableId,
     ets:delete(flow_table_ets(SwitchId, TableId), FlowId),
     ets:delete(linc:lookup(SwitchId, flow_entry_counters), FlowId),
     delete_flow_timer(SwitchId, FlowId),
-    decrement_group_ref_count(Instructions),
+    decrement_group_ref_count(SwitchId, Instructions),
     ok.
 
 send_flow_removed(SwitchId, TableId,
@@ -811,8 +811,8 @@ validate_action(SwitchId, #ofp_action_output{port=Port}, _Match) ->
         false ->
             {error,{bad_action,bad_out_port}}
     end;
-validate_action(_SwitchId, #ofp_action_group{group_id=GroupId}, _Match) ->
-    case linc_us4_groups:is_valid(GroupId) of
+validate_action(SwitchId, #ofp_action_group{group_id=GroupId}, _Match) ->
+    case linc_us4_groups:is_valid(SwitchId, GroupId) of
         true ->
             ok;
         false ->
@@ -877,8 +877,8 @@ replace_existing_flow(SwitchId, TableId,
         false ->
             %% Do not reset the flow counters
             %% Just store the new flow with the previous FlowId
-            increment_group_ref_count(NewInstructions),
-            decrement_group_ref_count(PrevInstructions),
+            increment_group_ref_count(SwitchId, NewInstructions),
+            decrement_group_ref_count(SwitchId, PrevInstructions),
             NewEntry = create_flow_entry(FlowMod),
             ets:insert(flow_table_ets(SwitchId, TableId),
                        NewEntry#flow_entry{id=Id}),
@@ -892,8 +892,8 @@ modify_flow(SwitchId, TableId, #flow_entry{id=Id,instructions=PrevInstructions},
     ets:update_element(flow_table_ets(SwitchId, TableId),
                        Id,
                        {#flow_entry.instructions, NewInstructions}),
-    increment_group_ref_count(NewInstructions),
-    decrement_group_ref_count(PrevInstructions),
+    increment_group_ref_count(SwitchId, NewInstructions),
+    decrement_group_ref_count(SwitchId, PrevInstructions),
     case lists:member(reset_counts, Flags) of
         true ->
             true = ets:insert(linc:lookup(SwitchId, flow_entry_counters),
@@ -1230,14 +1230,15 @@ delete_where_meter(SwitchId, MeterId, TableId) ->
 meter_match(MeterId, Instructions) ->
     [MeterId] == [Id || #ofp_instruction_meter{meter_id=Id} <- Instructions, Id==MeterId].
 
-increment_group_ref_count(Instructions) ->
-    update_group_ref_count(Instructions, 1).
+increment_group_ref_count(SwitchId, Instructions) ->
+    update_group_ref_count(SwitchId, Instructions, 1).
 
-decrement_group_ref_count(Instructions) ->
-    update_group_ref_count(Instructions, -1).
+decrement_group_ref_count(SwitchId, Instructions) ->
+    update_group_ref_count(SwitchId, Instructions, -1).
 
-update_group_ref_count(Instructions, Incr) ->
-    [linc_us4_groups:update_reference_count(Group,Incr) || Group<-get_groups(Instructions)].
+update_group_ref_count(SwitchId, Instructions, Incr) ->
+    [linc_us4_groups:update_reference_count(SwitchId, Group,Incr)
+     || Group <- get_groups(Instructions)].
 
 %% Find all groups reference from the Instructions
 get_groups(Instructions) ->

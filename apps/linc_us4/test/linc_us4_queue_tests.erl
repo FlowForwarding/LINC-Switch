@@ -102,11 +102,9 @@ setup() ->
                           {queues, Queues}
                          ]},
     application:set_env(linc, backends_opts, [Backend]),
-    linc_us4_port:initialize(?SWITCH_ID),
-    ok.
+    linc_us4_port:initialize(?SWITCH_ID).
 
-teardown(ok) ->
+teardown(_) ->
     linc_us4_port:terminate(?SWITCH_ID),
     linc:delete(?SWITCH_ID),
-    unmock(?MOCKED),
-    ok.
+    unmock(?MOCKED).

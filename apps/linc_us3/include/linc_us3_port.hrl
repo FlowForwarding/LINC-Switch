@@ -16,6 +16,7 @@
           %% Common state of tap and eth interfaces
           interface          :: string(),
           type = physical    :: linc_port_type(),
+          switch_id = 0      :: integer(),
           port = #ofp_port{} :: ofp_port(),
           %% State of tap interface
           erlang_port        :: port(),

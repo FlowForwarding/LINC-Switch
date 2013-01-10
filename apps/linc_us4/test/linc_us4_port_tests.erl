@@ -49,14 +49,14 @@ port_test_() ->
        {"Port send: any", fun send_any/0},
        {"Port send: port number", fun send_port_number/0},
        {"Port multipart: port_desc_request", fun port_desc_request/0},
-       {"Port multipart: port_stats_request", fun port_stats_request/0}
-       %% {"Port config: port_down", fun config_port_down/0},
-       %% {"Port config: no_recv", fun config_no_recv/0},
-       %% {"Port config: no_fwd", fun config_no_fwd/0},
-       %% {"Port config: no_pkt_in", fun config_no_pkt_in/0},
-       %% {"Port state: link_down", fun state_link_down/0},
-       %% {"Port state: blocked", fun state_blocked/0},
-       %% {"Port state: live", fun state_live/0}
+       {"Port multipart: port_stats_request", fun port_stats_request/0},
+       {"Port config: port_down", fun config_port_down/0},
+       {"Port config: no_recv", fun config_no_recv/0},
+       {"Port config: no_fwd", fun config_no_fwd/0},
+       {"Port config: no_pkt_in", fun config_no_pkt_in/0},
+       {"Port state: link_down", fun state_link_down/0},
+       {"Port state: blocked", fun state_blocked/0},
+       {"Port state: live", fun state_live/0}
       ]}}.
 
 port_mod() ->
@@ -144,39 +144,39 @@ port_stats_request() ->
     ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)).
 
 config_port_down() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [port_down])),
-    ?assertEqual([port_down], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [port_down])),
+    ?assertEqual([port_down], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_recv() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_recv])),
-    ?assertEqual([no_recv], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_recv])),
+    ?assertEqual([no_recv], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_fwd() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_fwd])),
-    ?assertEqual([no_fwd], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_fwd])),
+    ?assertEqual([no_fwd], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_pkt_in() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_pkt_in])),
-    ?assertEqual([no_pkt_in], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_pkt_in])),
+    ?assertEqual([no_pkt_in], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 state_link_down() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [link_down])),
-    ?assertEqual([link_down], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [link_down])),
+    ?assertEqual([link_down], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_blocked() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [blocked])),
-    ?assertEqual([blocked], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [blocked])),
+    ?assertEqual([blocked], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_live() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [live])),
-    ?assertEqual([live], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [live])),
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
 

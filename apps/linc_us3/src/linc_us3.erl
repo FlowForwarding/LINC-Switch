@@ -22,7 +22,7 @@
 -behaviour(gen_switch).
 
 %% Switch API
--export([start_ofconfig/0,
+-export([start_ofconfig/1,
          stop_ofconfig/0]).
 
 %% gen_switch callbacks
@@ -55,25 +55,26 @@
 -include("linc_us3.hrl").
 
 -record(state, {flow_state,
-                buffer_state}).
+                buffer_state,
+                switch_id :: integer()}).
 -type state() :: #state{}.
 
 %%%-----------------------------------------------------------------------------
 %%% Switch API
 %%%-----------------------------------------------------------------------------
 
-start_ofconfig() ->
+start_ofconfig(SwitchId) ->
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
             start_dependency(ssh),
             start_dependency(enetconf),
-            linc_us3_ofconfig:start();
+            linc_us3_ofconfig:start(SwitchId);
         _ ->
             ok
     end.
 
 stop_ofconfig() ->
-    %% Don't stop dependent applications (ssh, enetconf) even when they were 
+    %% Don't stop dependent applications (ssh, enetconf) even when they were
     %% started by the corresponding start_ofconfig/0 function.
     %% Rationale: stop_ofconfig/0 is called from the context of
     %% application:stop(linc) and subsequent attempt to stop another application
@@ -91,23 +92,27 @@ stop_ofconfig() ->
 
 %% @doc Start the switch.
 -spec start(any()) -> {ok, Version :: 3, state()}.
-start(_Opts) ->
-    BufferState = linc_buffer:initialize(),
-    linc_us3_sup:start_backend_sup(),
-    start_ofconfig(),
-    linc_us3_groups:create(),
-    FlowState = linc_us3_flow:initialize(),
-    linc_us3_port:initialize(),
+start(BackendOpts) ->
+    {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
+    BufferState = linc_buffer:initialize(SwitchId),
+    {ok, _Pid} = linc_us3_sup:start_backend_sup(SwitchId),
+    start_ofconfig(SwitchId),
+    linc_us3_groups:initialize(SwitchId),
+    FlowState = linc_us3_flow:initialize(SwitchId),
+    linc_us3_port:initialize(SwitchId),
     {ok, 3, #state{flow_state = FlowState,
-                   buffer_state = BufferState}}.
+                   buffer_state = BufferState,
+                   switch_id = SwitchId}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
-stop(#state{flow_state = FlowState, buffer_state = BufferState}) ->
+stop(#state{flow_state = FlowState,
+            buffer_state = BufferState,
+            switch_id = SwitchId}) ->
     stop_ofconfig(),
-    linc_us3_port:terminate(),
+    linc_us3_port:terminate(SwitchId),
     linc_us3_flow:terminate(FlowState),
-    linc_us3_groups:destroy(),
+    linc_us3_groups:terminate(SwitchId),
     linc_buffer:terminate(BufferState),
     ok.
 
@@ -139,8 +144,9 @@ ofp_features_request(State, #ofp_features_request{}) ->
 -spec ofp_flow_mod(state(), ofp_flow_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_flow_mod(State, #ofp_flow_mod{} = FlowMod) ->
-    case linc_us3_flow:modify(FlowMod) of
+ofp_flow_mod(#state{switch_id = SwitchId} = State,
+             #ofp_flow_mod{} = FlowMod) ->
+    case linc_us3_flow:modify(SwitchId, FlowMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->

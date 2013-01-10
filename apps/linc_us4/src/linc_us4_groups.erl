@@ -250,7 +250,7 @@ get_features(#ofp_group_features_request{ flags = _F }) ->
 %% @doc Test if a group exists.
 -spec is_valid(integer(), integer()) -> boolean().
 is_valid(SwitchId, GroupId) ->
-    ets:member(linc:lookup(SwitchId ,group_table), GroupId).
+    ets:member(linc:lookup(SwitchId, group_table), GroupId).
 
 %%%==============================================================
 %%% Tool Functions
@@ -557,8 +557,10 @@ group_update_bucket_stats(SwitchId, BucketId, Stat, Increment) ->
 -spec group_get(integer(), integer()) -> not_found | #linc_group{}.
 group_get(SwitchId, GroupId) ->
     case ets:lookup(linc:lookup(SwitchId, group_table), GroupId) of
-        [] -> not_found;
-        [Group] -> Group
+        [] ->
+            not_found;
+        [Group] ->
+            Group
     end.
 
 %%--------------------------------------------------------------------

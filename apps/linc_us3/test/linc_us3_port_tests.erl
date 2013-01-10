@@ -28,6 +28,7 @@
 -include("linc_us3.hrl").
 
 -define(MOCKED, [port_native]).
+-define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -60,25 +61,25 @@ port_mod() ->
     BadPort = 999,
     PortMod1 = #ofp_port_mod{port_no = BadPort},
     Error1 = {error, {bad_request, bad_port}},
-    ?assertEqual(Error1, linc_us3_port:modify(PortMod1)),
+    ?assertEqual(Error1, linc_us3_port:modify(?SWITCH_ID, PortMod1)),
 
     Port = 1,
     BadHwAddr = <<2,2,2,2,2,2>>,
     PortMod2 = #ofp_port_mod{port_no = Port, hw_addr = BadHwAddr},
     ?assertEqual({error, {bad_request, bad_hw_addr}},
-                 linc_us3_port:modify(PortMod2)),
+                 linc_us3_port:modify(?SWITCH_ID, PortMod2)),
 
     HwAddr = <<1,1,1,1,1,1>>,
     PortMod3 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
                              config = [], mask = [],
                              advertise = [copper, autoneg]},
-    ?assertEqual(ok, linc_us3_port:modify(PortMod3)),
+    ?assertEqual(ok, linc_us3_port:modify(?SWITCH_ID, PortMod3)),
     ok.
 
 is_valid() ->
-    ?assertEqual(true, linc_us3_port:is_valid(any)),
-    ?assertEqual(true, linc_us3_port:is_valid(1)),
-    ?assertEqual(false, linc_us3_port:is_valid(999)).
+    ?assertEqual(true, linc_us3_port:is_valid(?SWITCH_ID, any)),
+    ?assertEqual(true, linc_us3_port:is_valid(?SWITCH_ID, 1)),
+    ?assertEqual(false, linc_us3_port:is_valid(?SWITCH_ID, 999)).
 
 send_in_port() ->
     Pkt = pkt(1),
@@ -117,59 +118,59 @@ port_stats_request() ->
     BadPort = 999,
     StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_port},
-                 linc_us3_port:get_stats(StatsRequest1)),
+                 linc_us3_port:get_stats(?SWITCH_ID, StatsRequest1)),
 
     ValidPort = 1,
     StatsRequest2 = #ofp_port_stats_request{port_no = ValidPort},
-    StatsReply2 = linc_us3_port:get_stats(StatsRequest2),
+    StatsReply2 = linc_us3_port:get_stats(?SWITCH_ID, StatsRequest2),
     ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.stats)),
 
     AllPorts = any,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
-    StatsReply3 = linc_us3_port:get_stats(StatsRequest3),
+    StatsReply3 = linc_us3_port:get_stats(?SWITCH_ID, StatsRequest3),
     ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.stats)).
 
 config_port_down() ->
-    ?assertEqual([], linc_us3_port:get_config(1)),
-    ?assertEqual(ok, linc_us3_port:set_config(1, [port_down])),
-    ?assertEqual([port_down], linc_us3_port:get_config(1)).
+    ?assertEqual([], linc_us3_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_config(?SWITCH_ID, 1, [port_down])),
+    ?assertEqual([port_down], linc_us3_port:get_config(?SWITCH_ID, 1)).
 
 config_no_recv() ->
-    ?assertEqual([], linc_us3_port:get_config(1)),
-    ?assertEqual(ok, linc_us3_port:set_config(1, [no_recv])),
-    ?assertEqual([no_recv], linc_us3_port:get_config(1)).
+    ?assertEqual([], linc_us3_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_config(?SWITCH_ID, 1, [no_recv])),
+    ?assertEqual([no_recv], linc_us3_port:get_config(?SWITCH_ID, 1)).
 
 config_no_fwd() ->
-    ?assertEqual([], linc_us3_port:get_config(1)),
-    ?assertEqual(ok, linc_us3_port:set_config(1, [no_fwd])),
-    ?assertEqual([no_fwd], linc_us3_port:get_config(1)).
+    ?assertEqual([], linc_us3_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_config(?SWITCH_ID, 1, [no_fwd])),
+    ?assertEqual([no_fwd], linc_us3_port:get_config(?SWITCH_ID, 1)).
 
 config_no_pkt_in() ->
-    ?assertEqual([], linc_us3_port:get_config(1)),
-    ?assertEqual(ok, linc_us3_port:set_config(1, [no_pkt_in])),
-    ?assertEqual([no_pkt_in], linc_us3_port:get_config(1)).
+    ?assertEqual([], linc_us3_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_config(?SWITCH_ID, 1, [no_pkt_in])),
+    ?assertEqual([no_pkt_in], linc_us3_port:get_config(?SWITCH_ID, 1)).
 
 state_link_down() ->
-    ?assertEqual([live], linc_us3_port:get_state(1)),
-    ?assertEqual(ok, linc_us3_port:set_state(1, [link_down])),
-    ?assertEqual([link_down], linc_us3_port:get_state(1)).
+    ?assertEqual([live], linc_us3_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_state(?SWITCH_ID, 1, [link_down])),
+    ?assertEqual([link_down], linc_us3_port:get_state(?SWITCH_ID, 1)).
 
 state_blocked() ->
-    ?assertEqual([live], linc_us3_port:get_state(1)),
-    ?assertEqual(ok, linc_us3_port:set_state(1, [blocked])),
-    ?assertEqual([blocked], linc_us3_port:get_state(1)).
+    ?assertEqual([live], linc_us3_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_state(?SWITCH_ID, 1, [blocked])),
+    ?assertEqual([blocked], linc_us3_port:get_state(?SWITCH_ID, 1)).
 
 state_live() ->
-    ?assertEqual([live], linc_us3_port:get_state(1)),
-    ?assertEqual(ok, linc_us3_port:set_state(1, [live])),
-    ?assertEqual([live], linc_us3_port:get_state(1)).
+    ?assertEqual([live], linc_us3_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us3_port:set_state(?SWITCH_ID, 1, [live])),
+    ?assertEqual([live], linc_us3_port:get_state(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
     mock(?MOCKED),
-    application:unset_env(linc, backends),
-    linc_us3_sup:start_link(),
+    linc:create(?SWITCH_ID),
+    {ok, _Pid} = linc_us3_sup:start_link(?SWITCH_ID),
     Queues = [{port, 1, [{port_rate, {100, kbps}},
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
@@ -182,13 +183,14 @@ setup() ->
     application:set_env(linc, backends_opts, [Backend]).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
 
 foreach_setup() ->
-    ok = linc_us3_port:initialize().
+    ok = linc_us3_port:initialize(?SWITCH_ID).
 
 foreach_teardown(_) ->
-    ok = linc_us3_port:terminate().
+    ok = linc_us3_port:terminate(?SWITCH_ID).
 
 pkt() ->
     #linc_pkt{packet = [<<>>]}.

@@ -83,7 +83,7 @@ initialize(SwitchId) ->
         false ->
             ok
     end,
-    UserspacePorts = linc:ports_for_switch(SwitchId),
+    UserspacePorts = linc:ports_for_switch(linc_us4, SwitchId),
     [add(physical, SwitchId, Port) || Port <- UserspacePorts],
     ok.
 
@@ -172,7 +172,7 @@ get_desc(SwitchId) ->
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(integer(), ofp_port_stats_request()) -> ofp_port_stats_reply() |
-                                             ofp_error_msg().
+                                                        ofp_error_msg().
 get_stats(SwitchId, #ofp_port_stats_request{port_no = any}) ->
     PortStats = ets:tab2list(linc:lookup(SwitchId, linc_port_stats)),
     #ofp_port_stats_reply{body = convert_duration(PortStats)};

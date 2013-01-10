@@ -22,8 +22,8 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0,
-         start_backend_sup/0]).
+-export([start_link/1,
+         start_backend_sup/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -32,20 +32,23 @@
 %% API functions
 %%------------------------------------------------------------------------------
 
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(SwitchId) ->
+    supervisor:start_link(?MODULE, SwitchId).
 
-start_backend_sup() ->
-    BackendSup = {?MODULE, {?MODULE, start_link, []},
+-spec start_backend_sup(integer()) -> {ok, pid()}.
+start_backend_sup(SwitchId) ->
+    LincSup = linc:lookup(SwitchId, linc_sup),
+    BackendSup = {?MODULE, {?MODULE, start_link, [SwitchId]},
                   transient, 5000, supervisor, [?MODULE]},
-    supervisor:start_child(linc_sup, BackendSup).
+    supervisor:start_child(LincSup, BackendSup).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
-init([]) ->
-    PortSup = {linc_us3_port_sup, {linc_us3_port_sup, start_link, []},
+init(SwitchId) ->
+    linc:register(SwitchId, linc_us3_sup, self()),
+    PortSup = {linc_us3_port_sup, {linc_us3_port_sup, start_link, [SwitchId]},
                permanent, 5000, supervisor, [linc_us3_port_sup]},
     {ok, {{one_for_one, 5, 10}, [PortSup]}}.

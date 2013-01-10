@@ -348,7 +348,7 @@ update_match_counters(SwitchId, TableId, FlowId, PktByteSize) ->
         ets:update_counter(linc:lookup(SwitchId, flow_entry_counters),
                            FlowId,[{#flow_entry_counter.received_packets,
                                     1, ?MAX64, 0},
-                                   {#flow_entry_counter.received_bytes, 
+                                   {#flow_entry_counter.received_bytes,
                                     PktByteSize, ?MAX64, 0}]),
         ok
     catch
@@ -546,7 +546,7 @@ validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
             Error
     end.
 
-%% Validate a match specification. 
+%% Validate a match specification.
 %% This consists of
 %% - Are all fields supported
 %% - There are no duplicated fields
@@ -700,7 +700,7 @@ test_prereq(none, _Previous) ->
 %% invalid port
 %% invalid group
 %% invalid value in set-field
-%% operation inconsistent with match, 
+%% operation inconsistent with match,
 validate_instructions(SwitchId, TableId, Instructions, Match) ->
     case check_occurances(Instructions) of
         ok ->
@@ -733,7 +733,7 @@ check_occurrences(ofp_instruction_clear_actions, Instructions) ->
     1 >= length([x || #ofp_instruction_clear_actions{} <- Instructions]);
 check_occurrences(ofp_instruction_experimenter, Instructions) ->
     1 >= length([x || #ofp_instruction_experimenter{} <- Instructions]).
-                
+
 do_validate_instructions(SwitchId, TableId,
                          [Instruction | Instructions], Match) ->
     case validate_instruction(SwitchId, TableId, Instruction, Match) of

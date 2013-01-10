@@ -23,7 +23,7 @@
 -behaviour(gen_netconf).
 
 %% Internal API
--export([start/0,
+-export([start/1,
          start_link/0,
          stop/0]).
 
@@ -58,10 +58,11 @@
 %% Internal API functions
 %%------------------------------------------------------------------------------
 
-start() ->
+start(SwitchId) ->
+    Sup = linc:lookup(SwitchId, linc_us3_sup),
     OFConfig = {linc_us3_ofconfig, {linc_us3_ofconfig, start_link, []},
                 permanent, 5000, worker, [linc_us3_ofconfig]},
-    supervisor:start_child(linc_us3_sup, OFConfig).
+    supervisor:start_child(Sup, OFConfig).
 
 stop() ->
     ok.

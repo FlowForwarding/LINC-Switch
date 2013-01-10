@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -33,15 +33,16 @@
 %%% API functions
 %%%-----------------------------------------------------------------------------
 
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    {ok, _} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(SwitchId) ->
+    supervisor:start_link(?MODULE, SwitchId).
 
 %%%-----------------------------------------------------------------------------
 %%% Supervisor callbacks
 %%%-----------------------------------------------------------------------------
 
-init([]) ->
-    ChildSpec = {linc_us3_queue, {linc_us3_queue, start_link, []},
+init(SwitchId) ->
+    linc:register(SwitchId, linc_us3_queue_sup, self()),
+    ChildSpec = {linc_us3_queue, {linc_us3_queue, start_link, [SwitchId]},
                  transient, 5000, worker, [linc_us3_queue]},
     {ok, {{simple_one_for_one, 5, 10}, [ChildSpec]}}.

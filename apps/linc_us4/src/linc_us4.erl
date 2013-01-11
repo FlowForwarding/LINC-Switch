@@ -208,11 +208,12 @@ ofp_group_mod(#state{switch_id = SwitchId} = State,
 -spec ofp_packet_out(state(), ofp_packet_out()) ->
                             {noreply, #state{}} |
                             {reply, ofp_message(), #state{}}.
-ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
-                                      actions = Actions,
-                                      in_port = InPort,
-                                      data = Data}) ->
-    Pkt = linc_us4_packet:binary_to_record(Data, InPort),
+ofp_packet_out(#state{switch_id = SwitchId} = State,
+               #ofp_packet_out{buffer_id = no_buffer,
+                               actions = Actions,
+                               in_port = InPort,
+                               data = Data}) ->
+    Pkt = linc_us4_packet:binary_to_record(Data, SwitchId, InPort),
     linc_us4_actions:apply_list(Pkt, Actions),
     {noreply, State};
 ofp_packet_out(#state{switch_id = SwitchId} = State,

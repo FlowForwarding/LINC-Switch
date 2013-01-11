@@ -139,11 +139,6 @@ send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
                               data = Data},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PacketIn}),
     ok;
-send(#ofp_port_status{} = PortStatus, controller) ->
-    %% TODO: fix port status message in capable switch environment
-    SwitchId = 0,
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    ok;
 send(#linc_pkt{}, local) ->
     ?WARNING("Unsupported port type: local", []),
     bad_port;
@@ -329,21 +324,21 @@ handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->
     {reply, PortState, State};
 handle_call({set_port_state, NewPortState}, _From,
-            #state{port = Port} = State) ->
+            #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{state = NewPortState},
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
-    send(PortStatus, controller),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_port_config, _From,
             #state{port = #ofp_port{config = PortConfig}} = State) ->
     {reply, PortConfig, State};
 handle_call({set_port_config, NewPortConfig}, _From,
-            #state{port = Port} = State) ->
+            #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{config = NewPortConfig},
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
-    send(PortStatus, controller),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
     {reply, ok, State#state{port = NewPort}}.
 
 %% @private

@@ -99,11 +99,12 @@ send_flood() ->
     ?assertEqual(bad_port, linc_us4_port:send(pkt(), flood)).
 
 send_all() ->
-    ?assertEqual(ok, linc_us4_port:send(pkt(), all)).
-%% ?assertEqual(2, meck:num_calls(linc_us4_port_native, send, '_')).
+    ?assertEqual(ok, linc_us4_port:send(pkt(), all)),
+    %% wait because send to port is a gen_server:cast
+    timer:sleep(500),
+    ?assertEqual(2, meck:num_calls(linc_us4_port_native, send, '_')).
 
 send_controller() ->
-    ?assertEqual(ok, linc_us4_port:send(#ofp_port_status{}, controller)),
     ?assertEqual(ok, linc_us4_port:send(pkt(controller,no_match), controller)).
 
 send_local() ->
@@ -146,36 +147,43 @@ port_stats_request() ->
 config_port_down() ->
     ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [port_down])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([port_down], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_recv() ->
     ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_recv])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([no_recv], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_fwd() ->
     ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_fwd])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([no_fwd], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_pkt_in() ->
     ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_pkt_in])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([no_pkt_in], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 state_link_down() ->
     ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [link_down])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([link_down], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_blocked() ->
     ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [blocked])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([blocked], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_live() ->
     ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
     ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [live])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
@@ -201,6 +209,8 @@ teardown(_) ->
     unmock(?MOCKED).
 
 foreach_setup() ->
+    ok = meck:reset(linc_logic),
+    ok = meck:reset(linc_us4_port_native),
     ok = linc_us4_port:initialize(?SWITCH_ID).
 
 foreach_teardown(_) ->

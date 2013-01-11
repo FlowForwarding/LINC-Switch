@@ -242,7 +242,8 @@ init([SwitchId, {PortNo, PortOpts}]) ->
                           enabled
                   end,
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    State = #state{interface = Interface, port = Port, queues = QueuesState},
+    State = #state{interface = Interface, port = Port,
+                   queues = QueuesState, switch_id = SwitchId},
 
     case re:run(Interface, "^tap.*$", [{capture, none}]) of
         %% When switch connects to a tap interface, erlang receives file

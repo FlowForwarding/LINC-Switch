@@ -61,8 +61,8 @@
 
 %% @doc Start Open Flow port with provided configuration.
 -spec start_link(integer(), list(linc_port_config())) -> {ok, pid()} |
-                                                        ignore |
-                                                        {error, term()}.
+                                                         ignore |
+                                                         {error, term()}.
 start_link(SwitchId, PortConfig) ->
     gen_server:start_link(?MODULE, [SwitchId, PortConfig], []).
 
@@ -456,7 +456,7 @@ handle_frame(Frame, SwitchId, PortNo, PortConfig) ->
         true ->
             drop;
         false ->
-            LincPkt = linc_us4_packet:binary_to_record(Frame, PortNo),
+            LincPkt = linc_us4_packet:binary_to_record(Frame, SwitchId, PortNo),
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
             case lists:member(no_packet_in, PortConfig) of
                 false ->

@@ -19,7 +19,7 @@
 %% @doc Module defines tools and functions for packet manipulations
 -module(linc_us3_packet_edit).
 
--export([binary_to_record/2,
+-export([binary_to_record/3,
          find/2,
          find_and_edit/3,
          find_and_edit_skip/4,
@@ -32,8 +32,8 @@
 %%------------------------------------------------------------------------------
 %% @doc Parse binary representation of OF-Protocol packets and convert them
 %% to record representation.
--spec binary_to_record(binary(), ofp_port_no()) -> #linc_pkt{}.
-binary_to_record(Binary, Port) ->
+-spec binary_to_record(binary(), integer(), ofp_port_no()) -> #linc_pkt{}.
+binary_to_record(Binary, SwitchId, Port) ->
     try
         Packet = pkt:decapsulate(Binary),
         %% From OFP 1.2 spec, page 60:
@@ -46,10 +46,11 @@ binary_to_record(Binary, Port) ->
                   || is_integer(Port)]
             ++ linc_us3_convert:packet_fields(Packet),
         #linc_pkt{packet = Packet,
-                 fields =
-                     #ofp_match{fields = Fields},
-                 in_port = Port,
-                 size = byte_size(Binary)}
+                  fields =
+                      #ofp_match{fields = Fields},
+                  in_port = Port,
+                  size = byte_size(Binary),
+                  switch_id = SwitchId}
     catch
         E1:E2 ->
             ?ERROR("Decapsulate failed for pkt: ~p because: ~p:~p",

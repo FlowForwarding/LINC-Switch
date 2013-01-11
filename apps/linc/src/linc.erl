@@ -57,11 +57,11 @@ create(SwitchId) ->
     ets:new(name(SwitchId), [named_table, public,
                              {read_concurrency, true}]).
 
--spec delete(integer()) -> ok.
+-spec delete(integer()) -> true.
 delete(SwitchId) ->
-    ets:delete(name(SwitchId)).
+    true = ets:delete(name(SwitchId)).
 
--spec register(integer(), atom(), pid()) -> true.
+-spec register(integer(), atom(), pid() | ets:tid()) -> true.
 register(SwitchId, Name, Pid) ->
     true = ets:insert(name(SwitchId), {Name, Pid}).
 

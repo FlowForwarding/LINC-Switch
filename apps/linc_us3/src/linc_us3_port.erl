@@ -133,7 +133,7 @@ send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
               table_id = TableId, packet_in_reason = Reason,
               packet_in_bytes = Bytes, switch_id = SwitchId},
      controller) ->
-    {BufferId,Data} = maybe_buffer(Reason, Packet, Bytes),
+    {BufferId,Data} = maybe_buffer(SwitchId, Reason, Packet, Bytes),
     PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
                               table_id = TableId, match = Fields,
                               data = Data},
@@ -485,24 +485,24 @@ get_port_pid(SwitchId, PortNo) ->
             Pid
     end.
 
-maybe_buffer(action, Packet, no_buffer) ->
+maybe_buffer(_SwitchId, action, Packet, no_buffer) ->
     {no_buffer,pkt:encapsulate(Packet)};
-maybe_buffer(action, Packet, Bytes) ->
-    maybe_buffer(Packet, Bytes);
-maybe_buffer(no_match, Packet, _Bytes) ->
-    maybe_buffer(Packet, get_switch_config(miss_send_len));
-maybe_buffer(invalid_ttl, Packet, _Bytes) ->
+maybe_buffer(SwitchId, action, Packet, Bytes) ->
+    maybe_buffer(SwitchId, Packet, Bytes);
+maybe_buffer(SwitchId, no_match, Packet, _Bytes) ->
+    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len));
+maybe_buffer(SwitchId, invalid_ttl, Packet, _Bytes) ->
     %% The spec does not specify how many bytes to include for invalid_ttl,
     %% so we use miss_send_len here as well.
-    maybe_buffer(Packet, get_switch_config(miss_send_len)).
+    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len)).
 
-maybe_buffer(Packet, no_buffer) ->
+maybe_buffer(_SwitchId, Packet, no_buffer) ->
     {no_buffer, pkt:encapsulate(Packet)};
-maybe_buffer(Packet, Bytes) ->
-    BufferId = linc_buffer:save_buffer(Packet),
-    {BufferId, truncate_packet(Packet,Bytes)}.
+maybe_buffer(SwitchId, Packet, Bytes) ->
+    BufferId = linc_buffer:save_buffer(SwitchId, Packet),
+    {BufferId, truncate_packet(Packet, Bytes)}.
 
-truncate_packet(Packet,Bytes) -> 
+truncate_packet(Packet,Bytes) ->
     Bin = pkt:encapsulate(Packet),
     case byte_size(Bin) > Bytes of
         true ->

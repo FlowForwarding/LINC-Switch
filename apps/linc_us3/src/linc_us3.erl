@@ -129,13 +129,14 @@ handle_message(MessageBody, State) ->
 
 %% @doc Modify flow entry in the flow table.
 -spec ofp_features_request(state(), ofp_features_request()) ->
-                          {noreply, #state{}} |
-                          {reply, ofp_message(), #state{}}.
-ofp_features_request(State, #ofp_features_request{}) ->
+                                  {reply, ofp_features_reply(), #state{}}.
+ofp_features_request(#state{switch_id = SwitchId} = State,
+                     #ofp_features_request{}) ->
+    Ports = linc_us3_port:get_ports(SwitchId),
     FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
                                         datapath_id = 0,
                                         n_buffers = 0,
-                                        ports = linc_us3_port:get_ports(),
+                                        ports = Ports,
                                         n_tables = 255,
                                         capabilities = ?CAPABILITIES},
     {reply, FeaturesReply, State}.
@@ -159,8 +160,9 @@ ofp_flow_mod(#state{switch_id = SwitchId} = State,
 -spec ofp_table_mod(state(), ofp_table_mod()) ->
                            {noreply, #state{}} |
                            {reply, ofp_message(), #state{}}.
-ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
-    case linc_us3_flow:table_mod(TableMod) of
+ofp_table_mod(#state{switch_id = SwitchId} = State,
+              #ofp_table_mod{} = TableMod) ->
+    case linc_us3_flow:table_mod(SwitchId, TableMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -173,8 +175,9 @@ ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
 -spec ofp_port_mod(state(), ofp_port_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_port_mod(State, #ofp_port_mod{} = PortMod) ->
-    case linc_us3_port:modify(PortMod) of
+ofp_port_mod(#state{switch_id = SwitchId} = State,
+             #ofp_port_mod{} = PortMod) ->
+    case linc_us3_port:modify(SwitchId, PortMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -187,8 +190,9 @@ ofp_port_mod(State, #ofp_port_mod{} = PortMod) ->
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
                            {noreply, #state{}} |
                            {reply, ofp_message(), #state{}}.
-ofp_group_mod(State, #ofp_group_mod{} = GroupMod) ->
-    case linc_us3_groups:modify(GroupMod) of
+ofp_group_mod(#state{switch_id = SwitchId} = State,
+              #ofp_group_mod{} = GroupMod) ->
+    case linc_us3_groups:modify(SwitchId, GroupMod) of
         ok ->
             {noreply, State};
         {error, ErrorMsg} ->
@@ -206,9 +210,10 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = no_buffer,
     OfsPkt = linc_us3_packet_edit:binary_to_record(Data, InPort),
     linc_us3_actions:apply_list(OfsPkt, Actions),
     {noreply, State};
-ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
-                                      actions = Actions}) ->
-    case linc_buffer:get_buffer(BufferId) of
+ofp_packet_out(#state{switch_id = SwitchId} = State,
+               #ofp_packet_out{buffer_id = BufferId,
+                               actions = Actions}) ->
+    case linc_buffer:get_buffer(SwitchId, BufferId) of
         #linc_pkt{}=OfsPkt ->
             linc_us3_actions:apply_list(OfsPkt, Actions);
         not_found ->
@@ -219,14 +224,14 @@ ofp_packet_out(State, #ofp_packet_out{buffer_id = BufferId,
 
 %% @doc Reply to echo request.
 -spec ofp_echo_request(state(), ofp_echo_request()) ->
-                              {reply, ofp_message(), #state{}}.
+                              {reply, ofp_echo_reply(), #state{}}.
 ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
     EchoReply = #ofp_echo_reply{data = Data},
     {reply, EchoReply, State}.
 
 %% @doc Reply to get config request.
 -spec ofp_get_config_request(state(), ofp_get_config_request()) ->
-                                    {reply, ofp_message(), #state{}}.
+                                    {reply, ofp_get_config_reply(), #state{}}.
 ofp_get_config_request(State, #ofp_get_config_request{}) ->
     ConfigReply = #ofp_get_config_reply{flags = [],
                                         miss_send_len = ?OFPCML_NO_BUFFER},
@@ -239,14 +244,15 @@ ofp_set_config(State, #ofp_set_config{}) ->
 
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
-                                 {reply, ofp_message(), #state{}}.
+                                 {reply, ofp_barrier_reply(), #state{}}.
 ofp_barrier_request(State, #ofp_barrier_request{}) ->
     BarrierReply = #ofp_barrier_reply{},
     {reply, BarrierReply, State}.
 
 %% @doc Reply to get queue config request.
 -spec ofp_queue_get_config_request(state(), ofp_queue_get_config_request()) ->
-                                          {reply, ofp_message(), #state{}}.
+                                          {reply, ofp_queue_get_config_reply(),
+                                           #state{}}.
 ofp_queue_get_config_request(State,
                              #ofp_queue_get_config_request{port = Port}) ->
     QueueConfigReply = #ofp_queue_get_config_reply{port = Port,
@@ -255,7 +261,7 @@ ofp_queue_get_config_request(State,
 
 %% @doc Get switch description statistics.
 -spec ofp_desc_stats_request(state(), ofp_desc_stats_request()) ->
-                                    {reply, ofp_message(), #state{}}.
+                                    {reply, ofp_desc_stats_reply(), #state{}}.
 ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
     {reply, #ofp_desc_stats_reply{flags = [],
                                   mfr_desc = get_env(manufacturer_desc),
@@ -267,57 +273,68 @@ ofp_desc_stats_request(State, #ofp_desc_stats_request{}) ->
 
 %% @doc Get flow entry statistics.
 -spec ofp_flow_stats_request(state(), ofp_flow_stats_request()) ->
-                                    {reply, ofp_message(), #state{}}.
-ofp_flow_stats_request(State, #ofp_flow_stats_request{} = Request) ->
-    Reply = linc_us3_flow:get_stats(Request),
+                                    {reply, ofp_flow_stats_reply(), #state{}}.
+ofp_flow_stats_request(#state{switch_id = SwitchId} = State,
+                       #ofp_flow_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get aggregated flow statistics.
 -spec ofp_aggregate_stats_request(state(), ofp_aggregate_stats_request()) ->
-                                         {reply, ofp_message(), #state{}}.
-ofp_aggregate_stats_request(State, #ofp_aggregate_stats_request{} = Request) ->
-    Reply = linc_us3_flow:get_aggregate_stats(Request),
+                                         {reply, ofp_aggregate_stats_reply(),
+                                          #state{}}.
+ofp_aggregate_stats_request(#state{switch_id = SwitchId} = State,
+                            #ofp_aggregate_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_aggregate_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get flow table statistics.
 -spec ofp_table_stats_request(state(), ofp_table_stats_request()) ->
-                                     {reply, ofp_message(), #state{}}.
-ofp_table_stats_request(State, #ofp_table_stats_request{} = Request) ->
-    Reply = linc_us3_flow:get_table_stats(Request),
+                                     {reply, ofp_table_stats_reply(), #state{}}.
+ofp_table_stats_request(#state{switch_id = SwitchId} = State,
+                        #ofp_table_stats_request{} = Request) ->
+    Reply = linc_us3_flow:get_table_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get port statistics.
 -spec ofp_port_stats_request(state(), ofp_port_stats_request()) ->
-                                    {reply, ofp_message(), #state{}}.
-ofp_port_stats_request(State, #ofp_port_stats_request{} = Request) ->
-    Reply = linc_us3_port:get_stats(Request),
+                                    {reply, ofp_port_stats_reply(), #state{}}.
+ofp_port_stats_request(#state{switch_id = SwitchId} = State,
+                       #ofp_port_stats_request{} = Request) ->
+    Reply = linc_us3_port:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get queue statistics.
 -spec ofp_queue_stats_request(state(), ofp_queue_stats_request()) ->
-                                     {reply, ofp_message(), #state{}}.
-ofp_queue_stats_request(State, #ofp_queue_stats_request{} = Request) ->
-    Reply = linc_us3_queue:get_stats(Request),
+                                     {reply, ofp_queue_stats_reply(), #state{}}.
+ofp_queue_stats_request(#state{switch_id = SwitchId} = State,
+                        #ofp_queue_stats_request{} = Request) ->
+    Reply = linc_us3_queue:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group statistics.
 -spec ofp_group_stats_request(state(), ofp_group_stats_request()) ->
-                                     {reply, ofp_message(), #state{}}.
-ofp_group_stats_request(State, #ofp_group_stats_request{} = Request) ->
-    Reply = linc_us3_groups:get_stats(Request),
+                                     {reply, ofp_group_stats_reply(), #state{}}.
+ofp_group_stats_request(#state{switch_id = SwitchId} = State,
+                        #ofp_group_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group description statistics.
 -spec ofp_group_desc_stats_request(state(), ofp_group_desc_stats_request()) ->
-                                          {reply, ofp_message(), #state{}}.
-ofp_group_desc_stats_request(State, #ofp_group_desc_stats_request{} = Request) ->
-    Reply = linc_us3_groups:get_desc(Request),
+                                          {reply, ofp_group_desc_stats_reply(),
+                                           #state{}}.
+ofp_group_desc_stats_request(#state{switch_id = SwitchId} = State,
+                             #ofp_group_desc_stats_request{} = Request) ->
+    Reply = linc_us3_groups:get_desc(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group features statistics.
 -spec ofp_group_features_stats_request(state(),
                                        ofp_group_features_stats_request()) ->
-                                              {reply, ofp_message(), #state{}}.
+                                              {reply,
+                                               ofp_group_features_stats_reply(),
+                                               #state{}}.
 ofp_group_features_stats_request(State,
                                  #ofp_group_features_stats_request{} = Request) ->
     Reply = linc_us3_groups:get_features(Request),
@@ -325,7 +342,7 @@ ofp_group_features_stats_request(State,
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers
-%%%-----------------------------------------------------------------------------i
+%%%-----------------------------------------------------------------------------
 
 get_env(Env) ->
     {ok, Value} = application:get_env(linc, Env),

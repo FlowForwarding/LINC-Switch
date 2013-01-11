@@ -80,8 +80,9 @@ init([SwitchId, BackendMod, BackendOpts]) ->
 handle_call(_Message, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({send_to_controllers, Message}, #state{xid = Xid} = State) ->
-    ofp_channel:send(Message#ofp_message{xid = Xid}),
+handle_cast({send_to_controllers, Message}, #state{xid = Xid,
+                                                   switch_id = SwitchId} = State) ->
+    ofp_channel:send(SwitchId, Message#ofp_message{xid = Xid}),
     {noreply, State#state{xid = Xid + 1}};
 handle_cast(_Message, State) ->
     {noreply, State}.

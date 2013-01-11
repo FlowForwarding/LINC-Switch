@@ -83,7 +83,7 @@ initialize(SwitchId) ->
         false ->
             ok
     end,
-    UserspacePorts = linc:ports_for_switch(linc_us4, SwitchId),
+    UserspacePorts = ports_for_switch(SwitchId),
     [add(physical, SwitchId, Port) || Port <- UserspacePorts],
     ok.
 
@@ -235,7 +235,7 @@ is_valid(SwitchId, PortNo) when is_integer(PortNo)->
 %%%-----------------------------------------------------------------------------
 
 %% @private
-init([SwitchId, {PortNo, PortOpts}]) ->
+init([SwitchId, {port, PortNo, PortOpts}]) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
@@ -571,3 +571,9 @@ queues_config() ->
         false ->
             disabled
     end.
+
+ports_for_switch(SwitchId) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
+    {ports, Ports} = lists:keyfind(ports, 1, Opts),
+    Ports.

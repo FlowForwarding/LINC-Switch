@@ -29,8 +29,9 @@
          delete/1,
          register/3,
          lookup/2,
-         controllers_for_switch/1,
-         ports_for_switch/2]).
+         controllers_for_switch/1]).
+
+-include("linc_logger.hrl").
 
 %%------------------------------------------------------------------------------
 %% Application callbacks
@@ -39,9 +40,7 @@
 %% @doc Starts the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
-    Id = 0,
-    BackendMod = backend_for_switch(Id),
-    linc_sup:start_link(Id, BackendMod).
+    linc_capable_sup:start_link().
 
 %% @doc Stops the application.
 -spec stop(any()) -> ok.
@@ -67,23 +66,20 @@ register(SwitchId, Name, Pid) ->
 
 -spec lookup(integer(), atom()) -> term().
 lookup(SwitchId, Name) ->
-    [{Name, Pid}] = ets:lookup(name(SwitchId), Name),
-    Pid.
+    case ets:lookup(name(SwitchId), Name) of
+        [{Name, Pid}] ->
+            Pid;
+        [] ->
+            ?ERROR("Failed lookup: ~p ~p", [SwitchId, Name]),
+            undefined
+    end.
 
 -spec controllers_for_switch(integer()) -> list(tuple()).
-controllers_for_switch(_SwitchId) ->
-    {ok, Controllers} = application:get_env(linc, controllers),
+controllers_for_switch(SwitchId) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
+    {controllers, Controllers} = lists:keyfind(controllers, 1, Opts),
     Controllers.
-
-ports_for_switch(BackendMod, SwitchId) ->
-    case application:get_env(linc, backends_opts) of
-        {ok, Backends} ->
-            {BackendMod, Opts} = lists:keyfind(BackendMod, 1, Backends),
-            {ports, UserspacePorts} = lists:keyfind(ports, 1, Opts),
-            UserspacePorts;
-        undefined ->
-            []
-    end.
 
 %%------------------------------------------------------------------------------
 %% Local helpers
@@ -91,8 +87,3 @@ ports_for_switch(BackendMod, SwitchId) ->
 
 name(SwitchId) ->
     list_to_atom("linc_switch_" ++ integer_to_list(SwitchId)).
-
--spec backend_for_switch(integer()) -> atom().
-backend_for_switch(_SwitchId) ->
-    {ok, BackendMod} = application:get_env(linc, backend),
-    BackendMod.

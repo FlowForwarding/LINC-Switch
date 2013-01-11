@@ -89,7 +89,7 @@ handle_cast(_Message, State) ->
 handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendState,
                             switch_id = SwitchId} = State) ->
-    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, []},
+    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
                   permanent, 5000, supervisor, [ofp_channel_sup]},
     {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
                                                              linc_sup),

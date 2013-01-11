@@ -21,7 +21,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us3.hrl").
 
--define(MOCKED, [group,port]).
+-define(MOCKED, [logic,group,port]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -775,7 +775,7 @@ delete_send_flow_rem() ->
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us3_flow:get_flow_table(?SWITCH_ID, TableId)).
     %% FIXME: Cannot mock linc_logic module that belongs to another application
-    %% ?assertEqual(true,linc_us3_test_utils:check_if_called({linc_logic,send_to_controllers,1})).
+%% ?assertEqual(true,linc_us3_test_utils:check_if_called({linc_logic,send_to_controllers,1})).
 
 delete_outport_no_match() ->
     TableId = 4,
@@ -1206,7 +1206,7 @@ idle_timeout() ->
     ok = linc_us3_flow:reset_idle_timeout(?SWITCH_ID, FlowId),
     timer:sleep(100),
     ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(?SWITCH_ID, 1)),
-    timer:sleep(2000),
+    timer:sleep(2500),
     ?assertEqual([], linc_us3_flow:get_flow_table(?SWITCH_ID, 1)).
 
 hard_timeout() ->
@@ -1217,12 +1217,13 @@ hard_timeout() ->
                     [{write_actions,[{group,3}]}]),
     ?assertEqual(ok, linc_us3_flow:modify(?SWITCH_ID, FlowModAdd1)),
     ?assertMatch([#flow_entry{}], linc_us3_flow:get_flow_table(?SWITCH_ID, 1)),
-    timer:sleep(2000),
+    timer:sleep(2500),
     ?assertEqual([], linc_us3_flow:get_flow_table(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
     linc:create(?SWITCH_ID),
+    linc_us3_test_utils:add_logic_path(),
     linc_us3_test_utils:mock(?MOCKED).
 
 teardown(_) ->

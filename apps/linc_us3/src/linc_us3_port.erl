@@ -130,17 +130,19 @@ send(#linc_pkt{no_packet_in = true}, controller) ->
     %% Drop packets which originate from port with no_packet_in config flag set
     ok;
 send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
-              table_id = TableId, packet_in_reason = Reason, 
-              packet_in_bytes = Bytes},
+              table_id = TableId, packet_in_reason = Reason,
+              packet_in_bytes = Bytes, switch_id = SwitchId},
      controller) ->
     {BufferId,Data} = maybe_buffer(Reason, Packet, Bytes),
     PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
                               table_id = TableId, match = Fields,
                               data = Data},
-    linc_logic:send_to_controllers(#ofp_message{body = PacketIn}),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PacketIn}),
     ok;
 send(#ofp_port_status{} = PortStatus, controller) ->
-    linc_logic:send_to_controllers(#ofp_message{body = PortStatus}),
+    %% TODO: fix port status message in capable switch environment
+    SwitchId = 0,
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
     ok;
 send(#linc_pkt{}, local) ->
     ?WARNING("Unsupported port type: local", []),

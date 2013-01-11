@@ -22,7 +22,7 @@
 -behaviour(gen_server).
 
 %% API
--export([send_to_controllers/1]).
+-export([send_to_controllers/2]).
 
 %% Internal API
 -export([start_link/3]).
@@ -51,9 +51,10 @@
 %%------------------------------------------------------------------------------
 
 %% @doc Send message out to controllers.
--spec send_to_controllers(ofp_message()) -> any().
-send_to_controllers(Message) ->
-    gen_server:cast(?MODULE, {send_to_controllers, Message}).
+-spec send_to_controllers(integer(), ofp_message()) -> any().
+send_to_controllers(SwitchId, Message) ->
+    gen_server:cast(linc:lookup(SwitchId, linc_logic),
+                    {send_to_controllers, Message}).
 
 %% @doc Start the OF Switch logic.
 -spec start_link(integer(), atom(), term()) -> {ok, pid()} | {error, any()}.

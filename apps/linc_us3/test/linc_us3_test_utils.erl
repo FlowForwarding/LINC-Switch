@@ -24,7 +24,8 @@
          check_output_on_ports/0,
          check_output_to_groups/0,
          check_if_called/1,
-         check_if_called/2]).
+         check_if_called/2,
+         add_logic_path/0]).
 
 mock([]) ->
     mocked;
@@ -38,7 +39,7 @@ mock([flow | Rest]) ->
 mock([logic | Rest]) ->
     ok = meck:new(linc_logic),
     ok = meck:expect(linc_logic, send_to_controllers,
-                     fun(_) ->
+                     fun(_, _) ->
                              ok
                      end),
     mock(Rest);
@@ -145,3 +146,6 @@ check_if_called({Module, Fun, Arity}, {Times, times}) ->
         4 ->
             [x || {_, {_, F, [_, _, _, _]}, _} <- History, F == Fun]
     end == [x || _ <- lists:seq(1, Times)].
+
+add_logic_path() ->
+    true = code:add_path("../../linc/ebin").

@@ -27,7 +27,7 @@
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us3.hrl").
 
--define(MOCKED, [port_native]).
+-define(MOCKED, [logic, port_native]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -170,6 +170,7 @@ state_live() ->
 setup() ->
     mock(?MOCKED),
     linc:create(?SWITCH_ID),
+    linc_us3_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us3_sup:start_link(?SWITCH_ID),
     Queues = [{port, 1, [{port_rate, {100, kbps}},
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},

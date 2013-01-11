@@ -514,7 +514,7 @@ send_flow_removed(SwitchId, TableId,
     Msg = #ofp_message{type = ofp_flow_removed,
                        body = Body
                       },
-    linc_logic:send_to_controllers(Msg).
+    linc_logic:send_to_controllers(SwitchId, Msg).
 
 -spec create_flow_entry(ofp_flow_mod()) -> #flow_entry{}.
 create_flow_entry(#ofp_flow_mod{priority = Priority,

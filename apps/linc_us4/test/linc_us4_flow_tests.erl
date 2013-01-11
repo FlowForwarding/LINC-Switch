@@ -23,7 +23,7 @@
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc_us4/include/linc_us4.hrl").
 
--define(MOCKED, [group,port,meter]).
+-define(MOCKED, [logic,group,port,meter]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -1250,6 +1250,7 @@ hard_timeout() ->
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
+    linc_us4_test_utils:add_logic_path(),
     linc:create(?SWITCH_ID),
     linc_us4_test_utils:mock(?MOCKED).
 

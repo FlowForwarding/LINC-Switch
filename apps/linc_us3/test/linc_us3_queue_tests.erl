@@ -37,7 +37,10 @@ queue_test_() ->
      fun setup/0,
      fun teardown/1,
      [{"Port multipart: queue_stats_request", fun queue_stats_request/0},
-      {"Sending through queue", fun sending/0}]}.
+      {"Sending through queue", fun sending/0},
+      {"Set queue property: min-rate", fun min_rate/0},
+      {"Set queue property: max-rate", fun max_rate/0}
+     ]}.
 
 queue_stats_request() ->
     BadPort = 999,
@@ -82,7 +85,23 @@ queue_stats_request() ->
     ?assertEqual(2, length(StatsReply6#ofp_queue_stats_reply.stats)).
 
 sending() ->
-    ok.
+    PortId = 1,
+    QueueId = 1,
+    ?assertEqual(ok, linc_us3_queue:send(?SWITCH_ID, PortId, QueueId, <<>>)).
+
+min_rate() ->
+    PortId = 1,
+    QueueId = 1,
+    %% set min-rate as 50% of current port-rate (100kb/s)
+    ?assertEqual(ok,
+                 linc_us3_queue:set_min_rate(?SWITCH_ID, PortId, QueueId, 500)).
+
+max_rate() ->
+    PortId = 1,
+    QueueId = 1,
+    %% set max-rate as 50% of current port-rate (100kb/s)
+    ?assertEqual(ok,
+                 linc_us3_queue:set_max_rate(?SWITCH_ID, PortId, QueueId, 500)).
 
 %% Fixtures --------------------------------------------------------------------
 

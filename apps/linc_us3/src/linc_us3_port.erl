@@ -39,6 +39,8 @@
          set_state/3,
          get_config/2,
          set_config/3,
+         get_advertised_features/2,
+         set_advertised_features/3,
          is_valid/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -82,7 +84,7 @@ initialize(SwitchId) ->
             linc_us3_queue:initialize(SwitchId);
         false ->
             ok
-    end,    
+    end,
     UserspacePorts = ports_for_switch(SwitchId),
     [add(physical, SwitchId, Port) || Port <- UserspacePorts],
     ok.
@@ -216,6 +218,24 @@ set_config(SwitchId, PortNo, PortConfig) ->
             gen_server:call(Pid, {set_port_config, PortConfig})
     end.
 
+-spec get_advertised_features(integer(), ofp_port_no()) -> [ofp_port_feature()].
+get_advertised_features(SwitchId, PortNo) ->
+    case get_port_pid(SwitchId, PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, get_advertised_features)
+    end.
+
+-spec set_advertised_features(integer(), ofp_port_no(), [ofp_port_feature()]) -> ok.
+set_advertised_features(SwitchId, PortNo, AdvertisedFeatures) ->
+    case get_port_pid(SwitchId, PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, {set_advertised_features, AdvertisedFeatures})
+    end.
+
 %% @doc Test if a port exists.
 -spec is_valid(integer(), ofp_port_no()) -> boolean().
 is_valid(_SwitchId, PortNo) when is_atom(PortNo)->
@@ -340,6 +360,16 @@ handle_call(get_port_config, _From,
 handle_call({set_port_config, NewPortConfig}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{config = NewPortConfig},
+    PortStatus = #ofp_port_status{reason = modify,
+                                  desc = NewPort},
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
+    {reply, ok, State#state{port = NewPort}};
+handle_call(get_advertised_features, _From,
+            #state{port = #ofp_port{advertised = AdvertisedFeatures}} = State) ->
+    {reply, AdvertisedFeatures, State};
+handle_call({set_advertised_features, AdvertisedFeatures}, _From,
+            #state{port = Port, switch_id = SwitchId} = State) ->
+    NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),

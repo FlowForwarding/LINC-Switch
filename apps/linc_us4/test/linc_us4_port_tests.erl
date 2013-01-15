@@ -56,7 +56,8 @@ port_test_() ->
        {"Port config: no_pkt_in", fun config_no_pkt_in/0},
        {"Port state: link_down", fun state_link_down/0},
        {"Port state: blocked", fun state_blocked/0},
-       {"Port state: live", fun state_live/0}
+       {"Port state: live", fun state_live/0},
+       {"Port features: change advertised features", fun advertised_features/0}
       ]}}.
 
 port_mod() ->
@@ -185,6 +186,20 @@ state_live() ->
     ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [live])),
     ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
     ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)).
+
+advertised_features() ->
+    FeatureSet1 = [other],
+    FeatureSet2 = [copper, autoneg],
+    ?assertEqual(ok,
+                 linc_us4_port:set_advertised_features(?SWITCH_ID, 1,
+                                                       FeatureSet1)),
+    ?assertEqual(FeatureSet1,
+                 linc_us4_port:get_advertised_features(?SWITCH_ID, 1)),
+    ?assertEqual(ok,
+                 linc_us4_port:set_advertised_features(?SWITCH_ID, 1,
+                                                       FeatureSet2)),
+    ?assertEqual(FeatureSet2,
+                 linc_us4_port:get_advertised_features(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
 

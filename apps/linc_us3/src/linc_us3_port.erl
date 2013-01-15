@@ -41,6 +41,9 @@
          set_config/3,
          is_valid/2]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us3.hrl").
 -include("linc_us3_port.hrl").
 
@@ -74,7 +77,7 @@ initialize(SwitchId) ->
                              {read_concurrency, true}]),
     linc:register(SwitchId, linc_ports, LincPorts),
     linc:register(SwitchId, linc_port_stats, LincPortStats),
-    case queues_enabled() of
+    case queues_enabled(SwitchId) of
         true ->
             linc_us3_queue:initialize(SwitchId);
         false ->
@@ -89,7 +92,7 @@ terminate(SwitchId) ->
     [ok = remove(SwitchId, PortNo) || PortNo <- get_all_port_no(SwitchId)],
     true = ets:delete(linc:lookup(SwitchId, linc_ports)),
     true = ets:delete(linc:lookup(SwitchId, linc_port_stats)),
-    case queues_enabled() of
+    case queues_enabled(SwitchId) of
         true ->
             linc_us3_queue:terminate(SwitchId);
         false ->
@@ -235,7 +238,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                      curr = [other], advertised = [other],
                      supported = [other], peer = [other],
                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
-    QueuesState = case queues_enabled() of
+    QueuesState = case queues_enabled(SwitchId) of
                       false ->
                           disabled;
                       true ->
@@ -259,7 +262,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                                #linc_port{port_no = PortNo, pid = self()}),
                     ets:insert(linc:lookup(SwitchId, linc_port_stats),
                                #ofp_port_stats{port_no = PortNo}),
-                    case queues_config() of
+                    case queues_config(SwitchId) of
                         disabled ->
                             disabled;
                         QueuesConfig ->
@@ -283,7 +286,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         nomatch ->
             {Socket, IfIndex, EpcapPid, HwAddr} =
                 linc_us3_port_native:eth(Interface),
-            case queues_config() of
+            case queues_config(SwitchId) of
                 disabled ->
                     disabled;
                 QueuesConfig ->
@@ -395,7 +398,7 @@ handle_info(_Info, State) ->
 %% @private
 terminate(_Reason, #state{port = #ofp_port{port_no = PortNo},
                           switch_id = SwitchId} = State) ->
-    case queues_enabled() of
+    case queues_enabled(SwitchId) of
         true ->
             linc_us3_queue:detach_all(SwitchId, PortNo);
         false ->
@@ -513,29 +516,25 @@ get_switch_config(miss_send_len) ->
     %%TODO: get this from the switch configuration
     no_buffer.
 
--spec queues_enabled() -> boolean().
-queues_enabled() ->
-    case application:get_env(linc, backends_opts) of
-        {ok, Backends} ->
-            {linc_us3, Opts} = lists:keyfind(linc_us3, 1, Backends),
-            case lists:keyfind(queues_status, 1, Opts) of
-                false ->
-                    false;
-                {queues_status, enabled} ->
-                    true;
-                _ ->
-                    false
-            end;
-        undefined  ->
+-spec queues_enabled(integer()) -> boolean().
+queues_enabled(SwitchId) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
+    case lists:keyfind(queues_status, 1, Opts) of
+        false ->
+            false;
+        {queues_status, enabled} ->
+            true;
+        _ ->
             false
     end.
 
--spec queues_config() -> [term()] | disabled.
-queues_config() ->
-    case queues_enabled() of
+-spec queues_config(integer()) -> [term()] | disabled.
+queues_config(SwitchId) ->
+    case queues_enabled(SwitchId) of
         true ->
-            {ok, Backends} = application:get_env(linc, backends_opts),
-            {linc_us3, Opts} = lists:keyfind(linc_us3, 1, Backends),
+            {ok, Switches} = application:get_env(linc, logical_switches),
+            {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
             case lists:keyfind(queues, 1, Opts) of
                 false ->
                     disabled;

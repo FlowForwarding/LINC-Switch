@@ -96,12 +96,13 @@ setup() ->
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
                                        ]}]}],
-    Backend = {linc_us4, [{ports, [{1, [{interface, "dummy1"}]},
-                                   {2, [{interface, "dummy2"}]}]},
-                          {queues_status, enabled},
-                          {queues, Queues}
-                         ]},
-    application:set_env(linc, backends_opts, [Backend]),
+    Ports = [{port, 1, [{interface, "dummy1"}]},
+             {port, 2, [{interface, "dummy2"}]}],
+    Config = [{switch, 0,
+               [{ports, Ports},
+                {queues_status, enabled},
+                {queues, Queues}]}],
+    application:set_env(linc, logical_switches, Config),
     linc_us4_port:initialize(?SWITCH_ID).
 
 teardown(_) ->

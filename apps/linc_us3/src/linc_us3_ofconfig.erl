@@ -16,190 +16,23 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
-%% @doc OF-Config configuration module.
+%% @doc OF-Config module for userspace v3 backend.
 -module(linc_us3_ofconfig).
 
--behaviour(gen_server).
--behaviour(gen_netconf).
-
-%% Internal API
--export([start/1,
-         start_link/0,
-         stop/0]).
-
-%% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
-
-%% gen_netconf callbacks
--export([handle_get_config/3,
-         handle_edit_config/3,
-         handle_copy_config/3,
-         handle_delete_config/2,
-         handle_lock/2,
-         handle_unlock/2,
-         handle_get/2]).
+-export([get/0]).
 
 -include_lib("of_config/include/of_config.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
--record(ofconfig, {
-          name = running :: running | startup | candidate,
-          config :: #capable_switch{}
-         }).
-
--record(state, {}).
-
-%%------------------------------------------------------------------------------
-%% Internal API functions
-%%------------------------------------------------------------------------------
-
-start(SwitchId) ->
-    Sup = linc:lookup(SwitchId, linc_us3_sup),
-    OFConfig = {linc_us3_ofconfig, {linc_us3_ofconfig, start_link, []},
-                permanent, 5000, worker, [linc_us3_ofconfig]},
-    supervisor:start_child(Sup, OFConfig).
-
-stop() ->
-    ok.
-
-%% @private
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-%%------------------------------------------------------------------------------
-%% gen_server callbacks
-%%------------------------------------------------------------------------------
-
-%% @private
-init([]) ->
-    mnesia:change_table_copy_type(schema, node(), disc_copies),
-
-    TabDef = [{attributes, record_info(fields, ofconfig)},
-              {record_name, ofconfig},
-              {disc_copies, [node()]}],
-    mnesia:create_table(?MODULE, TabDef),
-
-    mnesia:wait_for_tables([?MODULE], 5000),
-
-    Startup = init_or_update_startup(),
-    overwrite_running_and_candidate(Startup),
-
-    {ok, #state{}}.
-
-%% @private
-handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
-    [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Source),
-    EncodedConfig = of_config:encode(Config),
-    {reply, {ok, EncodedConfig}, State};
-handle_call({edit_config, _SessionId, running, {xml, Config}}, _From, State) ->
-    Decoded = of_config:decode(Config),
-
-    [Switch0] = Decoded#capable_switch.logical_switches,
-    Controllers = Switch0#logical_switch.controllers,
-    [add_controller(running, Ctrl) || Ctrl <- Controllers],
-
-    {reply, ok, State};
-handle_call(_, _, State) ->
-    {reply, {error, {operation_failed, application}}, State}.
-
-%% @private
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%% @private
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-%% @private
-terminate(_Reason, _State) ->
-    ok.
-
-%% @private
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%------------------------------------------------------------------------------
-%% gen_netconf callbacks
-%%------------------------------------------------------------------------------
-
-%% @private
-handle_get_config(SessionId, Source, Filter) ->
-    gen_server:call(?MODULE,
-                    {get_config, SessionId, Source, Filter}, infinity).
-
-%% @private
-handle_edit_config(SessionId, Target, Config) ->
-    gen_server:call(?MODULE,
-                    {edit_config, SessionId, Target, Config}, infinity).
-
-%% @private
-handle_copy_config(_SessionId, _Source, _Target) ->
-    ok.
-
-%% @private
-handle_delete_config(_SessionId, _Config) ->
-    ok.
-
-%% @private
-handle_lock(_SessionId, _Config) ->
-    ok.
-
-%% @private
-handle_unlock(_SessionId, _Config) ->
-    ok.
-
-%% @private
-handle_get(_SessionId, _Filter) ->
-    {ok, "<capable-switch/>"}.
-
-%%------------------------------------------------------------------------------
-%% Helper functions
-%%------------------------------------------------------------------------------
-
-%% @private
-init_or_update_startup() ->
-    case mnesia:dirty_read(?MODULE, startup) of
-        [] ->
-            InitialConfig = #ofconfig{name = startup,
-                                      config = init_configuration()},
-            mnesia:dirty_write(?MODULE, InitialConfig),
-            InitialConfig;
-        [Startup] ->
-            %% TODO: Update startup configuration with setting from sys.config
-            NewStartup = update_startup(Startup),
-            mnesia:dirty_write(?MODULE, NewStartup),
-            NewStartup
-    end.
-
-%% @private
-update_startup(#ofconfig{config = Config} = Startup) ->
-    Startup#ofconfig{config = Config}.
-
-%% @private
-overwrite_running_and_candidate(#ofconfig{config = Startup}) ->
-    Running = #ofconfig{name = running,
-                        config = Startup},
-    mnesia:dirty_write(?MODULE, Running),
-
-    Candidate = #ofconfig{name = candidate,
-                          config = Startup},
-    mnesia:dirty_write(?MODULE, Candidate).
-
-%% @private
-init_configuration() ->
+get() ->
     #capable_switch{id = "CapableSwitch0",
                     configuration_points = [],
                     resources = get_ports() ++ get_queues() ++
                         get_certificates() ++ get_flow_tables(),
                     logical_switches = get_logical_switches()}.
 
-%% @private
 get_ports() ->
     %% TODO: Get current port configuration.
     %% Configuration = #port_configuration{admin_state = up,
@@ -228,7 +61,6 @@ get_ports() ->
     %%       tunnel = undefined},
     [].
 
-%% @private
 get_queues() ->
     %% TODO: Get current queue configuration.
     %% Properties = #queue_properties{min_rate = 10,
@@ -240,7 +72,6 @@ get_queues() ->
     %%        properties = Properties},
     [].
 
-%% @private
 get_certificates() ->
     %% TODO: Get certificate configuration.
     %% PrivateKey = #private_key_rsa{
@@ -258,7 +89,6 @@ get_certificates() ->
     %%              private_key = undefined},
     [].
 
-%% @private
 get_flow_tables() ->
     %% [#flow_table{resource_id = "FlowTable" ++ integer_to_list(I),
     %%              max_entries = ?MAX_FLOW_TABLE_ENTRIES,
@@ -275,7 +105,6 @@ get_flow_tables() ->
     %%  || I <- lists:seq(0, ?OFPTT_MAX)].
     [].
 
-%% @private
 get_logical_switches() ->
     %% FIXME: Hardcoded single logical switch instance.
     Caps = #capabilities{max_buffered_packets = ?MAX_BUFFERED_PACKETS,
@@ -312,11 +141,9 @@ get_logical_switches() ->
 %% Helper conversion functions
 %%------------------------------------------------------------------------------
 
-%% @private
 instructions(Instructions) ->
     instructions(Instructions, []).
 
-%% @private
 instructions([], Instructions) ->
     lists:reverse(Instructions);
 instructions([apply_actions | Rest], Instructions) ->
@@ -330,11 +157,9 @@ instructions([write_metadata | Rest], Instructions) ->
 instructions([goto_table | Rest], Instructions) ->
     instructions(Rest, ['goto-table' | Instructions]).
 
-%% @private
 %% fields(Fields) ->
 %%     fields(Fields, []).
 
-%% @private
 %% fields([], Fields) ->
 %%     lists:reverse(Fields);
 %% fields([in_port | Rest], Fields) ->
@@ -410,11 +235,9 @@ instructions([goto_table | Rest], Instructions) ->
 %% fields([mpls_tc | Rest], Fields) ->
 %%     fields(Rest, ['mpls-tc' | Fields]).
 
-%% @private
 actions(Actions) ->
     actions(Actions, []).
 
-%% @private
 actions([], Actions) ->
     lists:reverse(Actions);
 actions([output | Rest], Actions) ->
@@ -450,11 +273,9 @@ actions([dec_nw_ttl | Rest], Actions) ->
 actions([set_field | Rest], Actions) ->
     actions(Rest, ['set-field' | Actions]).
 
-%% @private
 group_types(Types) ->
     group_types(Types, []).
 
-%% @private
 group_types([], Types) ->
     lists:reverse(Types);
 group_types([all | Rest], Types) ->
@@ -466,11 +287,9 @@ group_types([indirect | Rest], Types) ->
 group_types([ff | Rest], Types) ->
     group_types(Rest, ['fast-failover' | Types]).
 
-%% @private
 group_caps(Capabilities) ->
     group_caps(Capabilities, []).
 
-%% @private
 group_caps([], Capabilities) ->
     lists:reverse(Capabilities);
 group_caps([select_weight | Rest], Capabilities) ->
@@ -481,29 +300,3 @@ group_caps([chaining | Rest], Capabilities) ->
     group_caps(Rest, [chaining | Capabilities]);
 group_caps([chaining_check | Rest], Capabilities) ->
     group_caps(Rest, ['chaining-check' | Capabilities]).
-
-%% @private
-add_controller(Target, Controller) ->
-    [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Target),
-
-    State = #controller_state{connection_state = up,
-                              current_version = undefined,
-                              supported_versions = []},
-    NewCtrl = Controller#controller{role = equal,
-                                    local_ip_address = undefined,
-                                    local_port = undefined,
-                                    state = State},
-
-    IP = Controller#controller.ip_address,
-    Port = Controller#controller.port,
-    linc_receiver_sup:open(IP, Port),
-
-    [Switch0] = Config#capable_switch.logical_switches,
-    Controllers = Switch0#logical_switch.controllers,
-    NewControllers = [NewCtrl | Controllers],
-    NewSwitch = Switch0#logical_switch{controllers = NewControllers},
-
-    NewConfig = Config#capable_switch{logical_switches = [NewSwitch]},
-
-    mnesia:dirty_write(?MODULE, #ofconfig{name = Target,
-                                          config = NewConfig}).

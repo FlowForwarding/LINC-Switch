@@ -27,6 +27,8 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-include("linc_logger.hrl").
+
 %%------------------------------------------------------------------------------
 %% API functions
 %%------------------------------------------------------------------------------
@@ -35,18 +37,22 @@
 start_link() ->
     {ok, Pid} = supervisor:start_link(?MODULE, []),
     {ok, Switches} = application:get_env(linc, logical_switches),
-    [supervisor:start_child(Pid, [Id, backend_for_switch(Id)])
+    start_ofconfig(Pid),
+    [start_switch(Pid, [Id, backend_for_switch(Id)])
      || {switch, Id, _} <- Switches],
     {ok, Pid}.
+
+start_switch(Sup, Opts) ->
+    LogicSup = {linc_sup, {linc_sup, start_link, Opts},
+                permanent, 5000, supervisor, [linc_sup]},
+    supervisor:start_child(Sup, LogicSup).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
 init([]) ->
-    LogicSup = {linc_sup, {linc_sup, start_link, []},
-                permanent, 5000, supervisor, [linc_sup]},
-    {ok, {{simple_one_for_one, 5, 10}, [LogicSup]}}.
+    {ok, {{one_for_one, 5, 10}, []}}.
 
 %%------------------------------------------------------------------------------
 %% Internal functions
@@ -57,3 +63,39 @@ backend_for_switch(SwitchId) ->
     {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
     {backend, BackendMod} = lists:keyfind(backend, 1, Opts),
     BackendMod.
+
+start_ofconfig(Pid) ->
+    case application:get_env(linc, of_config) of
+        {ok, enabled} ->
+            start_dependency(ssh),
+            start_dependency(enetconf),
+            OFConfig = {linc_ofconfig, {linc_ofconfig, start_link, []},
+                        permanent, 5000, worker, [linc_ofconfig]},
+            supervisor:start_child(Pid, OFConfig);
+        _ ->
+            ok
+    end.
+
+%% Don't stop dependent applications (ssh, enetconf) even when they were
+%% started by the corresponding start_ofconfig/0 function.
+%% Rationale: stop_ofconfig/0 is called from the context of
+%% application:stop(linc) and subsequent attempt to stop another application
+%% while the first one is still stopping results in a deadlock.
+%% stop_ofconfig() ->
+%%     case application:get_env(linc, of_config) of
+%%         {ok, enabled} ->
+%%             ok;
+%%         _ ->
+%%             ok
+%%     end.
+
+start_dependency(App) ->
+    case application:start(App) of
+        ok ->
+            ok;
+        {error, {already_started, ssh}} ->
+            ok;
+        {error, _} = Error  ->
+            ?ERROR("Starting ~p application failed because: ~p",
+                   [App, Error])
+    end.

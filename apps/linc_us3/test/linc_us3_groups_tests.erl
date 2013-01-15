@@ -21,6 +21,8 @@
 -import(linc_us3_test_utils, [mock/1,
                               unmock/1]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us3.hrl").
 

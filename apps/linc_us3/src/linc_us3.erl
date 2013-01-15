@@ -21,10 +21,6 @@
 
 -behaviour(gen_switch).
 
-%% Switch API
--export([start_ofconfig/1,
-         stop_ofconfig/0]).
-
 %% gen_switch callbacks
 -export([start/1,
          stop/1,
@@ -52,39 +48,15 @@
          ofp_group_desc_stats_request/2,
          ofp_group_features_stats_request/2]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us3.hrl").
 
 -record(state, {flow_state,
                 buffer_state,
                 switch_id :: integer()}).
 -type state() :: #state{}.
-
-%%%-----------------------------------------------------------------------------
-%%% Switch API
-%%%-----------------------------------------------------------------------------
-
-start_ofconfig(SwitchId) ->
-    case application:get_env(linc, of_config) of
-        {ok, enabled} ->
-            start_dependency(ssh),
-            start_dependency(enetconf),
-            linc_us3_ofconfig:start(SwitchId);
-        _ ->
-            ok
-    end.
-
-stop_ofconfig() ->
-    %% Don't stop dependent applications (ssh, enetconf) even when they were
-    %% started by the corresponding start_ofconfig/0 function.
-    %% Rationale: stop_ofconfig/0 is called from the context of
-    %% application:stop(linc) and subsequent attempt to stop another application
-    %% while the first one is still stopping results in a deadlock.
-    case application:get_env(linc, of_config) of
-        {ok, enabled} ->
-            linc_us3_ofconfig:stop();
-        _ ->
-            ok
-    end.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -96,7 +68,6 @@ start(BackendOpts) ->
     {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
     BufferState = linc_buffer:initialize(SwitchId),
     {ok, _Pid} = linc_us3_sup:start_backend_sup(SwitchId),
-    start_ofconfig(SwitchId),
     linc_us3_groups:initialize(SwitchId),
     FlowState = linc_us3_flow:initialize(SwitchId),
     linc_us3_port:initialize(SwitchId),
@@ -109,7 +80,6 @@ start(BackendOpts) ->
 stop(#state{flow_state = FlowState,
             buffer_state = BufferState,
             switch_id = SwitchId}) ->
-    stop_ofconfig(),
     linc_us3_port:terminate(SwitchId),
     linc_us3_flow:terminate(FlowState),
     linc_us3_groups:terminate(SwitchId),
@@ -356,14 +326,3 @@ get_datapath_mac() ->
     %% Make sure MAC /= 0
     [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
     list_to_binary(MAC).
-
-start_dependency(App) ->
-    case application:start(App) of
-        ok ->
-            ok;
-        {error, {already_started, ssh}} ->
-            ok;
-        {error, _} = Error  ->
-            ?ERROR("Starting ~p application failed because: ~p",
-                   [App, Error])
-    end.

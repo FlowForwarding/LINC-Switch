@@ -18,10 +18,6 @@
 %% @copyright 2012 FlowForwarding.org
 %% @doc Header file for userspace implementation of OpenFlow switch.
 
--include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v3.hrl").
--include_lib("linc/include/linc_logger.hrl").
-
 -define(CAPABILITIES, [flow_stats,
                        table_stats,
                        port_stats,

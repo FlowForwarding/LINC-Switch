@@ -38,7 +38,13 @@ switch_setup_test_() ->
 no_ofconfig() ->
     application:load(linc),
     application:set_env(linc, of_config, disabled),
-    application:set_env(linc, backend, linc_us3),
+    Config = [{switch, 0,
+               [{backend, linc_us3},
+                {controllers, []},
+                {ports, []},
+                {queues_status, disabled},
+                {queues, []}]}],
+    application:set_env(linc, logical_switches, Config),
 
     [begin
          ?assertEqual(ok, application:start(linc)),

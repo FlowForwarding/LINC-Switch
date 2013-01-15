@@ -38,6 +38,9 @@
          terminate/2,
          code_change/3]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include_lib("linc/include/linc_logger.hrl").
 -include("linc_us3.hrl").
 -include("linc_us3_queue.hrl").
 

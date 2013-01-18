@@ -22,7 +22,10 @@
 -behaviour(gen_server).
 
 %% API
--export([send_to_controllers/2]).
+-export([send_to_controllers/2,
+         get_config/1,
+         get_datapath_id/1,
+         set_datapath_id/2]).
 
 %% Internal API
 -export([start_link/3]).
@@ -36,6 +39,7 @@
          code_change/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_config/include/of_config.hrl").
 -include("linc_logger.hrl").
 
 -record(state, {
@@ -43,7 +47,8 @@
           xid = 1 :: integer(),
           backend_mod :: atom(),
           backend_state :: term(),
-          switch_id :: integer()
+          switch_id :: integer(),
+          datapath_id :: string()
          }).
 
 %%------------------------------------------------------------------------------
@@ -55,6 +60,19 @@
 send_to_controllers(SwitchId, Message) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic),
                     {send_to_controllers, Message}).
+
+-spec get_config(integer()) -> tuple(list(resource()), #logical_switch{}).
+get_config(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_config).
+
+-spec get_datapath_id(integer()) -> string().
+get_datapath_id(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_datapath_id).
+
+-spec set_datapath_id(integer(), string()) -> ok.
+set_datapath_id(SwitchId, DatapathId) ->
+    gen_server:cast(linc:lookup(SwitchId, linc_logic),
+                    {set_datapath_id, DatapathId}).
 
 %% @doc Start the OF Switch logic.
 -spec start_link(integer(), atom(), term()) -> {ok, pid()} | {error, any()}.
@@ -77,6 +95,13 @@ init([SwitchId, BackendMod, BackendOpts]) ->
                 backend_state = BackendOpts,
                 switch_id = SwitchId}, 0}.
 
+handle_call(get_config, _From, #state{backend_mod = BackendMod,
+                                      switch_id = SwitchId} = State) ->
+    OFConfigBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_ofconfig"),
+    {Resources, LogicalSwitch} = OFConfigBackendMod:get(SwitchId),
+    {reply, {Resources, LogicalSwitch}, State};
+handle_call(get_datapath_id, _From, #state{datapath_id = DatapathId} = State) ->
+    {reply, DatapathId, State};
 handle_call(_Message, _From, State) ->
     {reply, ok, State}.
 
@@ -84,6 +109,8 @@ handle_cast({send_to_controllers, Message}, #state{xid = Xid,
                                                    switch_id = SwitchId} = State) ->
     ofp_channel:send(SwitchId, Message#ofp_message{xid = Xid}),
     {noreply, State#state{xid = Xid + 1}};
+handle_cast({set_datapath_id, DatapathId}, State) ->
+    {noreply, State#state{datapath_id = DatapathId}};
 handle_cast(_Message, State) ->
     {noreply, State}.
 
@@ -111,7 +138,9 @@ handle_info(timeout, #state{backend_mod = BackendMod,
              end || Ctrl <- Controllers],
     [ofp_channel:open(ChannelSupPid, Host, Port, Opt)
      || {Host, Port, Opt} <- Ctrls],
-    {noreply, State#state{backend_state = BackendState2}};
+    DatapathId = "Datapath" ++ integer_to_list(SwitchId),
+    {noreply, State#state{backend_state = BackendState2,
+                          datapath_id = DatapathId}};
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
@@ -142,3 +171,7 @@ terminate(_Reason, #state{backend_mod = BackendMod,
 
 code_change(_OldVersion, State, _Extra) ->
     {ok, State}.
+
+%%%-----------------------------------------------------------------------------
+%%% Helpers
+%%%-----------------------------------------------------------------------------

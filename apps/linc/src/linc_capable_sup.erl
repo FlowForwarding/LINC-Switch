@@ -42,8 +42,9 @@ start_link() ->
      || {switch, Id, _} <- Switches],
     {ok, Pid}.
 
-start_switch(Sup, Opts) ->
-    LogicSup = {linc_sup, {linc_sup, start_link, Opts},
+start_switch(Sup, [SwitchId, _] = Opts) ->
+    Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
+    LogicSup = {Id, {linc_sup, start_link, Opts},
                 permanent, 5000, supervisor, [linc_sup]},
     supervisor:start_child(Sup, LogicSup).
 

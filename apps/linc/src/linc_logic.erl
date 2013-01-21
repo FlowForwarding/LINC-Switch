@@ -43,7 +43,6 @@
 -include("linc_logger.hrl").
 
 -record(state, {
-          connections = [] :: [{pid(), string(), integer()}],
           xid = 1 :: integer(),
           backend_mod :: atom(),
           backend_state :: term(),

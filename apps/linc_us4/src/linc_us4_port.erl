@@ -41,6 +41,8 @@
          set_config/3,
          get_advertised_features/2,
          set_advertised_features/3,
+         get_all_ports_state/1,
+         get_all_queues_state/1,
          is_valid/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -238,6 +240,21 @@ set_advertised_features(SwitchId, PortNo, AdvertisedFeatures) ->
             gen_server:call(Pid, {set_advertised_features, AdvertisedFeatures})
     end.
 
+-spec get_all_ports_state(integer()) -> list({ResourceId :: string(),
+                                              ofp_port()}).
+get_all_ports_state(SwitchId) ->
+    lists:map(fun(PortNo) ->
+                      Pid = get_port_pid(SwitchId, PortNo),
+                      gen_server:call(Pid, get_info)
+              end, get_all_port_no(SwitchId)).
+
+-spec get_all_queues_state(integer()) -> list({ResourceId :: string(),
+                                               ofp_port()}).
+get_all_queues_state(SwitchId) ->
+    lists:flatmap(fun(PortNo) ->
+                          linc_us4_queue:get_all_queues_state(SwitchId, PortNo)
+                  end, get_all_port_no(SwitchId)).
+
 %% @doc Test if a port exists.
 -spec is_valid(integer(), ofp_port_no()) -> boolean().
 is_valid(_SwitchId, PortNo) when is_atom(PortNo)->
@@ -254,8 +271,9 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
+    PortName = "Port" ++ integer_to_list(PortNo),
     Port = #ofp_port{port_no = PortNo,
-                     name = list_to_binary("Port" ++ integer_to_list(PortNo)),
+                     name = list_to_binary(PortName),
                      config = [], state = [live],
                      curr = [other], advertised = [other],
                      supported = [other], peer = [other],
@@ -266,8 +284,10 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                       true ->
                           enabled
                   end,
+    SwitchName = "LogicalSwitch" ++ integer_to_list(SwitchId),
+    ResourceId =  SwitchName ++ "-" ++ PortName,
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    State = #state{interface = Interface, port = Port,
+    State = #state{resource_id = ResourceId, interface = Interface, port = Port,
                    queues = QueuesState, switch_id = SwitchId},
 
     case re:run(Interface, "^tap.*$", [{capture, none}]) of
@@ -377,7 +397,10 @@ handle_call({set_advertised_features, AdvertisedFeatures}, _From,
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    {reply, ok, State#state{port = NewPort}}.
+    {reply, ok, State#state{port = NewPort}};
+handle_call(get_info, _From, #state{resource_id = ResourceId,
+                                    port = Port} = State) ->
+    {reply, {ResourceId, Port}, State}.
 
 %% @private
 handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},

@@ -25,7 +25,8 @@
          get_stats/2,
          send/4,
          set_min_rate/4,
-         set_max_rate/4]).
+         set_max_rate/4,
+         get_all_queues_state/2]).
 
 %% Internal API
 -export([start_link/2,
@@ -40,6 +41,7 @@
          terminate/2,
          code_change/3]).
 
+-include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
@@ -54,7 +56,10 @@
 -define(DEFAULT_QUEUE, default).
 
 -record(state, {queue_key :: {ofp_port_no(), ofp_queue_id()},
+                resource_id :: string(),
                 port_rate_bps :: integer(),
+                min_rate_bps :: integer(),
+                max_rate_bps :: integer(),
                 port_rate :: integer(),
                 min_rate :: integer(),
                 max_rate :: integer(),
@@ -134,6 +139,11 @@ set_max_rate(SwitchId, PortNo, QueueId, MinRate) ->
             gen_server:cast(Pid, {set_max_rate, MinRate})
     end.
 
+get_all_queues_state(SwitchId, PortNo) ->
+    lists:map(fun(#linc_port_queue{queue_pid = Pid}) ->
+                      gen_server:call(Pid, get_state)
+              end, get_queues(SwitchId, PortNo)).
+
 %%------------------------------------------------------------------------------
 %% Internal API
 %%------------------------------------------------------------------------------
@@ -160,7 +170,7 @@ start_link(SwitchId, QueueOpts) ->
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
 
-init([SwitchId, [{_PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
+init([SwitchId, [{PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
                  SendFun, QueueProps]]) ->
 
     History = linc_us4_sliding_window:new(?HIST_BUCKET_COUNT, ?HIST_BUCKET_SIZE),
@@ -182,8 +192,15 @@ init([SwitchId, [{_PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
                                                      min_rate = MinRate,
                                                      max_rate = MaxRate,
                                                      rate = 0}),
+    ResourceId =
+        "Switch" ++ integer_to_list(SwitchId) ++ "-" ++
+        "Port" ++ integer_to_list(PortNo) ++ "-" ++
+        "Queue" ++ integer_to_list(QueueNo),
     {ok, #state{queue_key = Key,
+                resource_id = ResourceId,
                 port_rate_bps = PortRateBps,
+                min_rate_bps = MinRateBps,
+                max_rate_bps = MaxRateBps,
                 port_rate = PortRate,
                 min_rate = MinRate,
                 max_rate = MaxRate,
@@ -198,7 +215,20 @@ handle_call(detach, _From, #state{queue_key = QueueKey,
     LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
     ets:delete(LincPortQueue, QueueKey),
     ets:delete(ThrottlingETS, QueueId),
-    {reply, ok, State}.
+    {reply, ok, State};
+handle_call(get_state, _From, #state{resource_id = ResourceId,
+                                     queue_key = {PortNo, QueueId},
+                                     min_rate_bps = MinRateBps,
+                                     max_rate_bps = MaxRateBps} = State) ->
+    Queue = #queue{resource_id = ResourceId,
+                   id = QueueId,
+                   port = PortNo,
+                   properties = #queue_properties{
+                                   min_rate = MinRateBps,
+                                   max_rate = MaxRateBps,
+                                   experimenters = []
+                                  }},
+    {reply, Queue, State}.
 
 handle_cast({send, Frame}, #state{queue_key = QueueKey,
                                   min_rate = MinRate,

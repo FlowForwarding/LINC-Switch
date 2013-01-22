@@ -24,6 +24,8 @@
 %% API
 -export([send_to_controllers/2,
          get_config/1,
+         get_ports_backend_mod/1,
+         get_ofconfig_backend_mod/1,
          get_datapath_id/1,
          set_datapath_id/2]).
 
@@ -45,6 +47,8 @@
 -record(state, {
           xid = 1 :: integer(),
           backend_mod :: atom(),
+          ports_backend_mod :: atom(),
+          ofconfig_backend_mod :: atom(),
           backend_state :: term(),
           switch_id :: integer(),
           datapath_id :: string()
@@ -63,6 +67,14 @@ send_to_controllers(SwitchId, Message) ->
 -spec get_config(integer()) -> tuple(list(resource()), #logical_switch{}).
 get_config(SwitchId) ->
     gen_server:call(linc:lookup(SwitchId, linc_logic), get_config).
+
+-spec get_ports_backend_mod(integer()) -> atom().
+get_ports_backend_mod(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_ports_backend_mod).
+
+-spec get_ofconfig_backend_mod(integer()) -> atom().
+get_ofconfig_backend_mod(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_ofconfig_backend_mod).
 
 -spec get_datapath_id(integer()) -> string().
 get_datapath_id(SwitchId) ->
@@ -88,9 +100,14 @@ init([SwitchId, BackendMod, BackendOpts]) ->
     process_flag(trap_exit, true),
     linc:register(SwitchId, linc_logic, self()),
 
+    PortsBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_port"),
+    OFConfigBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_ofconfig"),
+
     %% Timeout 0 will send a timeout message to the gen_server to handle
     %% backend initialization before any other message.
     {ok, #state{backend_mod = BackendMod,
+                ports_backend_mod = PortsBackendMod,
+                ofconfig_backend_mod = OFConfigBackendMod,
                 backend_state = BackendOpts,
                 switch_id = SwitchId}, 0}.
 
@@ -99,6 +116,12 @@ handle_call(get_config, _From, #state{backend_mod = BackendMod,
     OFConfigBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_ofconfig"),
     {Resources, LogicalSwitch} = OFConfigBackendMod:get(SwitchId),
     {reply, {Resources, LogicalSwitch}, State};
+handle_call(get_ports_backend_mod, _From,
+            #state{ports_backend_mod = PortsBackendMod} = State) ->
+    {reply, PortsBackendMod, State};
+handle_call(get_ofconfig_backend_mod, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod} = State) ->
+    {reply, OFConfigBackendMod, State};
 handle_call(get_datapath_id, _From, #state{datapath_id = DatapathId} = State) ->
     {reply, DatapathId, State};
 handle_call(_Message, _From, State) ->

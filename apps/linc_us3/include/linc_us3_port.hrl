@@ -13,6 +13,7 @@
 -type linc_queues_state() :: enabled | disabled.
 
 -record(state, {
+          resource_id        :: string(),
           %% Common state of tap and eth interfaces
           interface          :: string(),
           type = physical    :: linc_port_type(),
@@ -26,6 +27,5 @@
           ifindex            :: integer(),
           epcap_pid          :: pid(),
           %% Queue subsystem state
-          queues = disabled  :: linc_queues_state(),
-          rate_bps           :: integer()
+          queues = disabled  :: linc_queues_state()
          }).

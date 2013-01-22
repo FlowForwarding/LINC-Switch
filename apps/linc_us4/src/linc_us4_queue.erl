@@ -357,7 +357,12 @@ get_queue_pid(SwitchId, PortNo, QueueId) ->
 get_queues(SwitchId, PortNo) ->
     LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
     MatchSpec = #linc_port_queue{key = {PortNo, '_'}, _ = '_'},
-    ets:match_object(LincPortQueue, MatchSpec).
+    case catch ets:match_object(LincPortQueue, MatchSpec) of
+        {'EXIT', _} ->
+            [];
+        Match ->
+            Match
+    end.
 
 match_queue(SwitchId, any, all) ->
     match_queue(SwitchId, any, '_', '_');

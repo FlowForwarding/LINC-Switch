@@ -28,6 +28,7 @@
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
+-spec get_ports(integer()) -> list(#port{}).
 get_ports(SwitchId) ->
     PortsStates = linc_us3_port:get_all_ports_state(SwitchId),
     lists:map(fun({ResourceId, #ofp_port{port_no = PortNo,
@@ -82,6 +83,7 @@ get_ports(SwitchId) ->
                             tunnel = undefined}
               end, PortsStates).
 
+-spec get_flow_tables(integer()) -> list(#flow_table{}).
 get_flow_tables(SwitchId) ->
     [#flow_table{resource_id = linc_ofconfig:flow_table_name(SwitchId, I),
                  max_entries = ?MAX_FLOW_TABLE_ENTRIES,
@@ -97,6 +99,7 @@ get_flow_tables(SwitchId) ->
                  metadata_write = 16#ffff}
      || I <- lists:seq(0, ?OFPTT_MAX)].
 
+-spec get_capabilities() -> #capabilities{}.
 get_capabilities() ->
     #capabilities{max_buffered_packets = ?MAX_BUFFERED_PACKETS,
                   max_tables = ?MAX_TABLES,

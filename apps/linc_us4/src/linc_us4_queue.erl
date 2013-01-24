@@ -139,6 +139,7 @@ set_max_rate(SwitchId, PortNo, QueueId, MinRate) ->
             gen_server:cast(Pid, {set_max_rate, MinRate})
     end.
 
+-spec get_all_queues_state(integer(), ofp_port_no()) -> list(#queue{}).
 get_all_queues_state(SwitchId, PortNo) ->
     lists:map(fun(#linc_port_queue{queue_pid = Pid}) ->
                       gen_server:call(Pid, get_state)

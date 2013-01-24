@@ -25,6 +25,7 @@
 %% Internal API
 -export([start_link/0,
          get/1,
+         get_config/1,
          is_present/4,
          features/1,
          flow_table_name/2]).
@@ -50,9 +51,32 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include("linc_logger.hrl").
 
+-type ofc_port() :: {port,
+                     PortId :: integer(),
+                     Config :: #port_configuration{},
+                     Features :: #features{}}.
+
+-type ofc_queue() :: {queue,
+                      {PortId :: integer(), QueueId :: integer()},
+                      MinRate :: integer(),
+                      MaxRate :: integer()}.
+
+-type ofc_controller() :: {controller,
+                           {SwitchId :: integer(), ControllerId :: string()},
+                           Host :: string(),
+                           Port :: integer(),
+                           Protocol :: tcp}.
+
+-type ofc_switch() :: {switch,
+                       SwitchId :: integer(),
+                       DatapathId :: string()}.
+
 -record(ofconfig, {
-          name = running :: running | startup,
-          config :: #capable_switch{}
+          name = startup,
+          ports = [] :: [ofc_port()],
+          queues = [] :: [ofc_queue()],
+          switches = [] :: [ofc_switch()],
+          controllers = [] :: [ofc_controller()]
          }).
 
 -record(state, {}).
@@ -68,10 +92,10 @@ start_link() ->
 -spec get(integer()) -> tuple(list(resource()), #logical_switch{}).
 get(SwitchId) ->
     LogicalSwitchId = "LogicalSwitch" ++ integer_to_list(SwitchId),
-    Ports = get_ports(SwitchId),
-    Queues = get_queues(SwitchId),
+    Ports = linc_logic:get_backend_ports(SwitchId),
+    Queues = linc_logic:get_backend_queues(SwitchId),
     Certificates = get_certificates(SwitchId),
-    FlowTables = get_flow_tables(SwitchId),
+    FlowTables = linc_logic:get_backend_flow_tables(SwitchId),
     Resources = Ports ++ Queues ++ Certificates ++ FlowTables,
     Refs = get_ports_refs(Ports)
         ++ get_queues_refs(Queues)
@@ -83,11 +107,15 @@ get(SwitchId) ->
                        enabled = true,
                        check_controller_certificate = false,
                        lost_connection_behavior = failSecureMode,
-                       capabilities = get_capabilities(SwitchId),
+                       capabilities = linc_logic:get_backend_capabilities(SwitchId),
                        controllers = get_controllers(SwitchId),
                        resources = Refs
                       },
     {Resources, LogicalSwitch}.
+
+-spec get_config(integer()) -> #ofconfig{}.
+get_config(_SwitchId) ->
+    #ofconfig{}.
 
 is_present(Value, List, IfPresent, IfAbsent) ->
     case lists:member(Value, List) of
@@ -247,18 +275,10 @@ overwrite_running(#ofconfig{config = Startup}) ->
 %%     mnesia:dirty_write(?MODULE, #ofconfig{name = Target,
 %%                                           config = NewConfig}).
 
-get_ports(SwitchId) ->
-    OFConfigBackendMod = linc_logic:get_ofconfig_backend_mod(SwitchId),
-    OFConfigBackendMod:get_ports(SwitchId).
-
 get_ports_refs(Ports) ->
     lists:map(fun(#port{resource_id = ResourceId}) ->
                       {port, ResourceId}
               end, Ports).
-
-get_queues(SwitchId) ->
-    PortsBackendMod = linc_logic:get_ports_backend_mod(SwitchId),
-    PortsBackendMod:get_all_queues_state(SwitchId).
 
 get_queues_refs(Queues) ->
     lists:map(fun(#queue{resource_id = ResourceId}) ->
@@ -287,18 +307,10 @@ get_certificates_refs(Certificates) ->
                       {certificate, ResourceId}
               end, Certificates).
 
-get_flow_tables(SwitchId) ->
-    OFConfigBackendMod = linc_logic:get_ofconfig_backend_mod(SwitchId),
-    OFConfigBackendMod:get_flow_tables(SwitchId).
-
 get_flow_tables_refs(FlowTables) ->
     lists:map(fun(#flow_table{resource_id = ResourceId}) ->
                       {flow_table, ResourceId}
               end, FlowTables).
-
-get_capabilities(SwitchId) ->
-    OFConfigBackendMod = linc_logic:get_ofconfig_backend_mod(SwitchId),
-    OFConfigBackendMod:get_capabilities().
 
 get_controllers(SwitchId) ->
     lists:map(fun({ControllerId, Role,

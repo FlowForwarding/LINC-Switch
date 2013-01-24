@@ -23,11 +23,24 @@
 
 %% API
 -export([send_to_controllers/2,
-         get_config/1,
-         get_ports_backend_mod/1,
-         get_ofconfig_backend_mod/1,
+         %% Backend general
          get_datapath_id/1,
-         set_datapath_id/2]).
+         set_datapath_id/2,
+         get_backend_flow_tables/1,
+         get_backend_capabilities/1,
+         %% Backend ports
+         get_backend_ports/1,
+         get_port_config/2,
+         set_port_config/3,
+         get_port_features/2,
+         set_port_features/3,
+         %% Backend queues
+         get_backend_queues/1,
+         get_queue_min_rate/3,
+         set_queue_min_rate/4,
+         get_queue_max_rate/3,
+         set_queue_max_rate/4
+        ]).
 
 %% Internal API
 -export([start_link/3]).
@@ -64,18 +77,6 @@ send_to_controllers(SwitchId, Message) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic),
                     {send_to_controllers, Message}).
 
--spec get_config(integer()) -> tuple(list(resource()), #logical_switch{}).
-get_config(SwitchId) ->
-    gen_server:call(linc:lookup(SwitchId, linc_logic), get_config).
-
--spec get_ports_backend_mod(integer()) -> atom().
-get_ports_backend_mod(SwitchId) ->
-    gen_server:call(linc:lookup(SwitchId, linc_logic), get_ports_backend_mod).
-
--spec get_ofconfig_backend_mod(integer()) -> atom().
-get_ofconfig_backend_mod(SwitchId) ->
-    gen_server:call(linc:lookup(SwitchId, linc_logic), get_ofconfig_backend_mod).
-
 -spec get_datapath_id(integer()) -> string().
 get_datapath_id(SwitchId) ->
     gen_server:call(linc:lookup(SwitchId, linc_logic), get_datapath_id).
@@ -84,6 +85,62 @@ get_datapath_id(SwitchId) ->
 set_datapath_id(SwitchId, DatapathId) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic),
                     {set_datapath_id, DatapathId}).
+
+-spec get_backend_flow_tables(integer()) -> list(#flow_table{}).
+get_backend_flow_tables(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_backend_flow_tables).
+
+-spec get_backend_capabilities(integer()) -> #capabilities{}.
+get_backend_capabilities(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_backend_capabilities).
+
+-spec get_backend_ports(integer()) -> list(#port{}).
+get_backend_ports(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_backend_ports).
+
+-spec get_port_config(integer(), integer()) -> #port_configuration{}.
+get_port_config(SwitchId, PortNo) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {get_port_config,
+                                                        PortNo}).
+
+-spec set_port_config(integer(), integer(), #port_configuration{}) -> ok.
+set_port_config(SwitchId, PortNo, PortConfig) ->
+    gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_port_config,
+                                                        PortNo, PortConfig}).
+
+-spec get_port_features(integer(), integer()) -> #port_features{}.
+get_port_features(SwitchId, PortNo) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {get_port_features,
+                                                        PortNo}).
+
+-spec set_port_features(integer(), integer(), #port_features{}) -> ok.
+set_port_features(SwitchId, PortNo, PortFeatures) ->
+    gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_port_features,
+                                                        PortNo, PortFeatures}).
+
+-spec get_backend_queues(integer()) -> list(#queue{}).
+get_backend_queues(SwitchId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), get_backend_queues).
+
+-spec get_queue_min_rate(integer(), integer(), integer()) -> integer().
+get_queue_min_rate(SwitchId, PortNo, QueueId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {get_queue_min_rate,
+                                                        PortNo, QueueId}).
+
+-spec set_queue_min_rate(integer(), integer(), integer(), integer()) -> ok.
+set_queue_min_rate(SwitchId, PortNo, QueueId, Rate) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {set_queue_min_rate,
+                                                        PortNo, QueueId, Rate}).
+
+-spec get_queue_max_rate(integer(), integer(), integer()) -> integer().
+get_queue_max_rate(SwitchId, PortNo, QueueId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {get_queue_max_rate,
+                                                        PortNo, QueueId}).
+
+-spec set_queue_max_rate(integer(), integer(), integer(), integer()) -> ok.
+set_queue_max_rate(SwitchId, PortNo, QueueId, Rate) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {set_queue_max_rate,
+                                                        PortNo, QueueId, Rate}).
 
 %% @doc Start the OF Switch logic.
 -spec start_link(integer(), atom(), term()) -> {ok, pid()} | {error, any()}.
@@ -111,19 +168,47 @@ init([SwitchId, BackendMod, BackendOpts]) ->
                 backend_state = BackendOpts,
                 switch_id = SwitchId}, 0}.
 
-handle_call(get_config, _From, #state{backend_mod = BackendMod,
-                                      switch_id = SwitchId} = State) ->
-    OFConfigBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_ofconfig"),
-    {Resources, LogicalSwitch} = OFConfigBackendMod:get(SwitchId),
-    {reply, {Resources, LogicalSwitch}, State};
-handle_call(get_ports_backend_mod, _From,
-            #state{ports_backend_mod = PortsBackendMod} = State) ->
-    {reply, PortsBackendMod, State};
-handle_call(get_ofconfig_backend_mod, _From,
-            #state{ofconfig_backend_mod = OFConfigBackendMod} = State) ->
-    {reply, OFConfigBackendMod, State};
 handle_call(get_datapath_id, _From, #state{datapath_id = DatapathId} = State) ->
     {reply, DatapathId, State};
+handle_call(get_backend_flow_tables, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    FlowTables = OFConfigBackendMod:get_flow_tables(SwitchId),
+    {reply, FlowTables, State};
+handle_call(get_backend_capabilities, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod} = State) ->
+    Capabilities = OFConfigBackendMod:get_capabilities(),
+    {reply, Capabilities, State};
+handle_call(get_backend_ports, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    Ports = OFConfigBackendMod:get_ports(SwitchId),
+    {reply, Ports, State};
+handle_call({get_port_config, PortNo}, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    PortConfig = OFConfigBackendMod:get_port_config(SwitchId, PortNo),
+    {reply, PortConfig, State};
+handle_call({get_port_features, PortNo}, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    PortFeatures = OFConfigBackendMod:get_port_features(SwitchId, PortNo),
+    {reply, PortFeatures, State};
+handle_call(get_backend_queues, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    BackendQueues = OFConfigBackendMod:get_backend_queues(SwitchId),
+    {reply, BackendQueues, State};
+handle_call(get_queue_min_rate, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    BackendQueues = OFConfigBackendMod:get_queue_min_rate(SwitchId),
+    {reply, BackendQueues, State};
+handle_call(get_queue_max_rate, _From,
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    BackendQueues = OFConfigBackendMod:get_queue_max_rate(SwitchId),
+    {reply, BackendQueues, State};
 handle_call(_Message, _From, State) ->
     {reply, ok, State}.
 
@@ -133,6 +218,26 @@ handle_cast({send_to_controllers, Message}, #state{xid = Xid,
     {noreply, State#state{xid = Xid + 1}};
 handle_cast({set_datapath_id, DatapathId}, State) ->
     {noreply, State#state{datapath_id = DatapathId}};
+handle_cast({set_port_config, PortNo, PortConfig},
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    OFConfigBackendMod:set_port_config(SwitchId, PortNo, PortConfig),
+    {noreply, State};
+handle_cast({set_port_features, PortNo, PortFeatures},
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    OFConfigBackendMod:set_port_features(SwitchId, PortNo, PortFeatures),
+    {noreply, State};
+handle_cast({set_queue_min_rate, PortNo, QueueId, Rate},
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    OFConfigBackendMod:set_queue_min_rate(SwitchId, PortNo, QueueId, Rate),
+    {noreply, State};
+handle_cast({set_queue_max_rate, PortNo, QueueId, Rate},
+            #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   switch_id = SwitchId} = State) ->
+    OFConfigBackendMod:set_queue_max_rate(SwitchId, PortNo, QueueId, Rate),
+    {noreply, State};
 handle_cast(_Message, State) ->
     {noreply, State}.
 

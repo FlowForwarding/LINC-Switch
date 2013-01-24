@@ -6,15 +6,11 @@
                   lager,
                   mnesia]},
   {mod, {linc, []}},
-  {env, [{supported_versions, [3, 4]},
-         {controllers, []},
-         {backends,
-          [{userspace, [{ports, []}]}]},
-         {backend, {linc_us3, []}},
+  {env, [{capable_switch_id, "CapableSwitch0"},
+         {supported_versions, [3, 4]},
          {of_config, disabled},
-         {manufacturer_desc, <<"Dummy">>},
-         {hardware_desc, <<"Dummy">>},
-         {software_desc, <<"Dummy">>},
-         {serial_number, <<"Dummy">>},
-         {datapath_desc, <<"Dummy">>}]}
- ]}.
+         {manufacturer_desc, <<"FlowForwarding.org">>},
+         {hardware_desc, <<"Unknown">>},
+         {software_desc, <<"LINC OpenFlow Software Switch 1.0">>},
+         {serial_number, <<"Unknown">>},
+         {datapath_desc, <<"Unknown">>}]}]}.

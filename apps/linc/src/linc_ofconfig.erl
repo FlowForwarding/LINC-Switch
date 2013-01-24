@@ -19,24 +19,18 @@
 %% @doc OF-Config configuration module.
 -module(linc_ofconfig).
 
--behaviour(gen_server).
 -behaviour(gen_netconf).
+-behaviour(gen_server).
+
+-compile(export_all).
 
 %% Internal API
 -export([start_link/0,
-         get/1,
+         get_state/1,
          get_config/1,
          is_present/4,
          features/1,
          flow_table_name/2]).
-
-%% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,
@@ -47,9 +41,19 @@
          handle_unlock/2,
          handle_get/2]).
 
+%% gen_server callbacks
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include("linc_logger.hrl").
+
+-define(STARTUP, linc_ofconfig_startup).
 
 -type ofc_port() :: {port,
                      PortId :: integer(),
@@ -89,8 +93,8 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec get(integer()) -> tuple(list(resource()), #logical_switch{}).
-get(SwitchId) ->
+-spec get_state(integer()) -> tuple(list(resource()), #logical_switch{}).
+get_state(SwitchId) ->
     LogicalSwitchId = "LogicalSwitch" ++ integer_to_list(SwitchId),
     Ports = linc_logic:get_backend_ports(SwitchId),
     Queues = linc_logic:get_backend_queues(SwitchId),
@@ -152,52 +156,6 @@ flow_table_name(SwitchId, TableId) ->
     DatapathId ++ "FlowTable" ++ integer_to_list(TableId).
 
 %%------------------------------------------------------------------------------
-%% gen_server callbacks
-%%------------------------------------------------------------------------------
-
-init([]) ->
-    mnesia:change_table_copy_type(schema, node(), disc_copies),
-
-    TabDef = [{attributes, record_info(fields, ofconfig)},
-              {record_name, ofconfig},
-              {disc_copies, [node()]}],
-    mnesia:create_table(?MODULE, TabDef),
-
-    mnesia:wait_for_tables([?MODULE], 5000),
-
-    Startup = init_or_update_startup(),
-    overwrite_running(Startup),
-
-    {ok, #state{}}.
-
-handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
-    [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Source),
-    EncodedConfig = of_config:encode(Config),
-    {reply, {ok, EncodedConfig}, State};
-handle_call({edit_config, _SessionId, running, {xml, Config}}, _From, State) ->
-    _Decoded = of_config:decode(Config),
-
-    %% [Switch0] = Decoded#capable_switch.logical_switches,
-    %% Controllers = Switch0#logical_switch.controllers,
-    %% [add_controller(running, Ctrl) || Ctrl <- Controllers],
-
-    {reply, ok, State};
-handle_call(_, _, State) ->
-    {reply, {error, {operation_failed, application}}, State}.
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%------------------------------------------------------------------------------
 %% gen_netconf callbacks
 %%------------------------------------------------------------------------------
 
@@ -225,55 +183,364 @@ handle_get(_SessionId, _Filter) ->
     {ok, "<capable-switch/>"}.
 
 %%------------------------------------------------------------------------------
+%% gen_server callbacks
+%%------------------------------------------------------------------------------
+
+init([]) ->
+    mnesia:change_table_copy_type(schema, node(), disc_copies),
+    TabDef = [{attributes, record_info(fields, ofconfig)},
+              {record_name, ofconfig},
+              {disc_copies, [node()]}],
+    mnesia:create_table(?STARTUP, TabDef),
+    mnesia:wait_for_tables([?STARTUP], 5000),
+    init_startup(),
+    {ok, #state{}}.
+
+handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
+    Config = get_of_config(Source),
+    EncodedConfig = of_config:encode(Config),
+    {reply, {ok, EncodedConfig}, State};
+handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
+    Config = of_config:decode(Xml),
+    case check_capable_switch_id(Config#capable_switch.id) of
+        true ->
+            case execute_operations(extract_operations(Config, merge),
+                                    stop, running) of
+                ok ->
+                    {reply, ok, State};
+                {error, Errors} ->
+                    {reply, hd(Errors), State}
+            end;
+        false ->
+            {reply, {error, data_missing}, State}
+    end;
+handle_call(_, _, State) ->
+    {reply, {error, {operation_failed, application}}, State}.
+
+check_capable_switch_id(CapableSwitchId) ->
+    case application:get_env(linc, capable_switch_id) of
+        {ok, CapableSwitchId} ->
+            true;
+        _Else ->
+            false
+    end.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%------------------------------------------------------------------------------
 %% Helper functions
 %%------------------------------------------------------------------------------
 
-init_or_update_startup() ->
-    case mnesia:dirty_read(?MODULE, startup) of
+init_startup() ->
+    case mnesia_read(startup) of
         [] ->
-            InitialConfig = #ofconfig{name = startup,
-                                      config = []},
-            mnesia:dirty_write(?MODULE, InitialConfig),
-            InitialConfig;
-        [Startup] ->
-            %% TODO: Update startup configuration with setting from sys.config
-            NewStartup = update_startup(Startup),
-            mnesia:dirty_write(?MODULE, NewStartup),
-            NewStartup
+            InitialConfig = #ofconfig{name = startup},
+            mnesia_write(startup, InitialConfig);
+        _Else ->
+            ok
     end.
 
-update_startup(#ofconfig{config = Config} = Startup) ->
-    Startup#ofconfig{config = Config}.
+get_of_config(running) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    Config = merge([get_config(Id) || {switch, Id, _} <- Switches]),
+    {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
+    Config#capable_switch{id = CapSwitchId}.
 
-overwrite_running(#ofconfig{config = Startup}) ->
-    Running = #ofconfig{name = running,
-                        config = Startup},
-    mnesia:dirty_write(?MODULE, Running).
+%% @doc Merge configuration from logical switches.
+merge(Configs) ->
+    merge(Configs, #capable_switch{resources = [],
+                                   logical_switches = []}).
 
-%% add_controller(Target, Controller) ->
-%%     [#ofconfig{config = Config}] = mnesia:dirty_read(?MODULE, Target),
+merge([], Config) ->
+    Config;
+merge([{NewResources, NewSwitch} | Rest],
+      #capable_switch{resources = Resources,
+                      logical_switches = Switches} = Config) ->
+    NewConfig = Config#capable_switch{
+                  resources = Resources ++ NewResources,
+                  logical_switches = Switches ++ [NewSwitch]},
+    merge(Rest, NewConfig).
 
-%%     State = #controller_state{connection_state = up,
-%%                               current_version = undefined,
-%%                               supported_versions = []},
-%%     NewCtrl = Controller#controller{role = equal,
-%%                                     local_ip_address = undefined,
-%%                                     local_port = undefined,
-%%                                     state = State},
+%%------------------------------------------------------------------------------
+%% Function for extracting actions from the received config
+%%------------------------------------------------------------------------------
 
-%%     IP = Controller#controller.ip_address,
-%%     Port = Controller#controller.port,
-%%     linc_receiver_sup:open(IP, Port),
+extract_operations(#capable_switch{resources = Resources,
+                                   logical_switches = Switches}, DefOp) ->
+    SC = case Switches of
+             undefined ->
+                 [];
+             _ ->
+                 [begin
+                      SwitchId = extract_id(SwitchIdStr),
+                      {{DefOp, {switch, SwitchId, Datapath}},
+                       [{DefOp, {controller, {SwitchId, Id}, IP, Port, Proto}}
+                        || #controller{id = Id,
+                                       ip_address = IP,
+                                       port = Port,
+                                       protocol = Proto} <- Controllers]}
+                  end || #logical_switch{
+                            id = SwitchIdStr,
+                            datapath_id = Datapath,
+                            controllers = Controllers} <- Switches]
+         end,
+    {S, Cs} = lists:unzip(SC),
+    C = lists:merge(Cs),
 
-%%     [Switch0] = Config#capable_switch.logical_switches,
-%%     Controllers = Switch0#logical_switch.controllers,
-%%     NewControllers = [NewCtrl | Controllers],
-%%     NewSwitch = Switch0#logical_switch{controllers = NewControllers},
+    P = case Resources of
+            undefined ->
+                [];
+            _ ->
+                [{DefOp, {port, PortId, Config, Features}}
+                 || #port{number = PortId,
+                          configuration = Config,
+                          features = #port_features{
+                                        advertised = Features}} <- Resources]
+        end,
+    Q = case Resources of
+            undefined ->
+                [];
+            _ ->
+                [{DefOp, {queue, {QueueId, PortId}, Properties}}
+                 || #queue{id = QueueId,
+                           port = PortId,
+                           properties = Properties} <- Resources]
+        end,
+    P ++ Q ++ S ++ C.
+    
+extract_id(String) ->
+    %% FIXME: Case when client sends something else
+    list_to_integer(string:sub_string(String, 14)).
 
-%%     NewConfig = Config#capable_switch{logical_switches = [NewSwitch]},
+execute_operations([], stop, _) ->
+    ok;
+execute_operations([], {continue, []}, _) ->
+    ok;
+execute_operations([], {continue, Errors}, _) ->
+    {error, lists:reverse(Errors)};
+execute_operations([{Op, {port, PortId, Config, Features} = Port} | Rest],
+                   OnError, Target) ->
+    case Op of
+        none ->
+            execute_operations(Rest, OnError, Target);
+        Op when Op == create orelse
+                Op == delete orelse
+                Op == remove ->
+            handle_error(unsupported_operation, OnError, Rest, Target);
+        Op ->
+            case Target of
+                running ->
+                    linc_logic:set_port_config(Op, PortId,
+                                               Config, Features);
+                _ ->
+                    ok
+            end,
+            update_mnesia(Target, Op, Port),
+            execute_operations(Rest, OnError, Target)
+    end;
+execute_operations([{Op, {queue, {QueueId, PortId},
+                          Properties} = Queue} | Rest],
+                   OnError, Target) ->
+    case Op of
+        none ->
+            execute_operations(Rest, OnError, Target);
+        Op when Op == create orelse
+                Op == delete orelse
+                Op == remove ->
+            handle_error(unsupported_operation, OnError, Rest, Target);
+        Op ->
+            case Target of
+                running ->
+                    linc_logic:set_queue_config(Op, QueueId, PortId,
+                                                Properties);
+                _ ->
+                    ok
+            end,
+            update_mnesia(Target, Op, Queue),
+            execute_operations(Rest, OnError, Target)
+    end;
+execute_operations([{Op, {switch, SwitchId, DatapathId} = Switch} | Rest],
+                   OnError, Target) ->
+    case Op of
+        none ->
+            execute_operations(Rest, OnError, Target);
+        Op when Op == create orelse
+                Op == delete orelse
+                Op == remove ->
+            handle_error(unsupported_operation, OnError, Rest, Target);
+        Op ->
+            case Target of
+                running ->
+                    linc_logic:set_switch_config(Op, SwitchId, DatapathId);
+                _ ->
+                    ok
+            end,
+            update_mnesia(Target, Op, Switch),
+            execute_operations(Rest, OnError, Target)
+    end;
+execute_operations([{Op, {controller, {SwitchId, CtrlId},
+                          Host, Port, Protocol} = Controller} | Rest],
+                   OnError, Target) ->
+    case Op of
+        none ->
+            execute_operations(Rest, OnError, Target);
+        Op ->
+            case Target of
+                running ->
+                    linc_logic:set_controller_config(Op, SwitchId, CtrlId,
+                                                     Host, Port, Protocol);
+                _ ->
+                    ok
+            end,
+            case update_mnesia(Target, Op, Controller) of
+                ok ->
+                    execute_operations(Rest, OnError, Target);
+                {error, Error} ->
+                    handle_error(Error, OnError, Rest, Target)
+            end
+    end.
 
-%%     mnesia:dirty_write(?MODULE, #ofconfig{name = Target,
-%%                                           config = NewConfig}).
+handle_error(Error, OnError, Rest, Target) ->
+    case OnError of
+        stop ->
+            {error, [Error]};
+        {continue, Errors} ->
+            execute_operations(Rest, {continue, [Error | Errors]}, Target)
+    end.
+
+%%------------------------------------------------------------------------------
+%% Function for updating things in Mnesia
+%%------------------------------------------------------------------------------
+
+mnesia_read(startup) ->
+    mnesia:dirty_read(?STARTUP, startup).
+
+mnesia_write(startup, Config) ->
+    mnesia:dirty_write(?STARTUP, Config).
+
+update_mnesia(Target, merge, {port, PortId, _, _} = Port) ->
+    [#ofconfig{ports = Ports} = Config] = mnesia_read(Target),
+    case lists:keyfind(PortId, 2, Ports) of
+        false ->
+            mnesia_write(Target, Config#ofconfig{ports = [Port | Ports]});
+        _ ->
+            ok
+    end;
+update_mnesia(Target, replace, {port, PortId, _, _} = Port) ->
+    [#ofconfig{ports = Ports} = Config] = mnesia_read(Target),
+    case lists:keyfind(PortId, 2, Ports) of
+        {port, PortId, _, _} ->
+            NewPorts = lists:keyreplace(PortId, 3, Ports, Port),
+            mnesia_write(Target, Config#ofconfig{ports = NewPorts});
+        false ->
+            mnesia_write(Target, Config#ofconfig{ports = [Port | Ports]})
+    end;
+update_mnesia(Target, merge, {queue, {QueueId, PortId}, _} = Queue) ->
+    [#ofconfig{queues = Queues} = Config] = mnesia_read(Target),
+    case lists:keyfind({QueueId, PortId}, 2, Queues) of
+        false ->
+            mnesia_write(Target, Config#ofconfig{queues = [Queue | Queues]});
+        _ ->
+            ok
+    end;
+update_mnesia(Target, replace, {queue, {QueueId, PortId}, _} = Queue) ->
+    [#ofconfig{queues = Queues} = Config] = mnesia_read(Target),
+    case lists:keyfind({QueueId, PortId}, 2, Queues) of
+        {queue, {QueueId, PortId}, _} ->
+            NewQueues = lists:keyreplace({QueueId, PortId}, 2, Queues, Queue),
+            mnesia_write(Target, Config#ofconfig{queues = NewQueues});
+        false ->
+            mnesia_write(Target, Config#ofconfig{queues = [Queue | Queues]})
+    end;
+update_mnesia(Target, merge, {switch, SwitchId, _} = Switch) ->
+    [#ofconfig{switches = Switches} = Config] = mnesia_read(Target),
+    case lists:keyfind(SwitchId, 2, Switches) of
+        false ->
+            mnesia_write(Target, Config#ofconfig{
+                                   switches = [Switch | Switches]});
+        _ ->
+            ok
+    end;
+update_mnesia(Target, replace, {switch, SwitchId, _} = Switch) ->
+    [#ofconfig{switches = Switches} = Config] = mnesia_read(Target),
+    case lists:keyfind(SwitchId, 2, Switches) of
+        {switch, SwitchId, _} ->
+            NewSwitches = lists:keyreplace(SwitchId, 2, Switches, Switch),
+            mnesia_write(Target, Config#ofconfig{switches = NewSwitches});
+        false ->
+            mnesia_write(Target, Config#ofconfig{
+                                   switches = [Switch | Switches]})
+    end;
+update_mnesia(Target, create, {controller,
+                               {SwitchId, ControllerId}, _ , _, _} = Ctrl) ->
+    [#ofconfig{controllers = Ctrls} = Config] = mnesia_read(Target),
+    case lists:keyfind({SwitchId, ControllerId}, 2, Ctrls) of
+        false ->
+            mnesia_write(Target, Config#ofconfig{controllers = [Ctrl | Ctrls]}),
+            ok;
+        _ ->
+            {error, data_exists}
+    end;
+update_mnesia(Target, merge, {controller,
+                              {SwitchId, ControllerId}, _, _, _} = Ctrl) ->
+    [#ofconfig{controllers = Ctrls} = Config] = mnesia_read(Target),
+    case lists:keyfind({SwitchId, ControllerId}, 2, Ctrls) of
+        false ->
+            mnesia_write(Target, Config#ofconfig{controllers = [Ctrl | Ctrls]}),
+            ok;
+        _ ->
+            ok
+    end;
+update_mnesia(Target, replace, {controller,
+                                {SwitchId, ControllerId}, _, _, _} = Ctrl) ->
+    [#ofconfig{controllers = Ctrls} = Config] = mnesia_read(Target),
+    case lists:keyfind({SwitchId, ControllerId}, 2, Ctrls) of
+        {controller, {SwitchId, ControllerId}, _, _, _} ->
+            NewCtrls = lists:keyreplace({SwitchId, ControllerId},
+                                        2, Ctrls, Ctrl),
+            mnesia_write(Target, Config#ofconfig{controllers = NewCtrls});
+        false ->
+            mnesia_write(Target, Config#ofconfig{controllers = [Ctrl | Ctrls]})
+    end,
+    ok;
+update_mnesia(Target, delete, {controller,
+                               {SwitchId, ControllerId}, _, _, _} = Ctrl) ->
+    [#ofconfig{controllers = Ctrls} = Config] = mnesia_read(Target),
+    case lists:keyfind({SwitchId, ControllerId}, 2, Ctrls) of
+        false ->
+            {error, data_missing};
+        _ ->
+            NewCtrls = lists:keydelete({SwitchId, ControllerId},
+                                       2, Ctrls, Ctrl),
+            mnesia_write(Target, Config#ofconfig{controllers = NewCtrls}),
+            ok
+    end;
+update_mnesia(Target, remove, {controller,
+                               {SwitchId, ControllerId}, _, _, _} = Ctrl) ->
+    [#ofconfig{controllers = Ctrls} = Config] = mnesia_read(Target),
+    case lists:keyfind({SwitchId, ControllerId}, 2, Ctrls) of
+        false ->
+            ok;
+        _ ->
+            NewCtrls = lists:keydelete({SwitchId, ControllerId},
+                                       2, Ctrls, Ctrl),
+            mnesia_write(Target, Config#ofconfig{controllers = NewCtrls}),
+            ok
+    end.
+
+%%------------------------------------------------------------------------------
+%% Backend state/configuration get functions
+%%------------------------------------------------------------------------------
 
 get_ports_refs(Ports) ->
     lists:map(fun(#port{resource_id = ResourceId}) ->

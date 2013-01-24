@@ -45,6 +45,7 @@
          get_all_queues_state/1,
          is_valid/2]).
 
+-include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").

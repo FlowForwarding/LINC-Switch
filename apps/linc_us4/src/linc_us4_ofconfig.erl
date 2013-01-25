@@ -85,8 +85,8 @@ get_flow_tables(SwitchId, DatapathId) ->
                  write_setfields = fields(?SUPPORTED_WRITE_SETFIELDS),
                  apply_setfields = fields(?SUPPORTED_APPLY_SETFIELDS),
                  wildcards = fields(?SUPPORTED_WILDCARDS),
-                 metadata_match = 16#ffff,
-                 metadata_write = 16#ffff}
+                 metadata_match = ?SUPPORTED_METADATA_MATCH,
+                 metadata_write = ?SUPPORTED_METADATA_WRITE}
      || TableId <- lists:seq(0, ?OFPTT_MAX)].
 
 -spec get_capabilities() -> #capabilities{}.

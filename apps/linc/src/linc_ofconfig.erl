@@ -128,7 +128,7 @@ get_state(SwitchId) ->
                        controllers = get_controllers(SwitchId),
                        resources = Refs
                       },
-    {Resources, LogicalSwitch}.
+    {Resources, [LogicalSwitch]}.
 
 -spec get_config(integer()) -> #ofconfig{}.
 get_config(SwitchId) ->
@@ -308,12 +308,12 @@ merge(Configs) ->
 
 merge([], Config) ->
     Config;
-merge([{NewResources, NewSwitch} | Rest],
+merge([{NewResources, NewSwitches} | Rest],
       #capable_switch{resources = Resources,
                       logical_switches = Switches} = Config) ->
     NewConfig = Config#capable_switch{
                   resources = Resources ++ NewResources,
-                  logical_switches = Switches ++ [NewSwitch]},
+                  logical_switches = Switches ++ NewSwitches},
     merge(Rest, NewConfig).
 
 get_capable_switch_config(running) ->
@@ -321,11 +321,15 @@ get_capable_switch_config(running) ->
     Config = merge([convert_before_merge(get_config(Id))
                     || {switch, Id, _} <- Switches]),
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
+    Config#capable_switch{id = CapSwitchId};
+get_capable_switch_config(startup) ->
+    Config = merge([convert_before_merge(hd(mnesia_read(startup)))]),
+    {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
     Config#capable_switch{id = CapSwitchId}.
 
 convert_before_merge(#ofconfig{ports = Ports,
                                queues = Queues,
-                               switches = [{switch, SwitchId, DatapathId}],
+                               switches = Switches,
                                controllers = Controllers}) ->
     {[#port{resource_id = "LogicalSwitch" ++ integer_to_list(PSwitchId) ++
                 "-Port" ++ integer_to_list(PortId),
@@ -338,16 +342,17 @@ convert_before_merge(#ofconfig{ports = Ports,
                  properties = #queue_properties{min_rate = MinRate,
                                                 max_rate = MaxRate}}
           || {queue, {QueueId, PortId}, QSwitchId, MinRate, MaxRate} <- Queues],
-     #logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
-                     datapath_id = DatapathId,
-                     controllers =
-                         [#controller{id = Id,
-                                      ip_address = Host,
-                                      port = Port,
-                                      protocol = Protocol}
-                          || {controller, Id, CSwitchId,
-                              Host, Port, Protocol} <- Controllers,
-                             CSwitchId == SwitchId]}}.
+     [#logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
+                      datapath_id = DatapathId,
+                      controllers =
+                          [#controller{id = Id,
+                                       ip_address = Host,
+                                       port = Port,
+                                       protocol = Protocol}
+                           || {controller, Id, CSwitchId,
+                               Host, Port, Protocol} <- Controllers,
+                              CSwitchId == SwitchId]}
+      || {switch, SwitchId, DatapathId} <- Switches]}.
 
 extract_operations(#capable_switch{resources = Resources,
                                    logical_switches = Switches}, DefOp) ->

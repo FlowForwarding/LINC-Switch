@@ -287,7 +287,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     PortName = "Port" ++ integer_to_list(PortNo),
     Port = #ofp_port{port_no = PortNo,
-                     name = list_to_binary(PortName),
+                     name = PortName,
                      config = [], state = [live],
                      curr = [other], advertised = [other],
                      supported = [other], peer = [other],

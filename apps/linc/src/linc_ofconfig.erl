@@ -26,6 +26,7 @@
 
 %% Internal API
 -export([start_link/0,
+         get_state/0,
          get_state/1,
          get_config/1,
          flow_table_name/3,
@@ -59,16 +60,19 @@
 
 -type ofc_port() :: {port,
                      PortId :: integer(),
+                     SwitchId :: integer(),
                      Config :: #port_configuration{},
                      Features :: #port_features{}}.
 
 -type ofc_queue() :: {queue,
                       {PortId :: integer(), QueueId :: integer()},
+                      SwitchId :: integer(),
                       MinRate :: integer(),
                       MaxRate :: integer()}.
 
 -type ofc_controller() :: {controller,
-                           {SwitchId :: integer(), ControllerId :: string()},
+                           ControllerId :: string(),
+                           SwitchId :: integer(),
                            Host :: string(),
                            Port :: integer(),
                            Protocol :: tcp}.
@@ -95,13 +99,20 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec get_state() -> #capable_switch{}.
+get_state() ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    Config = merge([get_state(Id) || {switch, Id, _} <- Switches]),
+    {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
+    Config#capable_switch{id = CapSwitchId}.
+
 -spec get_state(integer()) -> tuple(list(resource()), #logical_switch{}).
 get_state(SwitchId) ->
     LogicalSwitchId = "LogicalSwitch" ++ integer_to_list(SwitchId),
     Ports = linc_logic:get_backend_ports(SwitchId),
     Queues = linc_logic:get_backend_queues(SwitchId),
     Certificates = get_certificates(SwitchId),
-    FlowTables = linc_logic:get_backend_flow_tables(SwitchId),
+    FlowTables = [], %% FIXME: linc_logic:get_backend_flow_tables(SwitchId),
     Resources = Ports ++ Queues ++ Certificates ++ FlowTables,
     Refs = get_ports_refs(Ports)
         ++ get_queues_refs(Queues)
@@ -123,8 +134,9 @@ get_state(SwitchId) ->
 get_config(SwitchId) ->
     Ports = lists:map(fun(#port{number = PortNo,
                                 configuration = Config,
-                                features = Features}) ->
-                              {port, PortNo, Config, Features}
+                                features = #port_features{
+                                              advertised = Features}}) ->
+                              {port, PortNo, SwitchId, Config, Features}
                       end, linc_logic:get_backend_ports(SwitchId)),
     Queues = lists:map(fun(#queue{id = QueueId,
                                   port = PortNo,
@@ -132,14 +144,15 @@ get_config(SwitchId) ->
                                                   min_rate = MinRate,
                                                   max_rate = MaxRate
                                                  }}) ->
-                               {queue, {PortNo, QueueId}, MinRate, MaxRate}
+                               {queue, {PortNo, QueueId}, SwitchId,
+                                MinRate, MaxRate}
                        end, linc_logic:get_backend_queues(SwitchId)),
     Switches = [{switch, SwitchId, linc_logic:get_datapath_id(SwitchId)}],
     Controllers = lists:map(fun(#controller{id = ControllerId,
                                             ip_address = IPAddress,
                                             port = Port,
                                             protocol = Protocol}) ->
-                                    {controller, {SwitchId, ControllerId},
+                                    {controller, ControllerId, SwitchId,
                                      IPAddress, Port, Protocol}
                             end, get_controllers(SwitchId)),
     #ofconfig{name = running,
@@ -198,20 +211,21 @@ handle_edit_config(SessionId, Target, Config) ->
     gen_server:call(?MODULE,
                     {edit_config, SessionId, Target, Config}, infinity).
 
-handle_copy_config(_SessionId, _Source, _Target) ->
-    ok.
+handle_copy_config(SessionId, Source, Target) ->
+    gen_server:call(?MODULE,
+                    {copy_config, SessionId, Source, Target}, infinity).
 
-handle_delete_config(_SessionId, _Config) ->
-    ok.
+handle_delete_config(SessionId, Config) ->
+    gen_server:call(?MODULE, {delete_config, SessionId, Config}, infinity).
 
-handle_lock(_SessionId, _Config) ->
-    ok.
+handle_lock(SessionId, Config) ->
+    gen_server:call(?MODULE, {lock, SessionId, Config}, infinity).
 
-handle_unlock(_SessionId, _Config) ->
-    ok.
+handle_unlock(SessionId, Config) ->
+    gen_server:call(?MODULE, {unlock, SessionId, Config}, infinity).
 
-handle_get(_SessionId, _Filter) ->
-    {ok, "<capable-switch/>"}.
+handle_get(SessionId, Filter) ->
+    gen_server:call(?MODULE, {get, SessionId, Filter}, infinity).
 
 %%------------------------------------------------------------------------------
 %% gen_server callbacks
@@ -228,23 +242,29 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({get_config, _SessionId, Source, _Filter}, _From, State) ->
-    Config = get_of_config(Source),
+    Config = get_capable_switch_config(Source),
     EncodedConfig = of_config:encode(Config),
     {reply, {ok, EncodedConfig}, State};
 handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
     Config = of_config:decode(Xml),
     case check_capable_switch_id(Config#capable_switch.id) of
         true ->
-            case execute_operations(extract_operations(Config, merge),
-                                    stop, running) of
+            case catch execute_operations(extract_operations(Config, merge),
+                                          stop, running) of
                 ok ->
                     {reply, ok, State};
-                {error, Errors} ->
-                    {reply, hd(Errors), State}
+                {error, Errors} when is_list(Errors) ->
+                    {reply, hd(Errors), State};
+                {error, Error} ->
+                    {reply, Error, State}
             end;
         false ->
             {reply, {error, data_missing}, State}
     end;
+handle_call({get, _SessionId, _Filter}, _From, State) ->
+    ConfigAndState = get_state(),
+    EncodedConfigAndState = of_config:encode(ConfigAndState),
+    {reply, {ok, EncodedConfigAndState}, State};
 handle_call(_, _, State) ->
     {reply, {error, {operation_failed, application}}, State}.
 
@@ -281,12 +301,6 @@ init_startup() ->
             ok
     end.
 
-get_of_config(running) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
-    Config = merge([get_config(Id) || {switch, Id, _} <- Switches]),
-    {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
-    Config#capable_switch{id = CapSwitchId}.
-
 %% @doc Merge configuration from logical switches.
 merge(Configs) ->
     merge(Configs, #capable_switch{resources = [],
@@ -302,9 +316,38 @@ merge([{NewResources, NewSwitch} | Rest],
                   logical_switches = Switches ++ [NewSwitch]},
     merge(Rest, NewConfig).
 
-%%------------------------------------------------------------------------------
-%% Function for extracting actions from the received config
-%%------------------------------------------------------------------------------
+get_capable_switch_config(running) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    Config = merge([convert_before_merge(get_config(Id))
+                    || {switch, Id, _} <- Switches]),
+    {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
+    Config#capable_switch{id = CapSwitchId}.
+
+convert_before_merge(#ofconfig{ports = Ports,
+                               queues = Queues,
+                               switches = [{switch, SwitchId, DatapathId}],
+                               controllers = Controllers}) ->
+    {[#port{resource_id = "LogicalSwitch" ++ integer_to_list(PSwitchId) ++
+                "-Port" ++ integer_to_list(PortId),
+            configuration = Config,
+            features = #port_features{advertised = Features}}
+      || {port, PortId, PSwitchId, Config, Features} <- Ports] ++
+         [#queue{resource_id = "LogicalSwitch" ++ integer_to_list(QSwitchId) ++
+                     "-Port" ++ integer_to_list(PortId) ++
+                     "-Queue" ++ integer_to_list(QueueId),
+                 properties = #queue_properties{min_rate = MinRate,
+                                                max_rate = MaxRate}}
+          || {queue, {QueueId, PortId}, QSwitchId, MinRate, MaxRate} <- Queues],
+     #logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
+                     datapath_id = DatapathId,
+                     controllers =
+                         [#controller{id = Id,
+                                      ip_address = Host,
+                                      port = Port,
+                                      protocol = Protocol}
+                          || {controller, Id, CSwitchId,
+                              Host, Port, Protocol} <- Controllers,
+                             CSwitchId == SwitchId]}}.
 
 extract_operations(#capable_switch{resources = Resources,
                                    logical_switches = Switches}, DefOp) ->
@@ -315,7 +358,7 @@ extract_operations(#capable_switch{resources = Resources,
                  [begin
                       SwitchId = extract_id(SwitchIdStr),
                       {{DefOp, {switch, SwitchId, Datapath}},
-                       [{DefOp, {controller, {SwitchId, Id}, IP, Port, Proto}}
+                       [{DefOp, {controller, Id, SwitchId, IP, Port, Proto}}
                         || #controller{id = Id,
                                        ip_address = IP,
                                        port = Port,
@@ -327,7 +370,6 @@ extract_operations(#capable_switch{resources = Resources,
          end,
     {S, Cs} = lists:unzip(SC),
     C = lists:merge(Cs),
-
     P = case Resources of
             undefined ->
                 [];
@@ -342,16 +384,22 @@ extract_operations(#capable_switch{resources = Resources,
             undefined ->
                 [];
             _ ->
-                [{DefOp, {queue, {QueueId, PortId}, Properties}}
+                [{DefOp, {queue, {QueueId, PortId}, MinRate, MaxRate}}
                  || #queue{id = QueueId,
                            port = PortId,
-                           properties = Properties} <- Resources]
+                           properties = #queue_properties{
+                                           min_rate = MinRate,
+                                           max_rate = MaxRate}} <- Resources]
         end,
     P ++ Q ++ S ++ C.
     
 extract_id(String) ->
-    %% FIXME: Case when client sends something else
-    list_to_integer(string:sub_string(String, 14)).
+    case re:run(String, "^LogicalSwitch[0-9]+$") of
+        {match, _} ->
+            list_to_integer(string:sub_string(String, 14));
+        nomatch ->
+            invalid
+    end.
 
 execute_operations([], stop, _) ->
     ok;

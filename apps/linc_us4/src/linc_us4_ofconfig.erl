@@ -49,7 +49,7 @@ get_ports(SwitchId) ->
                                                                      Advertised,
                                                                      Supported,
                                                                      Peer),
-                      PortState = linc_ofconfig:conver_port_state(State),
+                      PortState = linc_ofconfig:convert_port_state(State),
                       #port{resource_id = ResourceId,
                             number = PortNo,
                             name = Name,

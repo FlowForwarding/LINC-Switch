@@ -60,7 +60,7 @@
 -record(state, {
           xid = 1 :: integer(),
           backend_mod :: atom(),
-          ports_backend_mod :: atom(),
+          port_backend_mod :: atom(),
           ofconfig_backend_mod :: atom(),
           backend_state :: term(),
           switch_id :: integer(),
@@ -157,13 +157,13 @@ init([SwitchId, BackendMod, BackendOpts]) ->
     process_flag(trap_exit, true),
     linc:register(SwitchId, linc_logic, self()),
 
-    PortsBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_port"),
+    PortBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_port"),
     OFConfigBackendMod = list_to_atom(atom_to_list(BackendMod) ++ "_ofconfig"),
 
     %% Timeout 0 will send a timeout message to the gen_server to handle
     %% backend initialization before any other message.
     {ok, #state{backend_mod = BackendMod,
-                ports_backend_mod = PortsBackendMod,
+                port_backend_mod = PortBackendMod,
                 ofconfig_backend_mod = OFConfigBackendMod,
                 backend_state = BackendOpts,
                 switch_id = SwitchId}, 0}.
@@ -195,9 +195,9 @@ handle_call({get_port_features, PortNo}, _From,
     PortFeatures = OFConfigBackendMod:get_port_features(SwitchId, PortNo),
     {reply, PortFeatures, State};
 handle_call(get_backend_queues, _From,
-            #state{ofconfig_backend_mod = OFConfigBackendMod,
+            #state{port_backend_mod = PortBackendMod,
                    switch_id = SwitchId} = State) ->
-    BackendQueues = OFConfigBackendMod:get_backend_queues(SwitchId),
+    BackendQueues = PortBackendMod:get_all_queues_state(SwitchId),
     {reply, BackendQueues, State};
 handle_call(get_queue_min_rate, _From,
             #state{ofconfig_backend_mod = OFConfigBackendMod,

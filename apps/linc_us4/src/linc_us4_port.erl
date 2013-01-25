@@ -39,6 +39,7 @@
          set_state/3,
          get_config/2,
          set_config/3,
+         get_features/2,
          get_advertised_features/2,
          set_advertised_features/3,
          get_all_ports_state/1,
@@ -223,6 +224,18 @@ set_config(SwitchId, PortNo, PortConfig) ->
             gen_server:call(Pid, {set_port_config, PortConfig})
     end.
 
+-spec get_features(integer(), ofp_port_no()) -> tuple([ofp_port_feature()],
+                                                      [ofp_port_feature()],
+                                                      [ofp_port_feature()],
+                                                      [ofp_port_feature()]).
+get_features(SwitchId, PortNo) ->
+    case get_port_pid(SwitchId, PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, get_features)
+    end.
+
 -spec get_advertised_features(integer(), ofp_port_no()) -> [ofp_port_feature()].
 get_advertised_features(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
@@ -388,6 +401,15 @@ handle_call({set_port_config, NewPortConfig}, _From,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
     {reply, ok, State#state{port = NewPort}};
+handle_call(get_features, _From,
+            #state{port = #ofp_port{
+                             curr = CurrentFeatures,
+                             advertised = AdvertisedFeatures,
+                             supported = SupportedFeatures,
+                             peer  = PeerFeatures
+                            }} = State) ->
+    {reply, {CurrentFeatures, AdvertisedFeatures,
+             SupportedFeatures, PeerFeatures}, State};
 handle_call(get_advertised_features, _From,
             #state{port = #ofp_port{advertised = AdvertisedFeatures}} = State) ->
     {reply, AdvertisedFeatures, State};

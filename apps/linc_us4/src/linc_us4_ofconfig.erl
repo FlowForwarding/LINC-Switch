@@ -21,7 +21,9 @@
 
 -export([get_ports/1,
          get_flow_tables/1,
-         get_capabilities/0]).
+         get_capabilities/0,
+         get_port_config/2,
+         get_port_features/2]).
 
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -35,51 +37,36 @@ get_ports(SwitchId) ->
                                          name = Name,
                                          config = Config,
                                          state = State,
-                                         curr = Curr,
+                                         curr = Current,
                                          advertised = Advertised,
                                          supported = Supported,
                                          peer = Peer,
                                          curr_speed = CurrSpeed,
                                          max_speed = MaxSpeed}}) ->
-                      AdminState = linc_ofconfig:is_present(port_down, Config,
-                                                            up, down),
-                      NoReceive = linc_ofconfig:is_present(no_recv, Config,
-                                                           true, false),
-                      NoForward = linc_ofconfig:is_present(no_fwd, Config,
-                                                           true, false),
-                      NoPacketIn = linc_ofconfig:is_present(no_packet_in, Config,
-                                                            true, false),
-                      Configuration = #port_configuration{
-                                         admin_state = AdminState,
-                                         no_receive = NoReceive,
-                                         no_forward = NoForward,
-                                         no_packet_in = NoPacketIn
-                                        },
+                      Configuration = linc_ofconfig:convert_port_config(Config),
                       OperState = linc_of_config:is_present(link_down, State,
                                                             down, up),
                       Blocked = linc_ofconfig:is_present(blocked, State,
                                                          true, false),
                       Live = linc_ofconfig:is_present(live, State,
                                                       true, false),
-                      PortState = #port_state{
-                                     oper_state = OperState,
-                                     blocked = Blocked,
-                                     live = Live
-                                    },
-                      PortFeatures = #port_features{
-                                        current = linc_ofconfig:features(Curr),
-                                        advertised = linc_ofconfig:features(Advertised),
-                                        supported = linc_ofconfig:features(Supported),
-                                        advertised_peer = linc_ofconfig:features(Peer)
-                                       },
+                      State = #port_state{
+                                 oper_state = OperState,
+                                 blocked = Blocked,
+                                 live = Live
+                                },
+                      Features = linc_ofconfig:convert_port_features(Current,
+                                                                     Advertised,
+                                                                     Supported,
+                                                                     Peer),
                       #port{resource_id = ResourceId,
                             number = PortNo,
                             name = Name,
                             current_rate = CurrSpeed,
                             max_rate = MaxSpeed,
                             configuration = Configuration,
-                            state = PortState,
-                            features = PortFeatures,
+                            state = State,
+                            features = Features,
                             tunnel = undefined}
               end, PortsStates).
 
@@ -119,6 +106,17 @@ get_capabilities() ->
                   action_types = actions(?SUPPORTED_WRITE_ACTIONS),
                   instruction_types =
                       instructions(?SUPPORTED_INSTRUCTIONS)}.
+
+-spec get_port_config(integer(), ofp_port_no()) -> #port_configuration{}.
+get_port_config(SwitchId, PortNo) ->
+    Config = linc_us4_port:get_config(SwitchId, PortNo),
+    linc_ofconfig:convert_port_config(Config).
+
+-spec get_port_features(integer(), ofp_port_no()) -> #features{}.
+get_port_features(SwitchId, PortNo) ->
+    {Current, Advertised,
+     Supported, Peer} = linc_us4_port:get_features(SwitchId, PortNo),
+    linc_ofconfig:convert_port_features(Current, Advertised, Supported, Peer).
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

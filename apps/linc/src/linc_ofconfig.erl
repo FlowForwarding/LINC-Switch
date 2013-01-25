@@ -30,7 +30,10 @@
          get_config/1,
          is_present/4,
          features/1,
-         flow_table_name/2]).
+         flow_table_name/2,
+         convert_port_config/1,
+         convert_port_features/4
+        ]).
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,
@@ -154,6 +157,29 @@ features(Features) ->
 flow_table_name(SwitchId, TableId) ->
     DatapathId = linc_logic:get_datapath_id(SwitchId),
     DatapathId ++ "FlowTable" ++ integer_to_list(TableId).
+
+-spec convert_port_config([atom()]) -> #port_configuration{}.
+convert_port_config(Config) ->
+    AdminState = is_present(port_down, Config, up, down),
+    NoReceive = is_present(no_recv, Config, true, false),
+    NoForward = is_present(no_fwd, Config, true, false),
+    NoPacketIn = is_present(no_packet_in, Config, true, false),
+    #port_configuration{
+       admin_state = AdminState,
+       no_receive = NoReceive,
+       no_forward = NoForward,
+       no_packet_in = NoPacketIn
+      }.
+
+-spec convert_port_features([atom()], [atom()], [atom()], [atom()]) ->
+                                   #port_features{}.
+convert_port_features(Current, Advertised, Supported, Peer) ->
+    #port_features{
+       current = features(Current),
+       advertised = features(Advertised),
+       supported = features(Supported),
+       advertised_peer = features(Peer)
+      }.
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks

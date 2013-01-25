@@ -262,7 +262,8 @@ get_all_ports_state(SwitchId) ->
                       gen_server:call(Pid, get_info)
               end, get_all_port_no(SwitchId)).
 
--spec get_all_queues_state(integer()) -> list(#queue{}).
+-spec get_all_queues_state(integer()) -> list(tuple(string(), integer(), integer(),
+                                                    integer(), integer())).
 get_all_queues_state(SwitchId) ->
     lists:flatmap(fun(PortNo) ->
                           linc_us4_queue:get_all_queues_state(SwitchId, PortNo)

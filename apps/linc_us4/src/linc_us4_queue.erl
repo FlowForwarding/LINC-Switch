@@ -139,7 +139,9 @@ set_max_rate(SwitchId, PortNo, QueueId, MinRate) ->
             gen_server:cast(Pid, {set_max_rate, MinRate})
     end.
 
--spec get_all_queues_state(integer(), ofp_port_no()) -> list(#queue{}).
+-spec get_all_queues_state(integer(), ofp_port_no()) ->
+                                  tuple(string(), integer(), integer(),
+                                        integer(), integer()).
 get_all_queues_state(SwitchId, PortNo) ->
     lists:map(fun(#linc_port_queue{queue_pid = Pid}) ->
                       gen_server:call(Pid, get_state)
@@ -221,14 +223,7 @@ handle_call(get_state, _From, #state{resource_id = ResourceId,
                                      queue_key = {PortNo, QueueId},
                                      min_rate_bps = MinRateBps,
                                      max_rate_bps = MaxRateBps} = State) ->
-    Queue = #queue{resource_id = ResourceId,
-                   id = QueueId,
-                   port = PortNo,
-                   properties = #queue_properties{
-                                   min_rate = MinRateBps,
-                                   max_rate = MaxRateBps,
-                                   experimenters = []
-                                  }},
+    Queue = {ResourceId, QueueId, PortNo, MinRateBps, MaxRateBps},
     {reply, Queue, State}.
 
 handle_cast({send, Frame}, #state{queue_key = QueueKey,

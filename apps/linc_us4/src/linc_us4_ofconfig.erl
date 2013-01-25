@@ -45,28 +45,18 @@ get_ports(SwitchId) ->
                                          curr_speed = CurrSpeed,
                                          max_speed = MaxSpeed}}) ->
                       Configuration = linc_ofconfig:convert_port_config(Config),
-                      OperState = linc_of_config:is_present(link_down, State,
-                                                            down, up),
-                      Blocked = linc_ofconfig:is_present(blocked, State,
-                                                         true, false),
-                      Live = linc_ofconfig:is_present(live, State,
-                                                      true, false),
-                      State = #port_state{
-                                 oper_state = OperState,
-                                 blocked = Blocked,
-                                 live = Live
-                                },
                       Features = linc_ofconfig:convert_port_features(Current,
                                                                      Advertised,
                                                                      Supported,
                                                                      Peer),
+                      PortState = linc_ofconfig:conver_port_state(State),
                       #port{resource_id = ResourceId,
                             number = PortNo,
                             name = Name,
                             current_rate = CurrSpeed,
                             max_rate = MaxSpeed,
                             configuration = Configuration,
-                            state = State,
+                            state = PortState,
                             features = Features,
                             tunnel = undefined}
               end, PortsStates).
@@ -120,6 +110,19 @@ get_port_features(SwitchId, PortNo) ->
     {Current, Advertised,
      Supported, Peer} = linc_us4_port:get_features(SwitchId, PortNo),
     linc_ofconfig:convert_port_features(Current, Advertised, Supported, Peer).
+
+-spec get_queues(integer()) -> list(#queue{}).
+get_queues(SwitchId) ->
+    lists:map(fun({ResourceId, QueueId, PortNo, MinRateBps, MaxRateBps}) ->
+                      #queue{resource_id = ResourceId,
+                             id = QueueId,
+                             port = PortNo,
+                             properties = #queue_properties{
+                                             min_rate = MinRateBps,
+                                             max_rate = MaxRateBps,
+                                             experimenters = []
+                                            }}
+              end, linc_us4_port:get_all_queues_state(SwitchId)).
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

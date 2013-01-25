@@ -28,11 +28,10 @@
 -export([start_link/0,
          get_state/1,
          get_config/1,
-         is_present/4,
-         features/1,
          flow_table_name/3,
          convert_port_config/1,
-         convert_port_features/4
+         convert_port_features/4,
+         convert_port_state/1
         ]).
 
 %% gen_netconf callbacks
@@ -61,7 +60,7 @@
 -type ofc_port() :: {port,
                      PortId :: integer(),
                      Config :: #port_configuration{},
-                     Features :: #features{}}.
+                     Features :: #port_features{}}.
 
 -type ofc_queue() :: {queue,
                       {PortId :: integer(), QueueId :: integer()},
@@ -121,37 +120,33 @@ get_state(SwitchId) ->
     {Resources, LogicalSwitch}.
 
 -spec get_config(integer()) -> #ofconfig{}.
-get_config(_SwitchId) ->
-    #ofconfig{}.
-
-is_present(Value, List, IfPresent, IfAbsent) ->
-    case lists:member(Value, List) of
-        true ->
-            IfPresent;
-        false ->
-            IfAbsent
-    end.
-
--spec features(list(atom())) -> #features{}.
-features(Features) ->
-    Rate = rate(Features),
-    AutoNegotiate = is_present(autoneg, Features, true, false),
-    Medium = is_present(fiber, Features, fiber, copper),
-    Pause = case lists:member(pause, Features) of
-                true ->
-                    symmetric;
-                false ->
-                    case lists:member(pause_asym, Features) of
-                        true ->
-                            asymmetric;
-                        false ->
-                            unsupported
-                    end
-            end,
-    #features{rate = Rate,
-              auto_negotiate = AutoNegotiate,
-              medium = Medium,
-              pause = Pause}.
+get_config(SwitchId) ->
+    Ports = lists:map(fun(#port{number = PortNo,
+                                configuration = Config,
+                                features = Features}) ->
+                              {port, PortNo, Config, Features}
+                      end, linc_logic:get_backend_ports(SwitchId)),
+    Queues = lists:map(fun(#queue{id = QueueId,
+                                  port = PortNo,
+                                  properties = #queue_properties{
+                                                  min_rate = MinRate,
+                                                  max_rate = MaxRate
+                                                 }}) ->
+                               {queue, {PortNo, QueueId}, MinRate, MaxRate}
+                       end, linc_logic:get_backend_queues(SwitchId)),
+    Switches = [{switch, SwitchId, linc_logic:get_datapath_id(SwitchId)}],
+    Controllers = lists:map(fun(#controller{id = ControllerId,
+                                            ip_address = IPAddress,
+                                            port = Port,
+                                            protocol = Protocol}) ->
+                                    {controller, {SwitchId, ControllerId},
+                                     IPAddress, Port, Protocol}
+                            end, get_controllers(SwitchId)),
+    #ofconfig{name = running,
+              ports = Ports,
+              queues = Queues,
+              switches = Switches,
+              controllers = Controllers}.
 
 -spec flow_table_name(integer(), string(), integer()) -> string().
 flow_table_name(SwitchId, DatapathId, TableId) ->
@@ -181,6 +176,15 @@ convert_port_features(Current, Advertised, Supported, Peer) ->
        supported = features(Supported),
        advertised_peer = features(Peer)
       }.
+
+-spec convert_port_state([atom()]) -> #port_state{}.
+convert_port_state(State) ->
+    OperState = is_present(link_down, State, down, up),
+    Blocked = is_present(blocked, State, true, false),
+    Live = linc_ofconfig:is_present(live, State, true, false),
+    #port_state{oper_state = OperState,
+                blocked = Blocked,
+                live = Live}.
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks
@@ -685,3 +689,32 @@ version(3) ->
     '1.2';
 version(4) ->
     '1.3'.
+
+is_present(Value, List, IfPresent, IfAbsent) ->
+    case lists:member(Value, List) of
+        true ->
+            IfPresent;
+        false ->
+            IfAbsent
+    end.
+
+-spec features(list(atom())) -> #features{}.
+features(Features) ->
+    Rate = rate(Features),
+    AutoNegotiate = is_present(autoneg, Features, true, false),
+    Medium = is_present(fiber, Features, fiber, copper),
+    Pause = case lists:member(pause, Features) of
+                true ->
+                    symmetric;
+                false ->
+                    case lists:member(pause_asym, Features) of
+                        true ->
+                            asymmetric;
+                        false ->
+                            unsupported
+                    end
+            end,
+    #features{rate = Rate,
+              auto_negotiate = AutoNegotiate,
+              medium = Medium,
+              pause = Pause}.

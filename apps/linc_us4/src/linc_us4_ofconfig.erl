@@ -20,10 +20,11 @@
 -module(linc_us4_ofconfig).
 
 -export([get_ports/1,
-         get_flow_tables/1,
+         get_flow_tables/2,
          get_capabilities/0,
          get_port_config/2,
-         get_port_features/2]).
+         get_port_features/2,
+         get_queues/1]).
 
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -70,11 +71,13 @@ get_ports(SwitchId) ->
                             tunnel = undefined}
               end, PortsStates).
 
--spec get_flow_tables(integer()) -> list(#flow_table{}).
-get_flow_tables(SwitchId) ->
-    [#flow_table{resource_id = linc_ofconfig:flow_table_name(SwitchId, I),
+-spec get_flow_tables(integer(), string()) -> list(#flow_table{}).
+get_flow_tables(SwitchId, DatapathId) ->
+    [#flow_table{resource_id = linc_ofconfig:flow_table_name(SwitchId,
+                                                             DatapathId,
+                                                             TableId),
                  max_entries = ?MAX_FLOW_TABLE_ENTRIES,
-                 next_tables = lists:seq(I + 1, ?OFPTT_MAX),
+                 next_tables = lists:seq(TableId + 1, ?OFPTT_MAX),
                  instructions = instructions(?SUPPORTED_INSTRUCTIONS),
                  matches = fields(?SUPPORTED_MATCH_FIELDS),
                  write_actions = actions(?SUPPORTED_WRITE_ACTIONS),
@@ -84,7 +87,7 @@ get_flow_tables(SwitchId) ->
                  wildcards = fields(?SUPPORTED_WILDCARDS),
                  metadata_match = 16#ffff,
                  metadata_write = 16#ffff}
-     || I <- lists:seq(0, ?OFPTT_MAX)].
+     || TableId <- lists:seq(0, ?OFPTT_MAX)].
 
 -spec get_capabilities() -> #capabilities{}.
 get_capabilities() ->

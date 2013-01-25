@@ -30,7 +30,7 @@
          get_config/1,
          is_present/4,
          features/1,
-         flow_table_name/2,
+         flow_table_name/3,
          convert_port_config/1,
          convert_port_features/4
         ]).
@@ -153,10 +153,11 @@ features(Features) ->
               medium = Medium,
               pause = Pause}.
 
--spec flow_table_name(integer(), integer()) -> string().
-flow_table_name(SwitchId, TableId) ->
-    DatapathId = linc_logic:get_datapath_id(SwitchId),
-    DatapathId ++ "FlowTable" ++ integer_to_list(TableId).
+-spec flow_table_name(integer(), string(), integer()) -> string().
+flow_table_name(SwitchId, DatapathId, TableId) ->
+    "Switch" ++ integer_to_list(SwitchId)
+        ++ DatapathId
+        ++ "FlowTable" ++ integer_to_list(TableId).
 
 -spec convert_port_config([atom()]) -> #port_configuration{}.
 convert_port_config(Config) ->

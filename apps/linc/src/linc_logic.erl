@@ -172,8 +172,9 @@ handle_call(get_datapath_id, _From, #state{datapath_id = DatapathId} = State) ->
     {reply, DatapathId, State};
 handle_call(get_backend_flow_tables, _From,
             #state{ofconfig_backend_mod = OFConfigBackendMod,
+                   datapath_id = DatapathId,
                    switch_id = SwitchId} = State) ->
-    FlowTables = OFConfigBackendMod:get_flow_tables(SwitchId),
+    FlowTables = OFConfigBackendMod:get_flow_tables(SwitchId, DatapathId),
     {reply, FlowTables, State};
 handle_call(get_backend_capabilities, _From,
             #state{ofconfig_backend_mod = OFConfigBackendMod} = State) ->

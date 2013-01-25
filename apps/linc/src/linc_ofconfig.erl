@@ -156,7 +156,7 @@ flow_table_name(SwitchId, DatapathId, TableId) ->
 
 -spec convert_port_config([atom()]) -> #port_configuration{}.
 convert_port_config(Config) ->
-    AdminState = is_present(port_down, Config, up, down),
+    AdminState = is_present(port_down, Config, down, up),
     NoReceive = is_present(no_recv, Config, true, false),
     NoForward = is_present(no_fwd, Config, true, false),
     NoPacketIn = is_present(no_packet_in, Config, true, false),

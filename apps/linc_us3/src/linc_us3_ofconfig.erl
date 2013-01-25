@@ -20,8 +20,11 @@
 -module(linc_us3_ofconfig).
 
 -export([get_ports/1,
-         get_flow_tables/1,
-         get_capabilities/0]).
+         get_flow_tables/2,
+         get_capabilities/0,
+         get_port_config/2,
+         get_port_features/2,
+         get_queues/1]).
 
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -35,43 +38,18 @@ get_ports(SwitchId) ->
                                          name = Name,
                                          config = Config,
                                          state = State,
-                                         curr = Curr,
+                                         curr = Current,
                                          advertised = Advertised,
                                          supported = Supported,
                                          peer = Peer,
                                          curr_speed = CurrSpeed,
                                          max_speed = MaxSpeed}}) ->
-                      AdminState = linc_ofconfig:is_present(port_down, Config,
-                                                            up, down),
-                      NoReceive = linc_ofconfig:is_present(no_recv, Config,
-                                                           true, false),
-                      NoForward = linc_ofconfig:is_present(no_fwd, Config,
-                                                           true, false),
-                      NoPacketIn = linc_ofconfig:is_present(no_packet_in, Config,
-                                                            true, false),
-                      Configuration = #port_configuration{
-                                         admin_state = AdminState,
-                                         no_receive = NoReceive,
-                                         no_forward = NoForward,
-                                         no_packet_in = NoPacketIn
-                                        },
-                      OperState = linc_of_config:is_present(link_down, State,
-                                                            down, up),
-                      Blocked = linc_ofconfig:is_present(blocked, State,
-                                                         true, false),
-                      Live = linc_ofconfig:is_present(live, State,
-                                                      true, false),
-                      PortState = #port_state{
-                                     oper_state = OperState,
-                                     blocked = Blocked,
-                                     live = Live
-                                    },
-                      PortFeatures = #port_features{
-                                        current = linc_ofconfig:features(Curr),
-                                        advertised = linc_ofconfig:features(Advertised),
-                                        supported = linc_ofconfig:features(Supported),
-                                        advertised_peer = linc_ofconfig:features(Peer)
-                                       },
+                      Configuration = linc_ofconfig:convert_port_config(Config),
+                      Features = linc_ofconfig:convert_port_features(Current,
+                                                                     Advertised,
+                                                                     Supported,
+                                                                     Peer),
+                      PortState = linc_ofconfig:convert_port_state(State),
                       #port{resource_id = ResourceId,
                             number = PortNo,
                             name = Name,
@@ -79,15 +57,17 @@ get_ports(SwitchId) ->
                             max_rate = MaxSpeed,
                             configuration = Configuration,
                             state = PortState,
-                            features = PortFeatures,
+                            features = Features,
                             tunnel = undefined}
               end, PortsStates).
 
--spec get_flow_tables(integer()) -> list(#flow_table{}).
-get_flow_tables(SwitchId) ->
-    [#flow_table{resource_id = linc_ofconfig:flow_table_name(SwitchId, I),
+-spec get_flow_tables(integer(), string()) -> list(#flow_table{}).
+get_flow_tables(SwitchId, DatapathId) ->
+    [#flow_table{resource_id = linc_ofconfig:flow_table_name(SwitchId,
+                                                             DatapathId,
+                                                             TableId),
                  max_entries = ?MAX_FLOW_TABLE_ENTRIES,
-                 next_tables = lists:seq(I + 1, ?OFPTT_MAX),
+                 next_tables = lists:seq(TableId + 1, ?OFPTT_MAX),
                  instructions = instructions(?SUPPORTED_INSTRUCTIONS),
                  matches = fields(?SUPPORTED_MATCH_FIELDS),
                  write_actions = actions(?SUPPORTED_WRITE_ACTIONS),
@@ -97,7 +77,7 @@ get_flow_tables(SwitchId) ->
                  wildcards = fields(?SUPPORTED_WILDCARDS),
                  metadata_match = ?SUPPORTED_METADATA_MATCH,
                  metadata_write = ?SUPPORTED_METADATA_WRITE}
-     || I <- lists:seq(0, ?OFPTT_MAX)].
+     || TableId <- lists:seq(0, ?OFPTT_MAX)].
 
 -spec get_capabilities() -> #capabilities{}.
 get_capabilities() ->
@@ -119,6 +99,30 @@ get_capabilities() ->
                   action_types = actions(?SUPPORTED_WRITE_ACTIONS),
                   instruction_types =
                       instructions(?SUPPORTED_INSTRUCTIONS)}.
+
+-spec get_port_config(integer(), ofp_port_no()) -> #port_configuration{}.
+get_port_config(SwitchId, PortNo) ->
+    Config = linc_us3_port:get_config(SwitchId, PortNo),
+    linc_ofconfig:convert_port_config(Config).
+
+-spec get_port_features(integer(), ofp_port_no()) -> #features{}.
+get_port_features(SwitchId, PortNo) ->
+    {Current, Advertised,
+     Supported, Peer} = linc_us3_port:get_features(SwitchId, PortNo),
+    linc_ofconfig:convert_port_features(Current, Advertised, Supported, Peer).
+
+-spec get_queues(integer()) -> list(#queue{}).
+get_queues(SwitchId) ->
+    lists:map(fun({ResourceId, QueueId, PortNo, MinRateBps, MaxRateBps}) ->
+                      #queue{resource_id = ResourceId,
+                             id = QueueId,
+                             port = PortNo,
+                             properties = #queue_properties{
+                                             min_rate = MinRateBps,
+                                             max_rate = MaxRateBps,
+                                             experimenters = []
+                                            }}
+              end, linc_us3_port:get_all_queues_state(SwitchId)).
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

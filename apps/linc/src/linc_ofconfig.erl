@@ -169,7 +169,7 @@ flow_table_name(SwitchId, DatapathId, TableId) ->
 
 -spec convert_port_config([atom()]) -> #port_configuration{}.
 convert_port_config(Config) ->
-    AdminState = is_present(port_down, Config, up, down),
+    AdminState = is_present(port_down, Config, down, up),
     NoReceive = is_present(no_recv, Config, true, false),
     NoForward = is_present(no_fwd, Config, true, false),
     NoPacketIn = is_present(no_packet_in, Config, true, false),
@@ -659,32 +659,34 @@ get_flow_tables_refs(FlowTables) ->
               end, FlowTables).
 
 get_controllers(SwitchId) ->
-    lists:map(fun({ControllerId, Role,
-                   {ControllerIP, ControllerPort},
-                   {LocalIP, LocalPort},
-                   Protocol, ConnectionState,
-                   CurrentVersion, SupportedVersions}) ->
-                      Id = "Switch"
-                          ++ integer_to_list(SwitchId)
-                          ++ "Controller"
-                          ++ integer_to_list(ControllerId),
-                      #controller{
-                         id = Id,
-                         role = Role,
-                         ip_address = ip(ControllerIP),
-                         port = ControllerPort,
-                         local_ip_address = ip(LocalIP),
-                         local_port = LocalPort,
-                         protocol = Protocol,
-                         state = #controller_state{
-                                    connection_state = ConnectionState,
-                                    current_version =
-                                        version(CurrentVersion),
-                                    supported_versions =
-                                        [version(V) || V <- SupportedVersions]
-                                   }
-                        }
-              end, ofp_client:get_controllers_state(SwitchId)).
+    lists:foldl(fun(controller_not_connected, Controllers) ->
+                        Controllers;
+                   ({ControllerId, Role,
+                     {ControllerIP, ControllerPort},
+                     {LocalIP, LocalPort},
+                     Protocol, ConnectionState,
+                     CurrentVersion, SupportedVersions}, Controllers) ->
+                        Id = "Switch"
+                            ++ integer_to_list(SwitchId)
+                            ++ "Controller"
+                            ++ integer_to_list(ControllerId),
+                        C = #controller{
+                               id = Id,
+                               role = Role,
+                               ip_address = ip(ControllerIP),
+                               port = ControllerPort,
+                               local_ip_address = ip(LocalIP),
+                               local_port = LocalPort,
+                               protocol = Protocol,
+                               state = #controller_state{
+                                          connection_state = ConnectionState,
+                                          current_version =
+                                              version(CurrentVersion),
+                                          supported_versions =
+                                              [version(V) || V <- SupportedVersions]
+                                         }},
+                        [C | Controllers]
+                end, [], ofp_client:get_controllers_state(SwitchId)).
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

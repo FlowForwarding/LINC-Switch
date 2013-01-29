@@ -248,13 +248,12 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
                                            {[], NewStartup}),
     {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
                                              {[], NewStartup2}),
-    %% {NewCtrls, NewStartup4} = update_controllers(Ctrls, SwitchId, OldCtrls,
-    %%                                              {[], NewStartup3}),
+    NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
 
     NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
     NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
-    %% NewOpts3 = lists:keyreplace(controllers, 1,
-    %%                             NewOpts2, {controllers, NewCtrls}),
+    NewOpts3 = lists:keyreplace(controllers, 1,
+                                NewOpts2, {controllers, NewCtrls}),
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
@@ -262,7 +261,7 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,
-                       [{datapath_id, DatapathId} | NewOpts2]} | NewConfig],
+                       [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
                      NewStartup3#ofconfig{
                        switches = [{switch, SwitchId, DatapathId}
                                    | OldSwitches]}}).
@@ -328,6 +327,11 @@ update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
     update_queues2(Rest, PortId, SwitchId, OldQueues,
                    {[NQ | NewQueues],
                     NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
+
+update_controllers(Ctrls, SwitchId, OldCtrls) ->
+    OldCtrls2 = [{Host, Port} || {controller, {_ControllerId, SId},
+                                  Host, Port, _} <- OldCtrls, SId == SwitchId],
+    Ctrls ++ OldCtrls2.
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks

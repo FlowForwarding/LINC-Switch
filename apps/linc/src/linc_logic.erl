@@ -257,13 +257,13 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     Controllers = linc:controllers_for_switch(SwitchId),
     Opts = [{controlling_process, self()}, {version, Version}],
     Ctrls = [case Ctrl of
-                 {Host, Port} ->
-                     {Host, Port, Opts};
-                 {Host, Port, SysOpts} ->
-                     {Host, Port, Opts ++ SysOpts}
+                 {Id, Host, Port} ->
+                     {Id, Host, Port, Opts};
+                 {Id, Host, Port, SysOpts} ->
+                     {Id, Host, Port, Opts ++ SysOpts}
              end || Ctrl <- Controllers],
     [ofp_channel:open(ChannelSupPid, Host, Port, Opt)
-     || {Host, Port, Opt} <- Ctrls],
+     || {_Id, Host, Port, Opt} <- Ctrls],
     DatapathId = "Datapath" ++ integer_to_list(SwitchId),
     {noreply, State#state{backend_state = BackendState2,
                           datapath_id = DatapathId}};

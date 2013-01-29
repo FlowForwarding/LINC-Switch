@@ -329,7 +329,7 @@ update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
                     NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
 
 update_controllers(Ctrls, SwitchId, OldCtrls) ->
-    OldCtrls2 = [{Host, Port} || {controller, {_ControllerId, SId},
+    OldCtrls2 = [{ControllerId, Host, Port} || {controller, {ControllerId, SId},
                                   Host, Port, _} <- OldCtrls, SId == SwitchId],
     Ctrls ++ OldCtrls2.
 

@@ -32,8 +32,8 @@
          flow_table_name/3,
          convert_port_config/1,
          convert_port_features/4,
-         convert_port_state/1
-        ]).
+         convert_port_state/1,
+         read_and_update_startup/0]).
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,
@@ -57,6 +57,17 @@
 -include("linc_logger.hrl").
 
 -define(STARTUP, linc_ofconfig_startup).
+
+-define(DEFAULT_PORT_CONFIG, #port_configuration{
+                                admin_state = up,
+                                no_receive = false,
+                                no_forward = false,
+                                no_packet_in = false}).
+-define(DEFAULT_PORT_FEATURES, #features{
+                                  rate = '100mb-fd',
+                                  auto_negotiate = true,
+                                  medium = copper,
+                                  pause = unsupported}).
 
 -type ofc_port() :: {port,
                      {PortId :: integer(),
@@ -199,6 +210,79 @@ convert_port_state(State) ->
     #port_state{oper_state = OperState,
                 blocked = Blocked,
                 live = Live}.
+
+read_and_update_startup() ->
+    [Startup] = mnesia_read(startup),
+    {ok, Sys} = application:get_env(linc, logical_switches),
+
+    InitNew = {[], #ofconfig{name = startup}},
+    {Config, NewStartup} = update_switches(Sys, Startup, InitNew),
+    mnesia_write(startup, NewStartup),
+    Config.
+
+update_switches([], _, New) ->
+    New;
+update_switches([{switch, SwitchId, Opts} | Rest], Startup,
+                {NewConfig,
+                 #ofconfig{ports = OldPorts,
+                           queues = OldQueues,
+                           switches = OldSwitches,
+                           controllers = OldCtrls} = NewStartup}) ->
+    Ports = case lists:keyfind(ports, 1, Opts) of
+                {ports, P} -> P;
+                false -> []
+            end,
+    Ctrls = case lists:keyfind(controllers, 1, Opts) of
+                {controllers, C} -> C;
+                false -> []
+            end,
+    Queues = case lists:keyfind(queues_status, 1, Opts) of
+                 {queues_status, enabled} ->
+                     case lists:keyfind(queues, 1, Opts) of
+                         {queues, Q} -> Q;
+                         false -> []
+                     end;
+                 _ -> []
+             end,
+    {NewPorts, NewStartup2} = update_ports(Ports, SwitchId, OldPorts,
+                                           {[], NewStartup}),
+    %% {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
+    %%                                          {[], NewStartup2}),
+    %% {NewCtrls, NewStartup4} = update_controllers(Ctrls, SwitchId, OldCtrls,
+    %%                                              {[], NewStartup3}),
+
+    NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
+    %% NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
+    %% NewOpts3 = lists:keyreplace(controllers, 1,
+    %%                             NewOpts2, {controllers, NewCtrls}),
+
+    NewSwitch = {switch, SwitchId, "DATAPATHxx"},
+    update_switches(Rest, Startup,
+                    {[{switch, SwitchId, NewOpts} | NewConfig],
+                     NewStartup2#ofconfig{
+                       switches = [NewSwitch | OldSwitches]}}).
+
+update_ports([], _, _, New) ->
+    New;
+update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
+             {NewPorts, #ofconfig{ports = NewSPorts} = NewStartup}) ->
+    {NP, NSP} = case lists:keyfind({PortId, SwitchId}, 2, OldPorts) of
+                    {port, _, Config, Features} ->
+                        {{port, PortId,
+                          [{config, Config},
+                           {features, Features} | Opts]},
+                         {port, {PortId, SwitchId}, Config, Features}};
+                    false ->
+                        {{port, PortId,
+                          [{config, ?DEFAULT_PORT_CONFIG},
+                           {features, ?DEFAULT_PORT_FEATURES} | Opts]},
+                         {port, {PortId, SwitchId},
+                          ?DEFAULT_PORT_CONFIG,
+                          ?DEFAULT_PORT_FEATURES}}
+                end,
+    update_ports(SwitchId, Rest, OldPorts,
+                 {[NP | NewPorts],
+                  NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks

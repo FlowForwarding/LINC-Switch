@@ -246,20 +246,20 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
              end,
     {NewPorts, NewStartup2} = update_ports(Ports, SwitchId, OldPorts,
                                            {[], NewStartup}),
-    %% {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
-    %%                                          {[], NewStartup2}),
+    {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
+                                             {[], NewStartup2}),
     %% {NewCtrls, NewStartup4} = update_controllers(Ctrls, SwitchId, OldCtrls,
     %%                                              {[], NewStartup3}),
 
     NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
-    %% NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
+    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
     %% NewOpts3 = lists:keyreplace(controllers, 1,
     %%                             NewOpts2, {controllers, NewCtrls}),
 
     NewSwitch = {switch, SwitchId, "DATAPATHxx"},
     update_switches(Rest, Startup,
-                    {[{switch, SwitchId, NewOpts} | NewConfig],
-                     NewStartup2#ofconfig{
+                    {[{switch, SwitchId, NewOpts2} | NewConfig],
+                     NewStartup3#ofconfig{
                        switches = [NewSwitch | OldSwitches]}}).
 
 update_ports([], _, _, New) ->
@@ -267,11 +267,10 @@ update_ports([], _, _, New) ->
 update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
              {NewPorts, #ofconfig{ports = NewSPorts} = NewStartup}) ->
     {NP, NSP} = case lists:keyfind({PortId, SwitchId}, 2, OldPorts) of
-                    {port, _, Config, Features} ->
+                    {port, _, Config, Features} = P ->
                         {{port, PortId,
                           [{config, Config},
-                           {features, Features} | Opts]},
-                         {port, {PortId, SwitchId}, Config, Features}};
+                           {features, Features} | Opts]}, P};
                     false ->
                         {{port, PortId,
                           [{config, ?DEFAULT_PORT_CONFIG},
@@ -283,6 +282,47 @@ update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
     update_ports(Rest, SwitchId, OldPorts,
                  {[NP | NewPorts],
                   NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
+
+update_queues([], _, _, New) ->
+    New;
+update_queues([{port, PortId, Opts} | Rest], SwitchId, OldQueues,
+              {NewQueues, NewStartup}) ->
+    case lists:keyfind(port_queues, 1, Opts) of
+        {port_queues, Queues} ->
+            {NQ, NS} = update_queues2(Queues, PortId, SwitchId,
+                                      OldQueues, {[], NewStartup}),
+            NewOpts = lists:keyreplace(port_queues, 1, Opts,
+                                       {port_queues, NQ}),
+            update_queues(Rest, SwitchId, OldQueues,
+                          {[{port, PortId, NewOpts} | NewQueues], NS});
+        false ->
+            update_queues(Rest, SwitchId, OldQueues, {NewQueues, NewStartup})
+    end.
+
+update_queues2([], _, _, _, New) ->
+    New;
+update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
+               {NewQueues, #ofconfig{queues = NewSQueues} = NewStartup}) ->
+    {NQ, NSQ} = case lists:keyfind({QueueId, PortId, SwitchId}, 2, OldQueues) of
+                    {queue, _, MinRate, MaxRate} = Q ->
+                        {{QueueId, [{min_rate, MinRate},
+                                    {max_rate, MaxRate}]}, Q};
+                    false ->
+                        MinRate = case lists:keyfind(min_rate, 1, Opts) of
+                                      {min_rate, MinR} -> MinR;
+                                      false -> undefined
+                                  end,
+                        MaxRate = case lists:keyfind(max_rate, 1, Opts) of
+                                      {max_rate, MaxR} -> MaxR;
+                                      false -> undefined
+                                  end,
+                        {{QueueId, Opts},
+                         {queue, {QueueId, PortId, SwitchId},
+                          MinRate, MaxRate}}
+                end,
+    update_queues2(Rest, PortId, SwitchId, OldQueues,
+                   {[NQ | NewQueues],
+                    NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks

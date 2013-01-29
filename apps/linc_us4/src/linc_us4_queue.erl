@@ -198,7 +198,10 @@ init([SwitchId, [{PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
     ResourceId =
         "LogicalSwitch" ++ integer_to_list(SwitchId) ++ "-" ++
         "Port" ++ integer_to_list(PortNo) ++ "-" ++
-        "Queue" ++ integer_to_list(QueueNo),
+        case QueueNo of
+            default -> "DefaultQueue";
+            _ -> "Queue" ++ integer_to_list(QueueNo)
+        end,
     {ok, #state{queue_key = Key,
                 resource_id = ResourceId,
                 port_rate_bps = PortRateBps,

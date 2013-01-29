@@ -280,7 +280,7 @@ update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
                           ?DEFAULT_PORT_CONFIG,
                           ?DEFAULT_PORT_FEATURES}}
                 end,
-    update_ports(SwitchId, Rest, OldPorts,
+    update_ports(Rest, SwitchId, OldPorts,
                  {[NP | NewPorts],
                   NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
 

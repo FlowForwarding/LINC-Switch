@@ -256,11 +256,16 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
     %% NewOpts3 = lists:keyreplace(controllers, 1,
     %%                             NewOpts2, {controllers, NewCtrls}),
 
-    NewSwitch = {switch, SwitchId, "DATAPATHxx"},
+    DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
+                     {switch, _, D} -> D;
+                     false -> "AA:BB:CC:DD:EE:0" ++ integer_to_list(SwitchId)
+                 end,
     update_switches(Rest, Startup,
-                    {[{switch, SwitchId, NewOpts2} | NewConfig],
+                    {[{switch, SwitchId,
+                       [{datapath_id, DatapathId} | NewOpts2]} | NewConfig],
                      NewStartup3#ofconfig{
-                       switches = [NewSwitch | OldSwitches]}}).
+                       switches = [{switch, SwitchId, DatapathId}
+                                   | OldSwitches]}}).
 
 update_ports([], _, _, New) ->
     New;

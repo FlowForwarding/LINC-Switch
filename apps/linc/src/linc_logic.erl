@@ -196,7 +196,12 @@ handle_call(get_backend_queues, _From,
             #state{ofconfig_backend_mod = OFConfigBackendMod,
                    switch_id = SwitchId} = State) ->
     BackendQueues = OFConfigBackendMod:get_queues(SwitchId),
-    {reply, BackendQueues, State};
+    RealQueues = lists:filter(fun(#queue{id = default}) ->
+                                      false;
+                                 (#queue{})->
+                                      true
+                              end, BackendQueues),
+    {reply, RealQueues, State};
 handle_call(get_queue_min_rate, _From,
             #state{ofconfig_backend_mod = OFConfigBackendMod,
                    switch_id = SwitchId} = State) ->

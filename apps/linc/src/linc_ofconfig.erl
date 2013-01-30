@@ -753,17 +753,13 @@ get_flow_tables_refs(FlowTables) ->
 get_controllers(SwitchId) ->
     lists:foldl(fun(controller_not_connected, Controllers) ->
                         Controllers;
-                   ({ControllerId, Role,
+                   ({ResourceId, Role,
                      {ControllerIP, ControllerPort},
                      {LocalIP, LocalPort},
                      Protocol, ConnectionState,
                      CurrentVersion, SupportedVersions}, Controllers) ->
-                        Id = "Switch"
-                            ++ integer_to_list(SwitchId)
-                            ++ "Controller"
-                            ++ integer_to_list(ControllerId),
                         C = #controller{
-                               id = Id,
+                               id = ResourceId,
                                role = Role,
                                ip_address = ip(ControllerIP),
                                port = ControllerPort,

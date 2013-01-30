@@ -43,7 +43,7 @@
         ]).
 
 %% Internal API
--export([start_link/3]).
+-export([start_link/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -63,7 +63,8 @@
           ofconfig_backend_mod :: atom(),
           backend_state :: term(),
           switch_id :: integer(),
-          datapath_id :: string()
+          datapath_id :: string(),
+          config :: term()
          }).
 
 %%------------------------------------------------------------------------------
@@ -142,15 +143,17 @@ set_queue_max_rate(SwitchId, PortNo, QueueId, Rate) ->
                                                         PortNo, QueueId, Rate}).
 
 %% @doc Start the OF Switch logic.
--spec start_link(integer(), atom(), term()) -> {ok, pid()} | {error, any()}.
-start_link(SwitchId, BackendMod, BackendOpts) ->
-    gen_server:start_link(?MODULE, [SwitchId, BackendMod, BackendOpts], []).
+-spec start_link(integer(), atom(), term(), term()) -> {ok, pid()} |
+                                                       {error, any()}.
+start_link(SwitchId, BackendMod, BackendOpts, Config) ->
+    gen_server:start_link(?MODULE, [SwitchId, BackendMod,
+                                    BackendOpts, Config], []).
 
 %%------------------------------------------------------------------------------
 %% gen_server callbacks
 %%------------------------------------------------------------------------------
 
-init([SwitchId, BackendMod, BackendOpts]) ->
+init([SwitchId, BackendMod, BackendOpts, Config]) ->
     %% We trap exit signals here to handle shutdown initiated by the supervisor
     %% and run terminate function which invokes terminate in callback modules
     process_flag(trap_exit, true),
@@ -163,7 +166,8 @@ init([SwitchId, BackendMod, BackendOpts]) ->
     {ok, #state{backend_mod = BackendMod,
                 ofconfig_backend_mod = OFConfigBackendMod,
                 backend_state = BackendOpts,
-                switch_id = SwitchId}, 0}.
+                switch_id = SwitchId,
+                config = Config}, 0}.
 
 handle_call(get_datapath_id, _From, #state{datapath_id = DatapathId} = State) ->
     {reply, DatapathId, State};
@@ -242,7 +246,8 @@ handle_cast(_Message, State) ->
 
 handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendState,
-                            switch_id = SwitchId} = State) ->
+                            switch_id = SwitchId,
+                            config = Config} = State) ->
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
                   permanent, 5000, supervisor, [ofp_channel_sup]},
     {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
@@ -254,7 +259,7 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     BackendOpts = lists:keystore(switch_id, 1, BackendState,
                                  {switch_id, SwitchId}),
     {ok, Version, BackendState2} = BackendMod:start(BackendOpts),
-    Controllers = linc:controllers_for_switch(SwitchId),
+    Controllers = linc:controllers_for_switch(SwitchId, Config),
     Opts = [{controlling_process, self()}, {version, Version}],
     Ctrls = [case Ctrl of
                  {Id, Host, Port} ->
@@ -262,8 +267,8 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                  {Id, Host, Port, SysOpts} ->
                      {Id, Host, Port, Opts ++ SysOpts}
              end || Ctrl <- Controllers],
-    [ofp_channel:open(ChannelSupPid, Host, Port, Opt)
-     || {_Id, Host, Port, Opt} <- Ctrls],
+    [ofp_channel:open(ChannelSupPid, Id, Host, Port, Opt)
+     || {Id, Host, Port, Opt} <- Ctrls],
     DatapathId = "Datapath" ++ integer_to_list(SwitchId),
     {noreply, State#state{backend_state = BackendState2,
                           datapath_id = DatapathId}};

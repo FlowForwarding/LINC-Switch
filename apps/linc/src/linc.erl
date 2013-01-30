@@ -29,7 +29,7 @@
          delete/1,
          register/3,
          lookup/2,
-         controllers_for_switch/1]).
+         controllers_for_switch/2]).
 
 -include("linc_logger.hrl").
 
@@ -74,10 +74,9 @@ lookup(SwitchId, Name) ->
             undefined
     end.
 
--spec controllers_for_switch(integer()) -> list(tuple()).
-controllers_for_switch(SwitchId) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
-    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
+-spec controllers_for_switch(integer(), term()) -> list(tuple()).
+controllers_for_switch(SwitchId, Config) ->
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
     {controllers, Controllers} = lists:keyfind(controllers, 1, Opts),
     Controllers.
 

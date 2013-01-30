@@ -56,11 +56,11 @@ start_link() ->
                      Switches
              end,
     ?INFO("Configuration: ~p", [Config]),
-    [start_switch(Pid, [Id, backend_for_switch(Id)])
+    [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.
 
-start_switch(Sup, [SwitchId, _] = Opts) ->
+start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
     Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
     LogicSup = {Id, {linc_sup, start_link, Opts},
                 permanent, 5000, supervisor, [linc_sup]},

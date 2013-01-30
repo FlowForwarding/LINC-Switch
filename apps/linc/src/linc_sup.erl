@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/2]).
+-export([start_link/3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -31,17 +31,18 @@
 %% API functions
 %%------------------------------------------------------------------------------
 
--spec start_link(integer(), atom()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(SwitchId, BackendMod) ->
-    supervisor:start_link(?MODULE, [SwitchId, BackendMod]).
+-spec start_link(integer(), atom(), term()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(SwitchId, BackendMod, Config) ->
+    supervisor:start_link(?MODULE, [SwitchId, BackendMod, Config]).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
-init([SwitchId, BackendMod]) ->
+init([SwitchId, BackendMod, Config]) ->
     linc:create(SwitchId),
     linc:register(SwitchId, linc_sup, self()),
-    Logic = {linc_logic, {linc_logic, start_link, [SwitchId, BackendMod, []]},
+    Logic = {linc_logic, {linc_logic, start_link, [SwitchId, BackendMod,
+                                                   [], Config]},
              permanent, 5000, worker, [linc_logic]},
     {ok, {{one_for_all, 5, 10}, [Logic]}}.

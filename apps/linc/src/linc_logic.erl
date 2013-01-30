@@ -23,6 +23,7 @@
 
 %% API
 -export([send_to_controllers/2,
+         gen_datapath_id/1,
          %% Backend general
          get_datapath_id/1,
          set_datapath_id/2,
@@ -274,9 +275,10 @@ handle_info(timeout, #state{backend_mod = BackendMod,
              end || Ctrl <- Controllers],
     [ofp_channel:open(ChannelSupPid, Id, Host, Port, Opt)
      || {Id, Host, Port, Opt} <- Ctrls],
-    DatapathId = "Datapath" ++ integer_to_list(SwitchId),
+    DatapathId = gen_datapath_id(SwitchId),
     {noreply, State#state{backend_state = BackendState2,
                           datapath_id = DatapathId}};
+
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
@@ -311,3 +313,14 @@ code_change(_OldVersion, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+gen_datapath_id(SwitchId) when SwitchId < 10 ->
+    "AA:BB:CC:DD:EE:FF:00:0" ++ integer_to_list(SwitchId);
+gen_datapath_id(SwitchId) when SwitchId < 100 ->
+    "AA:BB:CC:DD:EE:FF:00:" ++ integer_to_list(SwitchId);
+gen_datapath_id(SwitchId) when SwitchId < 1000 ->
+    "AA:BB:CC:DD:EE:FF:0" ++ integer_to_list(SwitchId div 100) ++
+        ":" ++ integer_to_list(SwitchId rem 100);
+gen_datapath_id(SwitchId) when SwitchId < 10000 ->
+    "AA:BB:CC:DD:EE:FF:" ++ integer_to_list(SwitchId div 100) ++
+        ":" ++ integer_to_list(SwitchId rem 100).

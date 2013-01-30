@@ -68,19 +68,6 @@
                                   auto_negotiate = true,
                                   medium = copper,
                                   pause = unsupported}).
--define(DEFAULT_DATAPATH(SwitchId),
-        if
-            SwitchId < 10 -> "AA:BB:CC:DD:EE:FF:00:0" ++
-                                 integer_to_list(SwitchId);
-            SwitchId < 100 -> "AA:BB:CC:DD:EE:FF:00:" ++
-                                  integer_to_list(SwitchId);
-            SwitchId < 1000 -> "AA:BB:CC:DD:EE:FF:0" ++
-                                   integer_to_list(SwitchId div 100) ++
-                                   ":" ++ integer_to_list(SwitchId rem 100);
-            SwitchId < 10000 -> "AA:BB:CC:DD:EE:FF:" ++
-                                    integer_to_list(SwitchId div 100) ++
-                                    ":" ++ integer_to_list(SwitchId rem 100)
-        end).
 
 -type ofc_port() :: {port,
                      {PortId :: integer(),
@@ -274,7 +261,7 @@ delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                         []
                 end,
     NewCtrls = [],
-    NewSwitch = {switch, SwitchId, ?DEFAULT_DATAPATH(SwitchId)},
+    NewSwitch = {switch, SwitchId, linc_logic:get_datapath_id(SwitchId)},
     NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,
                                   queues = Queues ++ lists:flatten(NewQueues),
                                   switches = [NewSwitch | Switches],
@@ -326,7 +313,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
-                     false -> ?DEFAULT_DATAPATH(SwitchId)
+                     false -> linc_logic:get_datapath_id(SwitchId)
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,

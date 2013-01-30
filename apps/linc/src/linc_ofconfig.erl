@@ -248,13 +248,12 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
                                            {[], NewStartup}),
     {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
                                              {[], NewStartup2}),
-    %% {NewCtrls, NewStartup4} = update_controllers(Ctrls, SwitchId, OldCtrls,
-    %%                                              {[], NewStartup3}),
+    NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
 
     NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
     NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
-    %% NewOpts3 = lists:keyreplace(controllers, 1,
-    %%                             NewOpts2, {controllers, NewCtrls}),
+    NewOpts3 = lists:keyreplace(controllers, 1,
+                                NewOpts2, {controllers, NewCtrls}),
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
@@ -262,7 +261,7 @@ update_switches([{switch, SwitchId, Opts} | Rest], Startup,
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,
-                       [{datapath_id, DatapathId} | NewOpts2]} | NewConfig],
+                       [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
                      NewStartup3#ofconfig{
                        switches = [{switch, SwitchId, DatapathId}
                                    | OldSwitches]}}).
@@ -329,6 +328,11 @@ update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
                    {[NQ | NewQueues],
                     NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
 
+update_controllers(Ctrls, SwitchId, OldCtrls) ->
+    OldCtrls2 = [{ControllerId, Host, Port} || {controller, {ControllerId, SId},
+                                  Host, Port, _} <- OldCtrls, SId == SwitchId],
+    Ctrls ++ OldCtrls2.
+
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks
 %%------------------------------------------------------------------------------
@@ -392,6 +396,11 @@ handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
         false ->
             {reply, {error, data_missing}, State}
     end;
+handle_call({copy_config, _SessionId, running, startup}, _From, State) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    Config = merge_ofc([get_config(Id) || {switch, Id, _} <- Switches]),
+    mnesia_write(startup, Config#ofconfig{name = startup}),
+    {reply, ok, State};
 handle_call({get, _SessionId, _Filter}, _From, State) ->
     ConfigAndState = get_state(),
     EncodedConfigAndState = of_config:encode(ConfigAndState),
@@ -446,6 +455,24 @@ merge([{NewResources, NewSwitches} | Rest],
                   resources = Resources ++ NewResources,
                   logical_switches = Switches ++ NewSwitches},
     merge(Rest, NewConfig).
+
+merge_ofc(Configs) ->
+    merge_ofc(Configs, #ofconfig{}).
+
+merge_ofc([], Config) ->
+    Config;
+merge_ofc([#ofconfig{ports = NewPorts,
+                     queues = NewQueues,
+                     switches = NewSwitches,
+                     controllers = NewCtrls} | Configs],
+           #ofconfig{ports = Ports,
+                     queues = Queues,
+                     switches = Switches,
+                     controllers = Ctrls}) ->
+    merge_ofc(Configs, #ofconfig{ports = Ports ++ NewPorts,
+                                 queues = Queues ++ NewQueues,
+                                 switches = Switches ++ NewSwitches,
+                                 controllers = Ctrls ++ NewCtrls}).
 
 get_capable_switch_config(running) ->
     {ok, Switches} = application:get_env(linc, logical_switches),
@@ -726,17 +753,13 @@ get_flow_tables_refs(FlowTables) ->
 get_controllers(SwitchId) ->
     lists:foldl(fun(controller_not_connected, Controllers) ->
                         Controllers;
-                   ({ControllerId, Role,
+                   ({ResourceId, Role,
                      {ControllerIP, ControllerPort},
                      {LocalIP, LocalPort},
                      Protocol, ConnectionState,
                      CurrentVersion, SupportedVersions}, Controllers) ->
-                        Id = "Switch"
-                            ++ integer_to_list(SwitchId)
-                            ++ "Controller"
-                            ++ integer_to_list(ControllerId),
                         C = #controller{
-                               id = Id,
+                               id = ResourceId,
                                role = Role,
                                ip_address = ip(ControllerIP),
                                port = ControllerPort,

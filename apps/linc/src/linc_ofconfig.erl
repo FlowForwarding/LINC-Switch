@@ -613,6 +613,8 @@ execute_operations(Ops, OnError, startup) ->
     mnesia_write(startup, NewStartup),
     Result.
     
+do_startup([], stop, Startup) ->
+    {ok, Startup};
 do_startup([], {continue, []}, Startup) ->
     {ok, Startup};
 do_startup([], {continue, Errors}, Startup) ->

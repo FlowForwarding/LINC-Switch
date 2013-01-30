@@ -68,6 +68,19 @@
                                   auto_negotiate = true,
                                   medium = copper,
                                   pause = unsupported}).
+-define(DEFAULT_DATAPATH(SwitchId),
+        if
+            SwitchId < 10 -> "AA:BB:CC:DD:EE:FF:00:0" ++
+                                 integer_to_list(SwitchId);
+            SwitchId < 100 -> "AA:BB:CC:DD:EE:FF:00:" ++
+                                  integer_to_list(SwitchId);
+            SwitchId < 1000 -> "AA:BB:CC:DD:EE:FF:0" ++
+                                   integer_to_list(SwitchId div 100) ++
+                                   ":" ++ integer_to_list(SwitchId rem 100);
+            SwitchId < 10000 -> "AA:BB:CC:DD:EE:FF:" ++
+                                    integer_to_list(SwitchId div 100) ++
+                                    ":" ++ integer_to_list(SwitchId rem 100)
+        end).
 
 -type ofc_port() :: {port,
                      {PortId :: integer(),
@@ -211,10 +224,65 @@ convert_port_state(State) ->
                 blocked = Blocked,
                 live = Live}.
 
+delete_startup() ->
+    {ok, Sys} = application:get_env(linc, logical_switches),
+    NewStartup = delete_startup_switches(Sys, #ofconfig{name = startup}),
+    mnesia_write(startup, NewStartup).
+
+delete_startup_switches([], NewStartup) ->
+    NewStartup;
+delete_startup_switches([{switch, SwitchId, Opts} = Switch | Rest],
+                        #ofconfig{ports = Ports,
+                                  queues = Queues,
+                                  switches = Switches,
+                                  controllers = Ctrls} = Startup) ->
+    NewPorts = case lists:keyfind(ports, 1, Opts) of
+                   false ->
+                       [];
+                   {ports, SysPorts} ->
+                       [{port, {PortId, SwitchId},
+                         ?DEFAULT_PORT_CONFIG,
+                         ?DEFAULT_PORT_FEATURES}
+                        || {port, PortId, _} <- SysPorts]
+               end,
+    NewQueues = case lists:keyfind(queues_status, 1, Opts) of
+                    false ->
+                        [];
+                    {queues_status, enabled} ->
+                        case lists:keyfind(queues, 1, Opts) of
+                            false ->
+                                [];
+                            {queues, SysQPorts} ->
+                                [[begin
+                                      MinRate = case lists:keyfind(min_rate,
+                                                                   1, Props) of
+                                                    {min_rate, MinR} -> MinR;
+                                                    false -> undefined
+                                                end,
+                                      MaxRate = case lists:keyfind(max_rate,
+                                                                   1, Props) of
+                                                    {max_rate, MaxR} -> MaxR;
+                                                    false -> undefined
+                                                end,
+                                      {queue, {QueueId, PortId, SwitchId},
+                                       MinRate, MaxRate}
+                                  end
+                                  || {QueueId, Props} <- lists:keyfind(
+                                                           port_queues,
+                                                           1, SysQueues)]
+                                 || {port, PortId, SysQueues} <- SysQPorts]
+                        end
+                end,
+    NewCtrls = [],
+    NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,
+                                  queues = Queues ++ lists:flatten(NewQueues),
+                                  switches = [Switch | Switches],
+                                  controllers = Ctrls ++ NewCtrls},
+    delete_startup_switches(Rest, NewStartup).
+
 read_and_update_startup() ->
     [Startup] = mnesia_read(startup),
     {ok, Sys} = application:get_env(linc, logical_switches),
-
     InitNew = {[], #ofconfig{name = startup}},
     {Config, NewStartup} = update_switches(Sys, Startup, InitNew),
     mnesia_write(startup, NewStartup),
@@ -257,7 +325,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
-                     false -> "AA:BB:CC:DD:EE:0" ++ integer_to_list(SwitchId)
+                     false -> ?DEFAULT_DATAPATH(SwitchId)
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,
@@ -389,9 +457,9 @@ handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
                 ok ->
                     {reply, ok, State};
                 {error, Errors} when is_list(Errors) ->
-                    {reply, hd(Errors), State};
+                    {reply, {error, hd(Errors)}, State};
                 {error, Error} ->
-                    {reply, Error, State}
+                    {reply, {error, Error}, State}
             end;
         false ->
             {reply, {error, data_missing}, State}
@@ -400,6 +468,9 @@ handle_call({copy_config, _SessionId, running, startup}, _From, State) ->
     {ok, Switches} = application:get_env(linc, logical_switches),
     Config = merge_ofc([get_config(Id) || {switch, Id, _} <- Switches]),
     mnesia_write(startup, Config#ofconfig{name = startup}),
+    {reply, ok, State};
+handle_call({delete_config, _SessionId, startup}, _From, State) ->
+    delete_startup(),
     {reply, ok, State};
 handle_call({get, _SessionId, _Filter}, _From, State) ->
     ConfigAndState = get_state(),

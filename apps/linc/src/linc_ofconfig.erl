@@ -333,7 +333,8 @@ update_switches([{switch, SwitchId, Opts} | Rest],
                        [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
                      NewStartup3#ofconfig{
                        switches = [{switch, SwitchId, DatapathId}
-                                   | NewSwitches]}}).
+                                   | NewSwitches],
+                       controllers = OldCtrls}}).
 
 update_ports([], _, _, New) ->
     New;

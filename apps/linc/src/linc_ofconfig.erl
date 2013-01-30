@@ -396,6 +396,11 @@ handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
         false ->
             {reply, {error, data_missing}, State}
     end;
+handle_call({copy_config, _SessionId, running, startup}, _From, State) ->
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    Config = merge_ofc([get_config(Id) || {switch, Id, _} <- Switches]),
+    mnesia_write(startup, Config#ofconfig{name = startup}),
+    {reply, ok, State};
 handle_call({get, _SessionId, _Filter}, _From, State) ->
     ConfigAndState = get_state(),
     EncodedConfigAndState = of_config:encode(ConfigAndState),
@@ -450,6 +455,24 @@ merge([{NewResources, NewSwitches} | Rest],
                   resources = Resources ++ NewResources,
                   logical_switches = Switches ++ NewSwitches},
     merge(Rest, NewConfig).
+
+merge_ofc(Configs) ->
+    merge_ofc(Configs, #ofconfig{}).
+
+merge_ofc([], Config) ->
+    Config;
+merge_ofc([#ofconfig{ports = NewPorts,
+                     queues = NewQueues,
+                     switches = NewSwitches,
+                     controllers = NewCtrls} | Configs],
+           #ofconfig{ports = Ports,
+                     queues = Queues,
+                     switches = Switches,
+                     controllers = Ctrls}) ->
+    merge_ofc(Configs, #ofconfig{ports = Ports ++ NewPorts,
+                                 queues = Queues ++ NewQueues,
+                                 switches = Switches ++ NewSwitches,
+                                 controllers = Ctrls ++ NewCtrls}).
 
 get_capable_switch_config(running) ->
     {ok, Switches} = application:get_env(linc, logical_switches),

@@ -227,7 +227,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
                           queues = OldQueues,
                           switches = OldSwitches,
                           controllers = OldCtrls} = Startup,
-                {NewConfig, NewStartup}) ->
+                {NewConfig, #ofconfig{switches = NewSwitches} = NewStartup}) ->
     Ports = case lists:keyfind(ports, 1, Opts) of
                 {ports, P} -> P;
                 false -> []
@@ -264,7 +264,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
                        [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
                      NewStartup3#ofconfig{
                        switches = [{switch, SwitchId, DatapathId}
-                                   | OldSwitches]}}).
+                                   | NewSwitches]}}).
 
 update_ports([], _, _, New) ->
     New;

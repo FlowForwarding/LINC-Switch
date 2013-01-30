@@ -222,12 +222,12 @@ read_and_update_startup() ->
 
 update_switches([], _, New) ->
     New;
-update_switches([{switch, SwitchId, Opts} | Rest], Startup,
-                {NewConfig,
-                 #ofconfig{ports = OldPorts,
-                           queues = OldQueues,
-                           switches = OldSwitches,
-                           controllers = OldCtrls} = NewStartup}) ->
+update_switches([{switch, SwitchId, Opts} | Rest],
+                #ofconfig{ports = OldPorts,
+                          queues = OldQueues,
+                          switches = OldSwitches,
+                          controllers = OldCtrls} = Startup,
+                {NewConfig, NewStartup}) ->
     Ports = case lists:keyfind(ports, 1, Opts) of
                 {ports, P} -> P;
                 false -> []

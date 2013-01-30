@@ -231,7 +231,7 @@ delete_startup() ->
 
 delete_startup_switches([], NewStartup) ->
     NewStartup;
-delete_startup_switches([{switch, SwitchId, Opts} = Switch | Rest],
+delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                         #ofconfig{ports = Ports,
                                   queues = Queues,
                                   switches = Switches,
@@ -274,9 +274,10 @@ delete_startup_switches([{switch, SwitchId, Opts} = Switch | Rest],
                         []
                 end,
     NewCtrls = [],
+    NewSwitch = {switch, SwitchId, ?DEFAULT_DATAPATH(SwitchId)},
     NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,
                                   queues = Queues ++ lists:flatten(NewQueues),
-                                  switches = [Switch | Switches],
+                                  switches = [NewSwitch | Switches],
                                   controllers = Ctrls ++ NewCtrls},
     delete_startup_switches(Rest, NewStartup).
 

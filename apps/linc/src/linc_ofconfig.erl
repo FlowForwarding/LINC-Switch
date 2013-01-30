@@ -238,24 +238,7 @@ delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                             false ->
                                 [];
                             {queues, SysQPorts} ->
-                                [[begin
-                                      MinRate = case lists:keyfind(min_rate,
-                                                                   1, Props) of
-                                                    {min_rate, MinR} -> MinR;
-                                                    false -> undefined
-                                                end,
-                                      MaxRate = case lists:keyfind(max_rate,
-                                                                   1, Props) of
-                                                    {max_rate, MaxR} -> MaxR;
-                                                    false -> undefined
-                                                end,
-                                      {queue, {QueueId, PortId, SwitchId},
-                                       MinRate, MaxRate}
-                                  end
-                                  || {QueueId, Props} <- lists:keyfind(
-                                                           port_queues,
-                                                           1, SysQueues)]
-                                 || {port, PortId, SysQueues} <- SysQPorts]
+                                delete_startup_queues(SysQPorts, SwitchId)
                         end;
                     _ ->
                         []
@@ -267,6 +250,24 @@ delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                                   switches = [NewSwitch | Switches],
                                   controllers = Ctrls ++ NewCtrls},
     delete_startup_switches(Rest, NewStartup).
+
+delete_startup_queues(SysQPorts, SwitchId) ->
+    [begin
+         {_, SysQueues2} = lists:keyfind(port_queues, 1, SysQueues),
+         [begin
+              MinRate = case lists:keyfind(min_rate, 1, Props) of
+                            {min_rate, MinR} -> MinR;
+                            false -> undefined
+                        end,
+              MaxRate = case lists:keyfind(max_rate, 1, Props) of
+                            {max_rate, MaxR} -> MaxR;
+                            false -> undefined
+                        end,
+              {queue, {QueueId, PortId, SwitchId}, MinRate, MaxRate}
+          end
+          || {QueueId, Props} <- SysQueues2]
+     end
+     || {port, PortId, SysQueues} <- SysQPorts].
 
 read_and_update_startup() ->
     [Startup] = mnesia_read(startup),

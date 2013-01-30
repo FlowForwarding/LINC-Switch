@@ -246,8 +246,6 @@ delete_startup_switches([{switch, SwitchId, Opts} = Switch | Rest],
                         || {port, PortId, _} <- SysPorts]
                end,
     NewQueues = case lists:keyfind(queues_status, 1, Opts) of
-                    false ->
-                        [];
                     {queues_status, enabled} ->
                         case lists:keyfind(queues, 1, Opts) of
                             false ->
@@ -271,7 +269,9 @@ delete_startup_switches([{switch, SwitchId, Opts} = Switch | Rest],
                                                            port_queues,
                                                            1, SysQueues)]
                                  || {port, PortId, SysQueues} <- SysQPorts]
-                        end
+                        end;
+                    _ ->
+                        []
                 end,
     NewCtrls = [],
     NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,

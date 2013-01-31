@@ -215,7 +215,7 @@ convert_port_state(State) ->
 delete_startup() ->
     {ok, Sys} = application:get_env(linc, logical_switches),
     NewStartup = delete_startup_switches(Sys, #ofconfig{name = startup}),
-    mnesia_write(startup, NewStartup).
+    mnesia_write(startup, NewStartup#ofconfig{certificates = []}).
 
 delete_startup_switches([], NewStartup) ->
     NewStartup;
@@ -445,11 +445,10 @@ handle_call({get_config, _SessionId, Source, _Filter}, _From,
     EncodedConfig = of_config:encode(Config2),
     {reply, {ok, EncodedConfig}, State};
 handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
-            _From, State) when (OnError == 'stop-on-error' orelse
-                                OnError == 'continue-on-error') andalso
-                               (DefaultOp == merge orelse DefaultOp == replace
-                                orelse DefaultOp == none) andalso
-                               (Target == running orelse Target == startup) ->
+            _From, #state{certificates = Certs} = State)
+  when (OnError == 'stop-on-error' orelse OnError == 'continue-on-error') andalso
+       (DefaultOp == merge orelse DefaultOp == replace orelse DefaultOp == none)
+       andalso (Target == running orelse Target == startup) ->
     Config = of_config:decode(Xml),
     case check_capable_switch_id(Config#capable_switch.id) of
         true ->
@@ -458,13 +457,15 @@ handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
                             'continue-on-error' -> {continue, []}
                         end,
             case catch execute_operations(extract_operations(Config, DefaultOp),
-                                          MyOnError, Target) of
-                ok ->
-                    {reply, ok, State};
-                {error, Errors} when is_list(Errors) ->
-                    {reply, {error, hd(Errors)}, State};
-                {error, Error} ->
-                    {reply, {error, Error}, State}
+                                          MyOnError, Target, Certs) of
+                {ok, NewCerts} ->
+                    {reply, ok, State#state{certificates = NewCerts}};
+                {{error, Errors}, NewCerts} when is_list(Errors) ->
+                    {reply, {error, hd(Errors)},
+                     State#state{certificates = NewCerts}};
+                {{error, Error}, NewCerts} ->
+                    {reply, {error, Error},
+                     State#state{certificates = NewCerts}}
             end;
         false ->
             {reply, {error, data_missing}, State}
@@ -641,7 +642,16 @@ extract_operations(#capable_switch{resources = Resources,
                                            min_rate = MinRate,
                                            max_rate = MaxRate}} <- Resources]
         end,
-    P ++ Q ++ S ++ C.
+    Crt = case Resources of
+              undefined ->
+                  [];
+              _ ->
+                  [{DefOp, {certificate, CertId, CertBin}}
+                   || #certificate{type = external,
+                                   resource_id = CertId,
+                                   certificate = CertBin} <- Resources]
+          end,
+    P ++ Q ++ S ++ C ++ Crt.
     
 extract_id(String) ->
     case re:run(String, "^LogicalSwitch[0-9]+$") of
@@ -684,68 +694,68 @@ extract_queue_id(String) ->
             {invalid, invalid, invalid}
     end.
 
-execute_operations(Ops, OnError, startup) ->
+execute_operations(Ops, OnError, startup, Certs) ->
     [Startup] = mnesia_read(startup),
     {Result, NewStartup} = do_startup(Ops, OnError, Startup),
     mnesia_write(startup, NewStartup),
-    Result;
-execute_operations(Ops, OnError, running) ->
-    do_running(Ops, OnError).
+    {Result, Certs};
+execute_operations(Ops, OnError, running, Certs) ->
+    do_running(Ops, OnError, Certs).
 
-do_running([], stop) ->
-    ok;
-do_running([], {continue, []}) ->
-    ok;
-do_running([], {continue, Errors}) ->
-    {error, lists:reverse(Errors)};
-do_running([{_, {port, invalid, _, _}} | Rest], OnError) ->
-    handle_running_error(data_missing, OnError, Rest);
-do_running([{_, {queue, invalid, _, _}} | Rest], OnError) ->
-    handle_running_error(data_missing, OnError, Rest);
-do_running([{_, {switch, invalid, _}} | Rest], OnError) ->
-    handle_running_error(data_missing, OnError, Rest);
-do_running([{_, {controller, invalid, _, _, _}} | Rest], OnError) ->
-    handle_running_error(data_missing, OnError, Rest);
-do_running([{none, _} | Rest], OnError) ->
-    do_running(Rest, OnError);
+do_running([], stop, Certs) ->
+    {ok, Certs};
+do_running([], {continue, []}, Certs) ->
+    {ok, Certs};
+do_running([], {continue, Errors}, Certs) ->
+    {{error, lists:reverse(Errors)}, Certs};
+do_running([{_, {port, invalid, _, _}} | Rest], OnError, Certs) ->
+    handle_running_error(data_missing, OnError, Rest, Certs);
+do_running([{_, {queue, invalid, _, _}} | Rest], OnError, Certs) ->
+    handle_running_error(data_missing, OnError, Rest, Certs);
+do_running([{_, {switch, invalid, _}} | Rest], OnError, Certs) ->
+    handle_running_error(data_missing, OnError, Rest, Certs);
+do_running([{_, {controller, invalid, _, _, _}} | Rest], OnError, Certs) ->
+    handle_running_error(data_missing, OnError, Rest, Certs);
+do_running([{none, _} | Rest], OnError, Certs) ->
+    do_running(Rest, OnError, Certs);
 do_running([{Op, {port, {PortId, SwitchId},
-                  Config, Features}} | Rest], OnError) ->
+                  Config, Features}} | Rest], OnError, Certs) ->
     case Op of
         Op when Op == create orelse Op == delete ->
             handle_running_error({operation_not_supported, protocol},
-                                 OnError, Rest);
+                                 OnError, Rest, Certs);
         remove ->
-            do_running(Rest, OnError);
+            do_running(Rest, OnError, Certs);
         _ ->
             ling_logic:set_port_config(port, SwitchId, PortId, Config),
             ling_logic:set_port_features(port, SwitchId, PortId, Features)
     end;
 do_running([{Op, {queue, {QueueId, PortId, SwitchId},
-                  MinRate, MaxRate}} | Rest], OnError) ->
+                  MinRate, MaxRate}} | Rest], OnError, Certs) ->
     case Op of
         Op when Op == create orelse Op == delete ->
             handle_running_error({operation_not_supported, protocol},
-                                 OnError, Rest);
+                                 OnError, Rest, Certs);
         remove ->
-            do_running(Rest, OnError);
+            do_running(Rest, OnError, Certs);
         _ ->
             linc_logic:set_queue_min_rate(SwitchId, PortId, QueueId, MinRate),
             linc_logic:set_queue_max_rate(SwitchId, PortId, QueueId, MaxRate),
-            do_running(Rest, OnError)
+            do_running(Rest, OnError, Certs)
     end;
-do_running([{Op, {switch, SwitchId, DatapathId}} | Rest], OnError) ->
+do_running([{Op, {switch, SwitchId, DatapathId}} | Rest], OnError, Certs) ->
     case Op of
         Op when Op == create orelse Op == delete ->
             handle_running_error({operation_not_supported, protocol},
-                                 OnError, Rest);
+                                 OnError, Rest, Certs);
         remove ->
-            do_running(Rest, OnError);
+            do_running(Rest, OnError, Certs);
         _ ->
             linc_logic:set_datapath_id(SwitchId, DatapathId),
-            do_running(Rest, OnError)
+            do_running(Rest, OnError, Certs)
     end;
 do_running([{Op, {controller, {ControllerId, SwitchId},
-                  Host, Port, _}} | Rest], OnError) ->
+                  Host, Port, _}} | Rest], OnError, Certs) ->
     Host2 = case Host of
                 undefined -> "localhost";
                 _ -> Host
@@ -758,27 +768,27 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         create ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, _} ->
-                    handle_running_error(data_exists, OnError, Rest);
+                    handle_running_error(data_exists, OnError, Rest, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,
                                                Host2, Port2),
-                    do_running(Rest, OnError)
+                    do_running(Rest, OnError, Certs)
             end;
         delete ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
                     ofp_client:stop(Pid),
-                    do_running(Rest, OnError);
+                    do_running(Rest, OnError, Certs);
                 false ->
-                    handle_running_error(data_missing, OnError, Rest)
+                    handle_running_error(data_missing, OnError, Rest, Certs)
             end;
         remove ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
                     ofp_client:stop(Pid),
-                    do_running(Rest, OnError);
+                    do_running(Rest, OnError, Certs);
                 false ->
-                    do_running(Rest, OnError)
+                    do_running(Rest, OnError, Certs)
             end;
         Op when Op == merge orelse Op == replace ->
             case is_valid_controller(SwitchId, ControllerId) of
@@ -786,11 +796,46 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                     ofp_client:stop(Pid),
                     linc_logic:open_controller(SwitchId, ControllerId,
                                                Host2, Port2),
-                    do_running(Rest, OnError);
+                    do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,
                                                Host2, Port2),
-                    do_running(Rest, OnError)
+                    do_running(Rest, OnError, Certs)
+            end
+    end;
+do_running([{Op, {certificate, CertId, CertBin}} | Rest], OnError, Certs) ->
+    case Op of
+        create ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_running(Rest, OnError, [{CertId, CertBin} | Certs]);
+                _ ->
+                    handle_running_error(data_exists, OnError, Rest, Certs)
+            end;
+        delete ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    handle_running_error(data_missing, OnError, Rest, Certs);
+                _ ->
+                    do_running(Rest, OnError,
+                               lists:delete({CertId, CertBin}, Certs))
+            end;
+        remove ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_running(Rest, OnError, Certs);
+                _ ->
+                    do_running(Rest, OnError,
+                               lists:delete({CertId, CertBin}, Certs))
+            end;
+        Op when Op == merge orelse Op == replace ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_running(Rest, OnError, [{CertId, CertBin} | Certs]);
+                _ ->
+                    do_running(Rest, OnError,
+                               lists:keyreplace(CertId, 1, Certs,
+                                                {CertId, CertBin}))
             end
     end.
 
@@ -803,12 +848,12 @@ is_valid_controller(SwitchId, ControllerId) ->
             {true, Pid}
     end.
 
-handle_running_error(Error, OnError, Rest) ->
+handle_running_error(Error, OnError, Rest, Certs) ->
     case OnError of
         stop ->
-            {error, [Error]};
+            {{error, [Error]}, Certs};
         {continue, Errors} ->
-            do_running(Rest, {continue, [Error | Errors]})
+            do_running(Rest, {continue, [Error | Errors]}, Certs)
     end.
 
 do_startup([], stop, Startup) ->
@@ -901,6 +946,49 @@ do_startup([{Op, {controller, CtrlId, _, _, _} = Ctrl} | Rest], OnError,
                     NewCtrls = lists:keyreplace(CtrlId, 2, Ctrls, Ctrl),
                     do_startup(Rest, OnError,
                                Startup#ofconfig{controllers = NewCtrls})
+            end
+    end;
+do_startup([{Op, {certificate, CertId, CertBin}} | Rest], OnError,
+           #ofconfig{certificates = Certs} = Startup) ->
+    case Op of
+        create ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_startup(Rest, OnError,
+                               Startup#ofconfig{
+                                 certificates = [{CertId, CertBin} | Certs]});
+                _ ->
+                    handle_startup_error(data_exists, OnError, Rest, Startup)
+            end;
+        delete ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    handle_startup_error(data_missing, OnError, Rest, Startup);
+                _ ->
+                    NewCerts = lists:keyremove(CertId, 1, Certs),
+                    do_startup(Rest, OnError,
+                               Startup#ofconfig{certificates = NewCerts})
+            end;
+        remove ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_startup(Rest, OnError, Startup);
+                _ ->
+                    NewCerts = lists:keyremove(CertId, 1, Certs),
+                    do_startup(Rest, OnError,
+                               Startup#ofconfig{certificates = NewCerts})
+            end;
+        Op when Op == merge orelse Op == replace ->
+            case lists:keyfind(CertId, 1, Certs) of
+                false ->
+                    do_startup(Rest, OnError,
+                               Startup#ofconfig{
+                                 certificates = [{CertId, CertBin} | Certs]});
+                _ ->
+                    NewCerts = lists:keyreplace(CertId, 1, Certs, {CertId,
+                                                                   CertBin}),
+                    do_startup(Rest, OnError,
+                               Startup#ofconfig{certificates = NewCerts})
             end
     end.
 

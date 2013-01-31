@@ -22,13 +22,8 @@
 -behaviour(gen_netconf).
 -behaviour(gen_server).
 
--compile(export_all).
-
 %% Internal API
 -export([start_link/0,
-         get_state/0,
-         get_state/1,
-         get_config/1,
          flow_table_name/3,
          convert_port_config/1,
          convert_port_features/4,
@@ -98,10 +93,13 @@
           ports = [] :: [ofc_port()],
           queues = [] :: [ofc_queue()],
           switches = [] :: [ofc_switch()],
-          controllers = [] :: [ofc_controller()]
+          controllers = [] :: [ofc_controller()],
+          certificates = [] :: [{Id :: string(), Certificate :: binary()}]
          }).
 
--record(state, {}).
+-record(state, {
+          certificates = [] :: [{Id :: string(), Certificate :: binary()}]
+         }).
 
 %%------------------------------------------------------------------------------
 %% Internal API functions
@@ -111,15 +109,17 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec get_state() -> #capable_switch{}.
-get_state() ->
+-spec get_state(list()) -> #capable_switch{}.
+get_state(Certs) ->
     {ok, Switches} = application:get_env(linc, logical_switches),
-    Config = merge([get_state(Id) || {switch, Id, _} <- Switches]),
+    Config = merge([get_switch_state(Id) || {switch, Id, _} <- Switches]),
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
-    Config#capable_switch{id = CapSwitchId}.
+    Config#capable_switch{id = CapSwitchId,
+                          resources = Config#capable_switch.resources ++
+                              convert_certificates(Certs)}.
 
--spec get_state(integer()) -> tuple(list(resource()), #logical_switch{}).
-get_state(SwitchId) ->
+-spec get_switch_state(integer()) -> tuple(list(resource()), #logical_switch{}).
+get_switch_state(SwitchId) ->
     LogicalSwitchId = "LogicalSwitch" ++ integer_to_list(SwitchId),
     Ports = linc_logic:get_backend_ports(SwitchId),
     Queues = linc_logic:get_backend_queues(SwitchId),
@@ -136,7 +136,8 @@ get_state(SwitchId) ->
                        enabled = true,
                        check_controller_certificate = false,
                        lost_connection_behavior = failSecureMode,
-                       capabilities = linc_logic:get_backend_capabilities(SwitchId),
+                       capabilities =
+                           linc_logic:get_backend_capabilities(SwitchId),
                        controllers = get_controllers(SwitchId),
                        resources = Refs
                       },
@@ -431,13 +432,17 @@ init([]) ->
               {disc_copies, [node()]}],
     mnesia:create_table(?STARTUP, TabDef),
     mnesia:wait_for_tables([?STARTUP], 5000),
-    init_startup(),
-    {ok, #state{}}.
+    Certificates = init_startup(),
+    {ok, #state{certificates = Certificates}}.
 
-handle_call({get_config, _SessionId, Source, _Filter}, _From, State)
+handle_call({get_config, _SessionId, Source, _Filter}, _From,
+            #state{certificates = Certs} = State)
   when Source == running orelse Source == startup ->
     Config = get_capable_switch_config(Source),
-    EncodedConfig = of_config:encode(Config),
+    Config2 = Config#capable_switch{resources =
+                                        Config#capable_switch.resources ++
+                                        convert_certificates(Certs)},
+    EncodedConfig = of_config:encode(Config2),
     {reply, {ok, EncodedConfig}, State};
 handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
             _From, State) when (OnError == 'stop-on-error' orelse
@@ -464,16 +469,19 @@ handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
         false ->
             {reply, {error, data_missing}, State}
     end;
-handle_call({copy_config, _SessionId, running, startup}, _From, State) ->
+handle_call({copy_config, _SessionId, running, startup}, _From,
+            #state{certificates = Certs} = State) ->
     {ok, Switches} = application:get_env(linc, logical_switches),
     Config = merge_ofc([get_config(Id) || {switch, Id, _} <- Switches]),
-    mnesia_write(startup, Config#ofconfig{name = startup}),
+    mnesia_write(startup, Config#ofconfig{name = startup,
+                                          certificates = Certs}),
     {reply, ok, State};
 handle_call({delete_config, _SessionId, startup}, _From, State) ->
     delete_startup(),
     {reply, ok, State};
-handle_call({get, _SessionId, _Filter}, _From, State) ->
-    ConfigAndState = get_state(),
+handle_call({get, _SessionId, _Filter}, _From,
+            #state{certificates = Certs} = State) ->
+    ConfigAndState = get_state(Certs),
     EncodedConfigAndState = of_config:encode(ConfigAndState),
     {reply, {ok, EncodedConfigAndState}, State};
 handle_call(_, _, State) ->
@@ -507,9 +515,10 @@ init_startup() ->
     case mnesia_read(startup) of
         [] ->
             InitialConfig = #ofconfig{name = startup},
-            mnesia_write(startup, InitialConfig);
-        _Else ->
-            ok
+            mnesia_write(startup, InitialConfig),
+            [];
+        [#ofconfig{certificates = Certs}] ->
+            Certs
     end.
 
 %% @doc Merge configuration from logical switches.
@@ -1056,3 +1065,11 @@ features(Features) ->
               auto_negotiate = AutoNegotiate,
               medium = Medium,
               pause = Pause}.
+
+convert_certificates(Certs) ->
+    lists:map(fun({Id, Bin}) ->
+                      #certificate{resource_id = Id,
+                                   type = external,
+                                   certificate = Bin,
+                                   private_key = undefined}
+              end, Certs).

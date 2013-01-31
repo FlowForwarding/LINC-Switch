@@ -37,7 +37,7 @@
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,
-         handle_edit_config/3,
+         handle_edit_config/5,
          handle_copy_config/3,
          handle_delete_config/2,
          handle_lock/2,
@@ -399,9 +399,10 @@ handle_get_config(SessionId, Source, Filter) ->
     gen_server:call(?MODULE,
                     {get_config, SessionId, Source, Filter}, infinity).
 
-handle_edit_config(SessionId, Target, Config) ->
+handle_edit_config(SessionId, Target, Config, DefaultOp, OnError) ->
     gen_server:call(?MODULE,
-                    {edit_config, SessionId, Target, Config}, infinity).
+                    {edit_config, SessionId, Target,
+                     Config, DefaultOp, OnError}, infinity).
 
 handle_copy_config(SessionId, Source, Target) ->
     gen_server:call(?MODULE,
@@ -438,12 +439,21 @@ handle_call({get_config, _SessionId, Source, _Filter}, _From, State)
     Config = get_capable_switch_config(Source),
     EncodedConfig = of_config:encode(Config),
     {reply, {ok, EncodedConfig}, State};
-handle_call({edit_config, _SessionId, startup, {xml, Xml}}, _From, State) ->
+handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
+            _From, State) when (OnError == 'stop-on-error' orelse
+                                OnError == 'continue-on-error') andalso
+                               (DefaultOp == merge orelse DefaultOp == replace
+                                orelse DefaultOp == none) andalso
+                               (Target == running orelse Target == startup) ->
     Config = of_config:decode(Xml),
     case check_capable_switch_id(Config#capable_switch.id) of
         true ->
-            case catch execute_operations(extract_operations(Config, merge),
-                                          stop, startup) of
+            MyOnError = case OnError of
+                            'stop-on-error' -> stop;
+                            'continue-on-error' -> {continue, []}
+                        end,
+            case catch execute_operations(extract_operations(Config, DefaultOp),
+                                          MyOnError, Target) of
                 ok ->
                     {reply, ok, State};
                 {error, Errors} when is_list(Errors) ->
@@ -667,13 +677,131 @@ extract_queue_id(String) ->
 
 execute_operations(Ops, OnError, startup) ->
     [Startup] = mnesia_read(startup),
-    {Result, NewStartup} = do_startup(Ops, case OnError of
-                                               stop -> stop;
-                                               continue -> {continue, []}
-                                           end, Startup),
+    {Result, NewStartup} = do_startup(Ops, OnError, Startup),
     mnesia_write(startup, NewStartup),
-    Result.
-    
+    Result;
+execute_operations(Ops, OnError, running) ->
+    do_running(Ops, OnError).
+
+do_running([], stop) ->
+    ok;
+do_running([], {continue, []}) ->
+    ok;
+do_running([], {continue, Errors}) ->
+    {error, lists:reverse(Errors)};
+do_running([{_, {port, invalid, _, _}} | Rest], OnError) ->
+    handle_running_error(data_missing, OnError, Rest);
+do_running([{_, {queue, invalid, _, _}} | Rest], OnError) ->
+    handle_running_error(data_missing, OnError, Rest);
+do_running([{_, {switch, invalid, _}} | Rest], OnError) ->
+    handle_running_error(data_missing, OnError, Rest);
+do_running([{_, {controller, invalid, _, _, _}} | Rest], OnError) ->
+    handle_running_error(data_missing, OnError, Rest);
+do_running([{none, _} | Rest], OnError) ->
+    do_running(Rest, OnError);
+do_running([{Op, {port, {PortId, SwitchId},
+                  Config, Features}} | Rest], OnError) ->
+    case Op of
+        Op when Op == create orelse Op == delete ->
+            handle_running_error({operation_not_supported, protocol},
+                                 OnError, Rest);
+        remove ->
+            do_running(Rest, OnError);
+        _ ->
+            ling_logic:set_port_config(port, SwitchId, PortId, Config),
+            ling_logic:set_port_features(port, SwitchId, PortId, Features)
+    end;
+do_running([{Op, {queue, {QueueId, PortId, SwitchId},
+                  MinRate, MaxRate}} | Rest], OnError) ->
+    case Op of
+        Op when Op == create orelse Op == delete ->
+            handle_running_error({operation_not_supported, protocol},
+                                 OnError, Rest);
+        remove ->
+            do_running(Rest, OnError);
+        _ ->
+            linc_logic:set_queue_min_rate(SwitchId, PortId, QueueId, MinRate),
+            linc_logic:set_queue_max_rate(SwitchId, PortId, QueueId, MaxRate),
+            do_running(Rest, OnError)
+    end;
+do_running([{Op, {switch, SwitchId, DatapathId}} | Rest], OnError) ->
+    case Op of
+        Op when Op == create orelse Op == delete ->
+            handle_running_error({operation_not_supported, protocol},
+                                 OnError, Rest);
+        remove ->
+            do_running(Rest, OnError);
+        _ ->
+            linc_logic:set_datapath_id(SwitchId, DatapathId),
+            do_running(Rest, OnError)
+    end;
+do_running([{Op, {controller, {ControllerId, SwitchId},
+                  Host, Port, _}} | Rest], OnError) ->
+    Host2 = case Host of
+                undefined -> "localhost";
+                _ -> Host
+            end,
+    Port2 = case Port of
+                undefined -> 6633;
+                _ -> Port
+            end,
+    case Op of
+        create ->
+            case is_valid_controller(SwitchId, ControllerId) of
+                {true, _} ->
+                    handle_running_error(data_exists, OnError, Rest);
+                false ->
+                    linc_logic:open_controller(SwitchId, ControllerId,
+                                               Host2, Port2),
+                    do_running(Rest, OnError)
+            end;
+        delete ->
+            case is_valid_controller(SwitchId, ControllerId) of
+                {true, Pid} ->
+                    ofp_client:stop(Pid),
+                    do_running(Rest, OnError);
+                false ->
+                    handle_running_error(data_missing, OnError, Rest)
+            end;
+        remove ->
+            case is_valid_controller(SwitchId, ControllerId) of
+                {true, Pid} ->
+                    ofp_client:stop(Pid),
+                    do_running(Rest, OnError);
+                false ->
+                    do_running(Rest, OnError)
+            end;
+        Op when Op == merge orelse Op == replace ->
+            case is_valid_controller(SwitchId, ControllerId) of
+                {true, Pid} ->
+                    ofp_client:stop(Pid),
+                    linc_logic:open_controller(SwitchId, ControllerId,
+                                               Host2, Port2),
+                    do_running(Rest, OnError);
+                false ->
+                    linc_logic:open_controller(SwitchId, ControllerId,
+                                               Host2, Port2),
+                    do_running(Rest, OnError)
+            end
+    end.
+
+is_valid_controller(SwitchId, ControllerId) ->
+    Ids = ofp_client:get_resource_ids(SwitchId),
+    case lists:keyfind(ControllerId, 2, Ids) of
+        false ->
+            false;
+        {Pid, _} ->
+            {true, Pid}
+    end.
+
+handle_running_error(Error, OnError, Rest) ->
+    case OnError of
+        stop ->
+            {error, [Error]};
+        {continue, Errors} ->
+            do_running(Rest, {continue, [Error | Errors]})
+    end.
+
 do_startup([], stop, Startup) ->
     {ok, Startup};
 do_startup([], {continue, []}, Startup) ->
@@ -694,7 +822,8 @@ do_startup([{Op, {port, PortId, _, _} = Port} | Rest], OnError,
            #ofconfig{ports = Ports} = Startup) ->
     case Op of
         Op when Op == create orelse Op == delete ->
-            handle_startup_error(unsupported_operation, OnError, Rest, Startup);
+            handle_startup_error({unsupported_operation, protocol},
+                                 OnError, Rest, Startup);
         remove ->
             do_startup(Rest, OnError, Startup);
         Op when Op == merge orelse Op == replace ->
@@ -705,7 +834,8 @@ do_startup([{Op, {queue, QueueId, _, _} = Queue} | Rest], OnError,
            #ofconfig{queues = Queues} = Startup) ->
     case Op of
         Op when Op == create orelse Op == delete ->
-            handle_startup_error(unsupported_operation, OnError, Rest, Startup);
+            handle_startup_error({unsupported_operation, protocol},
+                                 OnError, Rest, Startup);
         remove ->
             do_startup(Rest, OnError, Startup);
         Op when Op == merge orelse Op == replace ->
@@ -716,7 +846,8 @@ do_startup([{Op, {switch, SwitchId, _} = Switch} | Rest], OnError,
            #ofconfig{switches = Switches} = Startup) ->
     case Op of
         Op when Op == create orelse Op == delete ->
-            handle_startup_error(unsupported_operation, OnError, Rest, Startup);
+            handle_startup_error({unsupported_operation, protocol},
+                                 OnError, Rest, Startup);
         remove ->
             do_startup(Rest, OnError, Startup);
         Op when Op == merge orelse Op == replace ->

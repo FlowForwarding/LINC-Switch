@@ -40,7 +40,9 @@
          get_queue_min_rate/3,
          set_queue_min_rate/4,
          get_queue_max_rate/3,
-         set_queue_max_rate/4
+         set_queue_max_rate/4,
+         %% Controllers
+         open_controller/4
         ]).
 
 %% Internal API
@@ -65,7 +67,8 @@
           backend_state :: term(),
           switch_id :: integer(),
           datapath_id :: string(),
-          config :: term()
+          config :: term(),
+          version :: integer()
          }).
 
 %%------------------------------------------------------------------------------
@@ -130,7 +133,7 @@ get_queue_min_rate(SwitchId, PortNo, QueueId) ->
 
 -spec set_queue_min_rate(integer(), integer(), integer(), integer()) -> ok.
 set_queue_min_rate(SwitchId, PortNo, QueueId, Rate) ->
-    gen_server:call(linc:lookup(SwitchId, linc_logic), {set_queue_min_rate,
+    gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_queue_min_rate,
                                                         PortNo, QueueId, Rate}).
 
 -spec get_queue_max_rate(integer(), integer(), integer()) -> integer().
@@ -140,8 +143,12 @@ get_queue_max_rate(SwitchId, PortNo, QueueId) ->
 
 -spec set_queue_max_rate(integer(), integer(), integer(), integer()) -> ok.
 set_queue_max_rate(SwitchId, PortNo, QueueId, Rate) ->
-    gen_server:call(linc:lookup(SwitchId, linc_logic), {set_queue_max_rate,
+    gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_queue_max_rate,
                                                         PortNo, QueueId, Rate}).
+
+open_controller(SwitchId, Id, Host, Port) ->
+    gen_server:cast(linc:lookup(SwitchId, linc_logic), {open_controller, Id,
+                                                        Host, Port}).
 
 %% @doc Start the OF Switch logic.
 -spec start_link(integer(), atom(), term(), term()) -> {ok, pid()} |
@@ -252,6 +259,12 @@ handle_cast({set_queue_max_rate, PortNo, QueueId, Rate},
                    switch_id = SwitchId} = State) ->
     OFConfigBackendMod:set_queue_max_rate(SwitchId, PortNo, QueueId, Rate),
     {noreply, State};
+handle_cast({open_controller, ControllerId, Host, Port},
+            #state{version = Version,
+                   switch_id = SwitchId}) ->
+    Channel = linc:lookup(SwitchId, channel_sup),
+    Opts = [{controlling_process, self()}, {version, Version}],
+    ofp_channel:open(Channel, ControllerId, Host, Port, Opts);
 handle_cast(_Message, State) ->
     {noreply, State}.
 
@@ -283,7 +296,8 @@ handle_info(timeout, #state{backend_mod = BackendMod,
              end || Ctrl <- Controllers],
     [ofp_channel:open(ChannelSupPid, Id, Host, Port, Opt)
      || {Id, Host, Port, Opt} <- Ctrls],
-    {noreply, State#state{backend_state = BackendState2,
+    {noreply, State#state{version = Version,
+                          backend_state = BackendState2,
                           datapath_id = DatapathId}};
 
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},

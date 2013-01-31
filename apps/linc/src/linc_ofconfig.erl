@@ -601,17 +601,21 @@ extract_operations(#capable_switch{resources = Resources,
              _ ->
                  [begin
                       SwitchId = extract_id(SwitchIdStr),
-                      {{DefOp, {switch, SwitchId, Datapath}},
+                      {case Datapath of
+                           undefined ->
+                               {none, {switch, SwitchId, undefined}};
+                           _ ->
+                               {DefOp, {switch, SwitchId, Datapath}}
+                       end,
                        case Controllers of
                            undefined ->
                                [];
                            _ ->
                                [{DefOp, {controller, {Id, SwitchId},
-                                         IP, Port, Proto}}
+                                         IP, Port, tcp}}
                                 || #controller{id = Id,
                                                ip_address = IP,
-                                               port = Port,
-                                               protocol = Proto} <- Controllers]
+                                               port = Port} <- Controllers]
                        end}
                   end || #logical_switch{
                             id = SwitchIdStr,

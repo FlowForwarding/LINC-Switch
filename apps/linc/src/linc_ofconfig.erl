@@ -207,7 +207,7 @@ convert_port_features(Current, Advertised, Supported, Peer) ->
 convert_port_state(State) ->
     OperState = is_present(link_down, State, down, up),
     Blocked = is_present(blocked, State, true, false),
-    Live = linc_ofconfig:is_present(live, State, true, false),
+    Live = is_present(live, State, true, false),
     #port_state{oper_state = OperState,
                 blocked = Blocked,
                 live = Live}.

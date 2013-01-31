@@ -244,7 +244,7 @@ delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                         []
                 end,
     NewCtrls = [],
-    NewSwitch = {switch, SwitchId, linc_logic:get_datapath_id(SwitchId)},
+    NewSwitch = {switch, SwitchId, linc_logic:gen_datapath_id(SwitchId)},
     NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,
                                   queues = Queues ++ lists:flatten(NewQueues),
                                   switches = [NewSwitch | Switches],
@@ -314,7 +314,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
-                     false -> linc_logic:get_datapath_id(SwitchId)
+                     false -> linc_logic:gen_datapath_id(SwitchId)
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,

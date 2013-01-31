@@ -225,8 +225,13 @@ handle_cast({send_to_controllers, Message},
                    switch_id = SwitchId} = State) ->
     ofp_channel:send(SwitchId, Message#ofp_message{xid = Xid}),
     {noreply, State#state{xid = Xid + 1}};
-handle_cast({set_datapath_id, DatapathId}, State) ->
-    {noreply, State#state{datapath_id = DatapathId}};
+handle_cast({set_datapath_id, DatapathId},
+            #state{backend_mod = Backend,
+                   backend_state = BackendState} = State) ->
+    BackendState2 = Backend:set_datapath_mac(BackendState,
+                                             extract_mac(DatapathId)),
+    {noreply, State#state{backend_state = BackendState2,
+                          datapath_id = DatapathId}};
 handle_cast({set_port_config, PortNo, PortConfig},
             #state{ofconfig_backend_mod = OFConfigBackendMod,
                    switch_id = SwitchId} = State) ->
@@ -262,9 +267,12 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     linc:register(SwitchId, channel_sup, ChannelSupPid),
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
+    DatapathId = gen_datapath_id(SwitchId),
     BackendOpts = lists:keystore(switch_id, 1, BackendState,
                                  {switch_id, SwitchId}),
-    {ok, Version, BackendState2} = BackendMod:start(BackendOpts),
+    BackendOpts2 = lists:keystore(datapath_mac, 1, BackendOpts,
+                                  {datapath_mac, extract_mac(DatapathId)}),
+    {ok, Version, BackendState2} = BackendMod:start(BackendOpts2),
     Controllers = linc:controllers_for_switch(SwitchId, Config),
     Opts = [{controlling_process, self()}, {version, Version}],
     Ctrls = [case Ctrl of
@@ -275,7 +283,6 @@ handle_info(timeout, #state{backend_mod = BackendMod,
              end || Ctrl <- Controllers],
     [ofp_channel:open(ChannelSupPid, Id, Host, Port, Opt)
      || {Id, Host, Port, Opt} <- Ctrls],
-    DatapathId = gen_datapath_id(SwitchId),
     {noreply, State#state{backend_state = BackendState2,
                           datapath_id = DatapathId}};
 
@@ -314,13 +321,40 @@ code_change(_OldVersion, State, _Extra) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
+get_datapath_mac() ->
+    {ok, Ifs} = inet:getifaddrs(),
+    MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
+             || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
+    %% Make sure MAC /= 0
+    [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
+    to_hex(list_to_binary(MAC), []).
+
+to_hex(<<>>, Hex) ->
+    lists:flatten(lists:reverse(Hex));
+to_hex(<<B1:4, B2:4, Binary/binary>>, Hex) ->
+    I1 = integer_to_list(B1, 16),
+    I2 = integer_to_list(B2, 16),
+    to_hex(Binary, [":", I2, I1 | Hex]).
+
 gen_datapath_id(SwitchId) when SwitchId < 10 ->
-    "AA:BB:CC:DD:EE:FF:00:0" ++ integer_to_list(SwitchId);
+    get_datapath_mac() ++ "00:0" ++ integer_to_list(SwitchId);
 gen_datapath_id(SwitchId) when SwitchId < 100 ->
-    "AA:BB:CC:DD:EE:FF:00:" ++ integer_to_list(SwitchId);
+    get_datapath_mac() ++ "00:" ++ integer_to_list(SwitchId);
 gen_datapath_id(SwitchId) when SwitchId < 1000 ->
-    "AA:BB:CC:DD:EE:FF:0" ++ integer_to_list(SwitchId div 100) ++
+    get_datapath_mac() ++ "0" ++ integer_to_list(SwitchId div 100) ++
         ":" ++ integer_to_list(SwitchId rem 100);
 gen_datapath_id(SwitchId) when SwitchId < 10000 ->
-    "AA:BB:CC:DD:EE:FF:" ++ integer_to_list(SwitchId div 100) ++
+    get_datapath_mac() ++ integer_to_list(SwitchId div 100) ++
         ":" ++ integer_to_list(SwitchId rem 100).
+
+extract_mac(DatapathId) ->
+    Str = re:replace(string:substr(DatapathId, 1, 17), ":", "",
+                     [global, {return, list}]),
+    extract_mac(Str, <<>>).
+
+extract_mac([], Mac) ->
+    Mac;
+extract_mac([N1, N2 | Rest], Mac) ->
+    B1 = list_to_integer([N1], 16),
+    B2 = list_to_integer([N2], 16),
+    extract_mac(Rest, <<Mac/binary, B1:4, B2:4>>).

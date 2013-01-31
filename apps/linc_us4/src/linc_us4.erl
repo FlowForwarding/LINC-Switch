@@ -54,6 +54,8 @@
          ofp_meter_config_request/2,
          ofp_meter_features_request/2]).
 
+-export([set_datapath_mac/2]).
+
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
@@ -62,7 +64,8 @@
 -record(state, {
           flow_state,
           buffer_state,
-          switch_id :: integer()
+          switch_id :: integer(),
+          datapath_mac :: binary()
          }).
 -type state() :: #state{}.
 
@@ -74,6 +77,7 @@
 -spec start(any()) -> {ok, Version :: 4, state()}.
 start(BackendOpts) ->
     {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
+    {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
     BufferState = linc_buffer:initialize(SwitchId),
     {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
     linc_us4_groups:initialize(SwitchId),
@@ -81,7 +85,8 @@ start(BackendOpts) ->
     linc_us4_port:initialize(SwitchId),
     {ok, 4, #state{flow_state = FlowState,
                    buffer_state = BufferState,
-                   switch_id = SwitchId}}.
+                   switch_id = SwitchId,
+                   datapath_mac = DatapathMac}}.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
@@ -105,9 +110,11 @@ handle_message(MessageBody, State) ->
 %%% Handling of messages
 %%%-----------------------------------------------------------------------------
 
-ofp_features_request(State, #ofp_features_request{}) ->
-    FeaturesReply = #ofp_features_reply{datapath_mac = get_datapath_mac(),
-                                        datapath_id = 0,
+ofp_features_request(#state{switch_id = SwitchId,
+                            datapath_mac = DatapathMac} = State,
+                     #ofp_features_request{}) ->
+    FeaturesReply = #ofp_features_reply{datapath_mac = DatapathMac,
+                                        datapath_id = SwitchId,
                                         n_buffers = 0,
                                         n_tables = 255,
                                         auxiliary_id = 0,
@@ -352,14 +359,9 @@ ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
+set_datapath_mac(State, NewMac) ->
+    State#state{datapath_mac = NewMac}.
+
 get_env(Env) ->
     {ok, Value} = application:get_env(linc, Env),
     Value.
-
-get_datapath_mac() ->
-    {ok, Ifs} = inet:getifaddrs(),
-    MACs =  [element(2, lists:keyfind(hwaddr, 1, Ps))
-             || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
-    %% Make sure MAC /= 0
-    [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
-    list_to_binary(MAC).

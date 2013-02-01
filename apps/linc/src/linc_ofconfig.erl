@@ -796,7 +796,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         delete ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:stop(Pid),
+                    catch ofp_client:stop(Pid),
                     do_running(Rest, OnError, Certs);
                 false ->
                     handle_running_error(data_missing, OnError, Rest, Certs)
@@ -804,7 +804,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         remove ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:stop(Pid),
+                    catch ofp_client:stop(Pid),
                     do_running(Rest, OnError, Certs);
                 false ->
                     do_running(Rest, OnError, Certs)

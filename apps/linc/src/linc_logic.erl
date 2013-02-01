@@ -261,10 +261,11 @@ handle_cast({set_queue_max_rate, PortNo, QueueId, Rate},
     {noreply, State};
 handle_cast({open_controller, ControllerId, Host, Port},
             #state{version = Version,
-                   switch_id = SwitchId}) ->
+                   switch_id = SwitchId} = State) ->
     Channel = linc:lookup(SwitchId, channel_sup),
     Opts = [{controlling_process, self()}, {version, Version}],
-    ofp_channel:open(Channel, ControllerId, Host, Port, Opts);
+    ofp_channel:open(Channel, ControllerId, Host, Port, Opts),
+    {noreply, State};
 handle_cast(_Message, State) ->
     {noreply, State}.
 

@@ -593,6 +593,11 @@ convert_before_merge(#ofconfig{ports = Ports,
                               CSwitchId == SwitchId]}
       || {switch, SwitchId, DatapathId} <- Switches]}.
 
+op(Default, undefined) ->
+    Default;
+op(_, New) ->
+    New.
+
 extract_operations(#capable_switch{resources = Resources,
                                    logical_switches = Switches}, DefOp) ->
     SC = case Switches of
@@ -611,9 +616,10 @@ extract_operations(#capable_switch{resources = Resources,
                            undefined ->
                                [];
                            _ ->
-                               [{DefOp, {controller, {Id, SwitchId},
-                                         IP, Port, tcp}}
-                                || #controller{id = Id,
+                               [{op(DefOp, Op),
+                                 {controller, {Id, SwitchId}, IP, Port, tcp}}
+                                || #controller{operation = Op,
+                                               id = Id,
                                                ip_address = IP,
                                                port = Port} <- Controllers]
                        end}
@@ -628,9 +634,10 @@ extract_operations(#capable_switch{resources = Resources,
             undefined ->
                 [];
             _ ->
-                [{DefOp, {port, extract_port_id(ResourceIdStr),
-                          Config, Features}}
-                 || #port{resource_id = ResourceIdStr,
+                [{op(DefOp, Op),
+                  {port, extract_port_id(ResourceIdStr), Config, Features}}
+                 || #port{operation = Op,
+                          resource_id = ResourceIdStr,
                           configuration = Config,
                           features = #port_features{
                                         advertised = Features}} <- Resources]
@@ -639,9 +646,10 @@ extract_operations(#capable_switch{resources = Resources,
             undefined ->
                 [];
             _ ->
-                [{DefOp, {queue, extract_queue_id(ResourceIdStr),
-                          MinRate, MaxRate}}
-                 || #queue{resource_id = ResourceIdStr,
+                [{op(DefOp, Op),
+                  {queue, extract_queue_id(ResourceIdStr), MinRate, MaxRate}}
+                 || #queue{operation = Op,
+                           resource_id = ResourceIdStr,
                            properties = #queue_properties{
                                            min_rate = MinRate,
                                            max_rate = MaxRate}} <- Resources]
@@ -650,8 +658,10 @@ extract_operations(#capable_switch{resources = Resources,
               undefined ->
                   [];
               _ ->
-                  [{DefOp, {certificate, CertId, CertBin}}
-                   || #certificate{type = external,
+                  [{op(DefOp, Op),
+                    {certificate, CertId, CertBin}}
+                   || #certificate{operation = Op,
+                                   type = external,
                                    resource_id = CertId,
                                    certificate = CertBin} <- Resources]
           end,

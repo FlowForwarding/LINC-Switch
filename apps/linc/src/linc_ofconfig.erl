@@ -450,7 +450,7 @@ handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
        (DefaultOp == merge orelse DefaultOp == replace orelse DefaultOp == none)
        andalso (Target == running orelse Target == startup) ->
     case of_config:decode(Xml) of
-        {error, Reason} ->
+        {error, _Reason} ->
             {reply, {error, malformed_message}, State};
         Config ->
             case check_capable_switch_id(Config#capable_switch.id) of
@@ -812,9 +812,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         Op when Op == merge orelse Op == replace ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:stop(Pid),
-                    linc_logic:open_controller(SwitchId, ControllerId,
-                                               Host2, Port2),
+                    ofp_client:replace_connection(Pid, Host2, Port2),
                     do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,

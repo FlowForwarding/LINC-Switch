@@ -449,26 +449,31 @@ handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
   when (OnError == 'stop-on-error' orelse OnError == 'continue-on-error') andalso
        (DefaultOp == merge orelse DefaultOp == replace orelse DefaultOp == none)
        andalso (Target == running orelse Target == startup) ->
-    Config = of_config:decode(Xml),
-    case check_capable_switch_id(Config#capable_switch.id) of
-        true ->
-            MyOnError = case OnError of
-                            'stop-on-error' -> stop;
-                            'continue-on-error' -> {continue, []}
-                        end,
-            case catch execute_operations(extract_operations(Config, DefaultOp),
-                                          MyOnError, Target, Certs) of
-                {ok, NewCerts} ->
-                    {reply, ok, State#state{certificates = NewCerts}};
-                {{error, Errors}, NewCerts} when is_list(Errors) ->
-                    {reply, {error, hd(Errors)},
-                     State#state{certificates = NewCerts}};
-                {{error, Error}, NewCerts} ->
-                    {reply, {error, Error},
-                     State#state{certificates = NewCerts}}
-            end;
-        false ->
-            {reply, {error, data_missing}, State}
+    case of_config:decode(Xml) of
+        {error, Reason} ->
+            {reply, {error, malformed_message}, State};
+        Config ->
+            case check_capable_switch_id(Config#capable_switch.id) of
+                true ->
+                    MyOnError = case OnError of
+                                    'stop-on-error' -> stop;
+                                    'continue-on-error' -> {continue, []}
+                                end,
+                    case catch execute_operations(
+                                 extract_operations(Config, DefaultOp),
+                                 MyOnError, Target, Certs) of
+                        {ok, NewCerts} ->
+                            {reply, ok, State#state{certificates = NewCerts}};
+                        {{error, Errors}, NewCerts} when is_list(Errors) ->
+                            {reply, {error, hd(Errors)},
+                             State#state{certificates = NewCerts}};
+                        {{error, Error}, NewCerts} ->
+                            {reply, {error, Error},
+                             State#state{certificates = NewCerts}}
+                    end;
+                false ->
+                    {reply, {error, data_missing}, State}
+            end
     end;
 handle_call({copy_config, _SessionId, running, startup}, _From,
             #state{certificates = Certs} = State) ->

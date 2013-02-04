@@ -26,7 +26,7 @@
 -export([start_link/0,
          flow_table_name/3,
          convert_port_config/1,
-         convert_port_features/4,
+         convert_port_features/1,
          convert_port_state/1,
          read_and_update_startup/0]).
 
@@ -180,8 +180,17 @@ flow_table_name(SwitchId, DatapathId, TableId) ->
         ++ DatapathId
         ++ "FlowTable" ++ integer_to_list(TableId).
 
--spec convert_port_config([atom()]) -> #port_configuration{}.
-convert_port_config(Config) ->
+-spec convert_port_config([atom()] | #port_configuration{}) ->
+                                 #port_configuration{} | [atom()].
+convert_port_config(#port_configuration{admin_state = State,
+                                        no_receive = NoReceive,
+                                        no_forward = NoForward,
+                                        no_packet_in = NoPacketIn}) ->
+    translate([{State, down, port_down},
+               {NoReceive, true, no_recv},
+               {NoForward, true, no_fwd},
+               {NoPacketIn, true, no_packet_in}]);
+convert_port_config(Config) when is_list(Config) ->
     AdminState = is_present(port_down, Config, down, up),
     NoReceive = is_present(no_recv, Config, true, false),
     NoForward = is_present(no_fwd, Config, true, false),
@@ -193,15 +202,37 @@ convert_port_config(Config) ->
        no_packet_in = NoPacketIn
       }.
 
--spec convert_port_features([atom()], [atom()], [atom()], [atom()]) ->
-                                   #port_features{}.
-convert_port_features(Current, Advertised, Supported, Peer) ->
+-spec convert_port_features({[atom()], [atom()], [atom()], [atom()]}
+                            | #features{})
+                           -> #port_features{} | [atom()].
+convert_port_features({Current, Advertised, Supported, Peer}) ->
     #port_features{
        current = features(Current),
        advertised = features(Advertised),
        supported = features(Supported),
        advertised_peer = features(Peer)
-      }.
+      };
+convert_port_features(#features{rate = Rate2,
+                                auto_negotiate = Auto,
+                                medium = Medium,
+                                pause = Pause}) ->
+    Rate = list_to_atom(string:to_lower(atom_to_list(Rate2))),
+    translate([{Rate, '10Mb-HD', '10mb_hd'},
+               {Rate, '10Mb-FD', '10mb_fd'},
+               {Rate, '100Mb-HD', '100mb_hd'},
+               {Rate, '100Mb-FD', '100mb_fd'},
+               {Rate, '1Gb-HD', '1gb_hd'},
+               {Rate, '1Gb-FD', '1gb_fd'},
+               {Rate, '10Gb', '10gb_fd'},
+               {Rate, '40Gb', '40gb_fd'},
+               {Rate, '100Gb', '100gb_fd'},
+               {Rate, '1Tb', '1tb_fd'},
+               {Rate, other, other},
+               {Medium, copper, copper},
+               {Medium, fiber, fiber},
+               {Auto, true, autoneg},
+               {Pause, symmetric, pause},
+               {Pause, asymmetric, pause_asym}]).
 
 -spec convert_port_state([atom()]) -> #port_state{}.
 convert_port_state(State) ->
@@ -1183,3 +1214,16 @@ convert_certificates(Certs) ->
                                    certificate = Bin,
                                    private_key = undefined}
               end, Certs).
+
+translate(List) ->
+    translate(List, []).
+
+translate([], Acc) ->
+    lists:reverse(Acc);
+translate([{Value, Indicator, Atom} | Rest], Acc) ->
+    case Value == Indicator of
+        true ->
+            translate(Rest, [Atom | Acc]);
+        false ->
+            translate(Rest, Acc)
+    end.

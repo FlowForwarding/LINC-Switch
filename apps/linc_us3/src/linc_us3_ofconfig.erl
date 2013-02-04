@@ -19,7 +19,13 @@
 %% @doc OF-Config module for userspace v3 backend.
 -module(linc_us3_ofconfig).
 
--export([get_ports/1,
+-export([%% Setters
+         set_port_features/3,
+         set_port_config/3,
+         set_queue_min_rate/4,
+         set_queue_max_rate/4,
+         %% Getters
+         get_ports/1,
          get_flow_tables/2,
          get_capabilities/0,
          get_port_config/2,
@@ -30,6 +36,24 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
+
+-spec set_port_features(integer(), ofp_port_no(), #features{}) -> ok.
+set_port_features(SwitchId, PortNo, Features) ->
+    Features2 = linc_ofconfig:convert_port_features(Features),
+    linc_us3_port:set_advertised_features(SwitchId, PortNo, Features2).
+
+-spec set_port_config(integer(), ofp_port_no(), #port_configuration{}) -> ok.
+set_port_config(SwitchId, PortNo, Config) ->
+    Config2 = linc_ofconfig:convert_port_config(Config),
+    linc_us3_port:set_config(SwitchId, PortNo, Config2).
+
+-spec set_queue_min_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) -> ok.
+set_queue_min_rate(SwitchId, PortNo, QueueId, MinRate) ->
+    linc_us3_queue:set_min_rate(SwitchId, PortNo, QueueId, MinRate).
+
+-spec set_queue_max_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) -> ok.
+set_queue_max_rate(SwitchId, PortNo, QueueId, MaxRate) ->
+    linc_us3_queue:set_max_rate(SwitchId, PortNo, QueueId, MaxRate).
 
 -spec get_ports(integer()) -> list(#port{}).
 get_ports(SwitchId) ->
@@ -45,10 +69,10 @@ get_ports(SwitchId) ->
                                          curr_speed = CurrSpeed,
                                          max_speed = MaxSpeed}}) ->
                       Configuration = linc_ofconfig:convert_port_config(Config),
-                      Features = linc_ofconfig:convert_port_features(Current,
-                                                                     Advertised,
-                                                                     Supported,
-                                                                     Peer),
+                      Features = linc_ofconfig:convert_port_features({Current,
+                                                                      Advertised,
+                                                                      Supported,
+                                                                      Peer}),
                       PortState = linc_ofconfig:convert_port_state(State),
                       #port{resource_id = ResourceId,
                             number = PortNo,
@@ -109,7 +133,7 @@ get_port_config(SwitchId, PortNo) ->
 get_port_features(SwitchId, PortNo) ->
     {Current, Advertised,
      Supported, Peer} = linc_us3_port:get_features(SwitchId, PortNo),
-    linc_ofconfig:convert_port_features(Current, Advertised, Supported, Peer).
+    linc_ofconfig:convert_port_features({Current, Advertised, Supported, Peer}).
 
 -spec get_queues(integer()) -> list(#queue{}).
 get_queues(SwitchId) ->

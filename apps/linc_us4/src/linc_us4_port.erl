@@ -290,8 +290,10 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     {config, PortConfig} = lists:keyfind(config, 1, PortOpts),
     Port = #ofp_port{port_no = PortNo,
                      name = PortName,
-                     config = port_config(PortConfig), state = [live],
-                     curr = ?FEATURES, advertised = port_features(Advertised),
+                     config = linc_ofconfig:convert_port_config(PortConfig),
+                     state = [live],
+                     curr = ?FEATURES,
+                     advertised = linc_ofconfig:convert_port_features(Advertised),
                      supported = ?FEATURES, peer = ?FEATURES,
                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
     QueuesState = case queues_enabled(SwitchId) of
@@ -645,50 +647,6 @@ ports_for_switch(SwitchId, Config) ->
     {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
     {ports, Ports} = lists:keyfind(ports, 1, Opts),
     Ports.
-
-port_config(#port_configuration{admin_state = State,
-                                no_receive = NoReceive,
-                                no_forward = NoForward,
-                                no_packet_in = NoPacketIn}) ->
-    translate([{State, down, port_down},
-               {NoReceive, true, no_recv},
-               {NoForward, true, no_fwd},
-               {NoPacketIn, true, no_packet_in}]).
-
-port_features(#features{rate = Rate2,
-                        auto_negotiate = Auto,
-                        medium = Medium,
-                        pause = Pause}) ->
-    Rate = list_to_atom(string:to_lower(atom_to_list(Rate2))),
-    translate([{Rate, '10Mb-HD', '10mb_hd'},
-               {Rate, '10Mb-FD', '10mb_fd'},
-               {Rate, '100Mb-HD', '100mb_hd'},
-               {Rate, '100Mb-FD', '100mb_fd'},
-               {Rate, '1Gb-HD', '1gb_hd'},
-               {Rate, '1Gb-FD', '1gb_fd'},
-               {Rate, '10Gb', '10gb_fd'},
-               {Rate, '40Gb', '40gb_fd'},
-               {Rate, '100Gb', '100gb_fd'},
-               {Rate, '1Tb', '1tb_fd'},
-               {Rate, other, other},
-               {Medium, copper, copper},
-               {Medium, fiber, fiber},
-               {Auto, true, autoneg},
-               {Pause, symmetric, pause},
-               {Pause, asymmetric, pause_asym}]).
-
-translate(List) ->
-    translate(List, []).
-
-translate([], Acc) ->
-    lists:reverse(Acc);
-translate([{Value, Indicator, Atom} | Rest], Acc) ->
-    case Value == Indicator of
-        true ->
-            translate(Rest, [Atom | Acc]);
-        false ->
-            translate(Rest, Acc)
-    end.
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).

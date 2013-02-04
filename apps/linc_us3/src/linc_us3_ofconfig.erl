@@ -37,21 +37,33 @@
 -include_lib("of_protocol/include/ofp_v3.hrl").
 -include("linc_us3.hrl").
 
--spec set_port_features(integer(), ofp_port_no(), #features{}) -> ok.
+-spec set_port_features(integer(), ofp_port_no(),
+                        #features{} | undefined) -> ok.
+set_port_features(_SwitchId, _PortNo, undefined) ->
+    ok;
 set_port_features(SwitchId, PortNo, Features) ->
     Features2 = linc_ofconfig:convert_port_features(Features),
     linc_us3_port:set_advertised_features(SwitchId, PortNo, Features2).
 
--spec set_port_config(integer(), ofp_port_no(), #port_configuration{}) -> ok.
+-spec set_port_config(integer(), ofp_port_no(),
+                      #port_configuration{} | undefined) -> ok.
+set_port_config(_SwitchId, _PortNo, undefined) ->
+    ok;
 set_port_config(SwitchId, PortNo, Config) ->
     Config2 = linc_ofconfig:convert_port_config(Config),
     linc_us3_port:set_config(SwitchId, PortNo, Config2).
 
--spec set_queue_min_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) -> ok.
+-spec set_queue_min_rate(integer(), ofp_port_no(),
+                         ofp_queue_id(), integer() | undefined) -> ok.
+set_queue_min_rate(_SwitchId, _PortNo, _QueueId, undefined) ->
+    ok;
 set_queue_min_rate(SwitchId, PortNo, QueueId, MinRate) ->
     linc_us3_queue:set_min_rate(SwitchId, PortNo, QueueId, MinRate).
 
--spec set_queue_max_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) -> ok.
+-spec set_queue_max_rate(integer(), ofp_port_no(),
+                         ofp_queue_id(), integer() | undefined) -> ok.
+set_queue_max_rate(_SwitchId, _PortNo, _QueueId, undefined) ->
+    ok;
 set_queue_max_rate(SwitchId, PortNo, QueueId, MaxRate) ->
     linc_us3_queue:set_max_rate(SwitchId, PortNo, QueueId, MaxRate).
 

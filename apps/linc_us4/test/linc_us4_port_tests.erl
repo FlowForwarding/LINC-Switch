@@ -23,6 +23,7 @@
                               check_if_called/1,
                               check_output_on_ports/0]).
 
+-include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -37,7 +38,8 @@
 port_test_() ->
     {setup, fun setup/0, fun teardown/1,
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
-      [{"Port: port_mod", fun port_mod/0},
+      [
+       {"Port: port_mod", fun port_mod/0},
        {"Port: is_valid", fun is_valid/0},
        {"Port send: in_port", fun send_in_port/0},
        {"Port send: table", fun send_table/0},
@@ -212,12 +214,17 @@ setup() ->
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
                                        ]}]}],
-    Ports = [{port, 1, [{interface, "dummy1"}]},
-             {port, 2, [{interface, "dummy2"}]}],
+    Ports = [{port, 1, [{interface, "dummy1"},
+                        {features, #features{}},
+                        {config, #port_configuration{}}]},
+             {port, 2, [{interface, "dummy2"},
+                        {features, #features{}},
+                        {config, #port_configuration{}}]}],
     Config = [{switch, 0,
                [{ports, Ports},
                 {queues_status, enabled},
                 {queues, Queues}]}],
+    application:load(linc),
     application:set_env(linc, logical_switches, Config).
 
 teardown(_) ->
@@ -227,7 +234,8 @@ teardown(_) ->
 foreach_setup() ->
     ok = meck:reset(linc_logic),
     ok = meck:reset(linc_us4_port_native),
-    ok = linc_us4_port:initialize(?SWITCH_ID).
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    ok = linc_us4_port:initialize(?SWITCH_ID, Switches).
 
 foreach_teardown(_) ->
     ok = linc_us4_port:terminate(?SWITCH_ID).

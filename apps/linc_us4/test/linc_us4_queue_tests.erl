@@ -22,6 +22,7 @@
                               unmock/1,
                               check_if_called/1]).
 
+-include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -115,14 +116,18 @@ setup() ->
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
                                        ]}]}],
-    Ports = [{port, 1, [{interface, "dummy1"}]},
-             {port, 2, [{interface, "dummy2"}]}],
+    Ports = [{port, 1, [{interface, "dummy1"},
+                        {features, #features{}},
+                        {config, #port_configuration{}}]},
+             {port, 2, [{interface, "dummy2"},
+                        {features, #features{}},
+                        {config, #port_configuration{}}]}],
     Config = [{switch, 0,
                [{ports, Ports},
                 {queues_status, enabled},
                 {queues, Queues}]}],
     application:set_env(linc, logical_switches, Config),
-    linc_us4_port:initialize(?SWITCH_ID).
+    linc_us4_port:initialize(?SWITCH_ID, Config).
 
 teardown(_) ->
     linc_us4_port:terminate(?SWITCH_ID),

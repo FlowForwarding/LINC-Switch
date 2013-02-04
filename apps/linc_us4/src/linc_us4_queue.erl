@@ -26,7 +26,8 @@
          send/4,
          set_min_rate/4,
          set_max_rate/4,
-         get_all_queues_state/2]).
+         get_all_queues_state/2,
+         is_valid/3]).
 
 %% Internal API
 -export([start_link/2,
@@ -146,6 +147,15 @@ get_all_queues_state(SwitchId, PortNo) ->
     lists:map(fun(#linc_port_queue{queue_pid = Pid}) ->
                       gen_server:call(Pid, get_state)
               end, get_queues(SwitchId, PortNo)).
+
+-spec is_valid(integer(), ofp_port_no(), ofp_queue_id()) -> boolean().
+is_valid(SwitchId, PortNo, QueueId) ->
+    case get_queue_pid(SwitchId, PortNo, QueueId) of
+        {error, bad_queue} ->
+            false;
+        _Pid ->
+            true
+    end.
 
 %%------------------------------------------------------------------------------
 %% Internal API

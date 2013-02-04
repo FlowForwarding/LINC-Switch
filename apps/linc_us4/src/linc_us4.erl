@@ -78,11 +78,12 @@
 start(BackendOpts) ->
     {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
     {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
+    {config, Config} = lists:keyfind(config, 1, BackendOpts),
     BufferState = linc_buffer:initialize(SwitchId),
     {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
     linc_us4_groups:initialize(SwitchId),
     FlowState = linc_us4_flow:initialize(SwitchId),
-    linc_us4_port:initialize(SwitchId),
+    linc_us4_port:initialize(SwitchId, Config),
     {ok, 4, #state{flow_state = FlowState,
                    buffer_state = BufferState,
                    switch_id = SwitchId,

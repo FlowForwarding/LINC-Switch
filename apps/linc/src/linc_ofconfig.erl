@@ -1096,25 +1096,25 @@ get_controllers(SwitchId) ->
 
 rate(Features) ->
     Rates = lists:map(fun('10mb_hd') ->
-                              '10mb-hd';
+                              '10Mb-HD';
                          ('10mb_fd') ->
-                              '10mb-fd';
+                              '10Mb-FD';
                          ('100mb_hd') ->
-                              '100mb-hd';
+                              '100Mb-HD';
                          ('100mb_fd') ->
-                              '100mb-fd';
+                              '100Mb-FD';
                          ('1gb_hd') ->
-                              '1gb-hd';
+                              '1Gb-HD';
                          ('1gb_fd') ->
-                              '1gb-fd';
+                              '1Gb-FD';
                          ('10gb_fd') ->
-                              '10gb-fd';
+                              '10Gb';
                          ('40gb_fd') ->
-                              '40gb-fd';
+                              '40Gb';
                          ('100gb_fd') ->
-                              '100gb-fd';
+                              '100Gb';
                          ('1tb_fd') ->
-                              '1tb-fd';
+                              '1Tb';
                          (other) ->
                               other;
                          (_) ->

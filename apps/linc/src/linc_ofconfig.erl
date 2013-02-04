@@ -59,7 +59,7 @@
                                 no_forward = false,
                                 no_packet_in = false}).
 -define(DEFAULT_PORT_FEATURES, #features{
-                                  rate = '100mb-fd',
+                                  rate = '100Mb-FD',
                                   auto_negotiate = true,
                                   medium = copper,
                                   pause = unsupported}).

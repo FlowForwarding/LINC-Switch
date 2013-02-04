@@ -302,14 +302,14 @@ update_switches([{switch, SwitchId, Opts} | Rest],
                      end;
                  _ -> []
              end,
-    {NewPorts, NewStartup2} = update_ports(Ports, SwitchId, OldPorts,
-                                           {[], NewStartup}),
-    {NewQueues, NewStartup3} = update_queues(Queues, SwitchId, OldQueues,
-                                             {[], NewStartup2}),
+    {NewQueues, NewStartup2} = update_queues(Queues, SwitchId, OldQueues,
+                                             {[], NewStartup}),
+    {NewPorts, NewStartup3} = update_ports(Ports, NewQueues, SwitchId, OldPorts,
+                                           {[], NewStartup2}),
     NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
 
     NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
-    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
+    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, []}),
     NewOpts3 = lists:keyreplace(controllers, 1,
                                 NewOpts2, {controllers, NewCtrls}),
 
@@ -325,15 +325,16 @@ update_switches([{switch, SwitchId, Opts} | Rest],
                                    | NewSwitches],
                        controllers = OldCtrls}}).
 
-update_ports([], _, _, New) ->
+update_ports([], _, _, _, New) ->
     New;
-update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
+update_ports([{port, PortId, Opts} | Rest], Queues, SwitchId, OldPorts,
              {NewPorts, #ofconfig{ports = NewSPorts} = NewStartup}) ->
     {NP, NSP} = case lists:keyfind({PortId, SwitchId}, 2, OldPorts) of
                     {port, _, Config, Features} = P ->
                         {{port, PortId,
                           [{config, Config},
-                           {features, Features} | Opts]}, P};
+                           {features, Features},
+                           {queues, Queues} | Opts]}, P};
                     false ->
                         {{port, PortId,
                           [{config, ?DEFAULT_PORT_CONFIG},
@@ -342,7 +343,7 @@ update_ports([{port, PortId, Opts} | Rest], SwitchId, OldPorts,
                           ?DEFAULT_PORT_CONFIG,
                           ?DEFAULT_PORT_FEATURES}}
                 end,
-    update_ports(Rest, SwitchId, OldPorts,
+    update_ports(Rest, Queues, SwitchId, OldPorts,
                  {[NP | NewPorts],
                   NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
 

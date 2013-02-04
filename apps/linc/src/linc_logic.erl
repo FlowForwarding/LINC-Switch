@@ -35,12 +35,14 @@
          set_port_config/3,
          get_port_features/2,
          set_port_features/3,
+         is_port_valid/2,
          %% Backend queues
          get_backend_queues/1,
          get_queue_min_rate/3,
          set_queue_min_rate/4,
          get_queue_max_rate/3,
          set_queue_max_rate/4,
+         is_queue_valid/3,
          %% Controllers
          open_controller/4
         ]).
@@ -122,6 +124,10 @@ set_port_features(SwitchId, PortNo, PortFeatures) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_port_features,
                                                         PortNo, PortFeatures}).
 
+-spec is_port_valid(integer(), integer()) -> boolean().
+is_port_valid(SwitchId, PortNo) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {is_port_valid, PortNo}).
+
 -spec get_backend_queues(integer()) -> list(#queue{}).
 get_backend_queues(SwitchId) ->
     gen_server:call(linc:lookup(SwitchId, linc_logic), get_backend_queues).
@@ -145,6 +151,11 @@ get_queue_max_rate(SwitchId, PortNo, QueueId) ->
 set_queue_max_rate(SwitchId, PortNo, QueueId, Rate) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic), {set_queue_max_rate,
                                                         PortNo, QueueId, Rate}).
+
+-spec is_queue_valid(integer(), integer(), integer()) -> boolean().
+is_queue_valid(SwitchId, PortNo, QueueId) ->
+    gen_server:call(linc:lookup(SwitchId, linc_logic), {is_queue_valid,
+                                                        PortNo, QueueId}).
 
 open_controller(SwitchId, Id, Host, Port) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic), {open_controller, Id,
@@ -224,6 +235,16 @@ handle_call(get_queue_max_rate, _From,
                    switch_id = SwitchId} = State) ->
     BackendQueues = OFConfigBackendMod:get_queue_max_rate(SwitchId),
     {reply, BackendQueues, State};
+handle_call({is_port_valid, PortNo}, _From,
+            #state{backend_mod = BackendMod,
+                   switch_id = SwitchId} = State) ->
+    Validity = BackendMod:is_port_valid(SwitchId, PortNo),
+    {reply, Validity, State};
+handle_call({is_queue_valid, PortNo, QueueId}, _From,
+            #state{backend_mod = BackendMod,
+                   switch_id = SwitchId} = State) ->
+    Validity = BackendMod:is_queue_valid(SwitchId, PortNo, QueueId),
+    {reply, Validity, State};
 handle_call(_Message, _From, State) ->
     {reply, ok, State}.
 

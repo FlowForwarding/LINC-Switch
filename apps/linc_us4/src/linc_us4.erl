@@ -26,6 +26,11 @@
          stop/1,
          handle_message/2]).
 
+%% Backend API
+-export([is_port_valid/2,
+         is_queue_valid/3,
+         set_datapath_mac/2]).
+
 %% Handle all message types
 -export([ofp_features_request/2,
          ofp_flow_mod/2,
@@ -53,8 +58,6 @@
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
          ofp_meter_features_request/2]).
-
--export([set_datapath_mac/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -106,6 +109,21 @@ stop(#state{flow_state = FlowState,
 handle_message(MessageBody, State) ->
     MessageName = element(1, MessageBody),
     erlang:apply(?MODULE, MessageName, [State, MessageBody]).
+
+%%%-----------------------------------------------------------------------------
+%%% Backend API
+%%%-----------------------------------------------------------------------------
+
+-spec is_port_valid(integer(), ofp_port_no()) -> boolean().
+is_port_valid(SwitchId, PortNo) ->
+    linc_us4_port:is_valid(SwitchId, PortNo).
+
+-spec is_queue_valid(integer(), ofp_port_no(), ofp_queue_id()) -> boolean().
+is_queue_valid(SwitchId, PortNo, QueueId) ->
+    linc_us4_queue:is_valid(SwitchId, PortNo, QueueId).
+
+set_datapath_mac(State, NewMac) ->
+    State#state{datapath_mac = NewMac}.
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages
@@ -359,9 +377,6 @@ ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
-
-set_datapath_mac(State, NewMac) ->
-    State#state{datapath_mac = NewMac}.
 
 get_env(Env) ->
     {ok, Value} = application:get_env(linc, Env),

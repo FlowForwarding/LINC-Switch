@@ -782,8 +782,8 @@ do_running([{Op, {port, {PortId, SwitchId},
         remove ->
             do_running(Rest, OnError, Certs);
         _ ->
-            ling_logic:set_port_config(SwitchId, PortId, Config),
-            ling_logic:set_port_features(SwitchId, PortId, Features)
+            linc_logic:set_port_config(SwitchId, PortId, Config),
+            linc_logic:set_port_features(SwitchId, PortId, Features)
     end;
 do_running([{Op, {queue, {QueueId, PortId, SwitchId},
                   MinRate, MaxRate}} | Rest], OnError, Certs) ->

@@ -286,14 +286,24 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     PortName = "Port" ++ integer_to_list(PortNo),
-    {features, Advertised} = lists:keyfind(features, 1, PortOpts),
-    {config, PortConfig} = lists:keyfind(config, 1, PortOpts),
+    Advertised = case lists:keyfind(features, 1, PortOpts) of
+                     {features, undefined} ->
+                         ?FEATURES;
+                     {features, Features} ->
+                         linc_ofconfig:convert_port_features(Features)
+                 end,
+    PortConfig = case lists:keyfind(config, 1, PortOpts) of
+                     {config, undefined} ->
+                         [];
+                     {config, Config} ->
+                         linc_ofconfig:convert_port_config(Config)
+                 end,
     Port = #ofp_port{port_no = PortNo,
                      name = PortName,
-                     config = linc_ofconfig:convert_port_config(PortConfig),
+                     config = PortConfig,
                      state = [live],
                      curr = ?FEATURES,
-                     advertised = linc_ofconfig:convert_port_features(Advertised),
+                     advertised = Advertised,
                      supported = ?FEATURES, peer = ?FEATURES,
                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
     QueuesState = case queues_enabled(SwitchId) of
@@ -438,8 +448,10 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    queues = QueuesState,
                    ifindex = Ifindex,
                    switch_id = SwitchId} = State) ->
+    io:format(user, "~n@@@@@@@@~nSEND~n", []),
     case check_port_config(no_fwd, PortConfig) of
         true ->
+            io:format(user, "~n@@@@@@@@~nDROP~n", []),
             drop;
         false ->
             Frame = pkt:encapsulate(Packet),
@@ -448,11 +460,14 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                 disabled ->
                     case {Port, Ifindex} of
                         {undefined, _} ->
+                            io:format(user, "~n@@@@@@@@~nSEND~n", []),
                             linc_us4_port_native:send(Socket, Ifindex, Frame);
                         {_, undefined} ->
+                            io:format(user, "~n@@@@@@@@~nDISABLED~n", []),
                             port_command(Port, Frame)
                     end;
                 enabled ->
+                    io:format(user, "~n@@@@@@@@~nQUEUE~n", []),
                     linc_us4_queue:send(SwitchId, PortNo, QueueId, Frame)
             end
     end,

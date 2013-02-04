@@ -284,14 +284,24 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     PortName = "Port" ++ integer_to_list(PortNo),
-    {features, Advertised} = lists:keyfind(features, 1, PortOpts),
-    {config, PortConfig} = lists:keyfind(config, 1, PortOpts),
+    Advertised = case lists:keyfind(features, 1, PortOpts) of
+                     {features, undefined} ->
+                         ?FEATURES;
+                     {features, Features} ->
+                         linc_ofconfig:convert_port_features(Features)
+                 end,
+    PortConfig = case lists:keyfind(config, 1, PortOpts) of
+                     {config, undefined} ->
+                         [];
+                     {config, Config} ->
+                         linc_ofconfig:convert_port_config(Config)
+                 end,
     Port = #ofp_port{port_no = PortNo,
                      name = PortName,
-                     config = linc_ofconfig:convert_port_config(PortConfig),
+                     config = PortConfig,
                      state = [live],
                      curr = ?FEATURES,
-                     advertised = linc_ofconfig:convert_port_features(Advertised),
+                     advertised = Advertised,
                      supported = ?FEATURES, peer = ?FEATURES,
                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
     QueuesState = case queues_enabled(SwitchId) of

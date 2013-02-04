@@ -10,13 +10,9 @@ and testing of new OpenFlow features.
 ### Features
 
  * Support for [OpenFlow Protocol 1.2][ofp3] and [OpenFlow Protocol 1.3][ofp4],
+ * OpenFlow Capable Switch - ability to run multiple logical switches,
+ * Support for [OF-Config 1.1.1][ofc11] management protocol,
  * Modular architecture, easily extensible.
-
-#### Planned features
-
- * Support for [OF-Config 1.0][ofc1] and/or [OF-Config 1.1][ofc2] management
-   protocols,
- * Alternative switching backends (kernel space or hardware).
 
 ## How to use it?
 
@@ -88,18 +84,25 @@ Compile everything:
 
 Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` file which looks like this:
 
-    {linc, [
-        {controllers, [
-            {"localhost", 6633}
-        ]},
-        {backends_opts, [
-            {linc_us4, [
-                {ports, [
-                    {1, [{interface, "eth0"}]},
-                    {2, [{interface, "eth1"}]}
-                ]}
-             ]}
+    {linc,
+     [
+      {of_config, enabled},
+      {logical_switches,
+       [
+        {switch, 0,
+         [
+          {backend, linc_us4},
+          {controllers,
+           [
+            {"Switch0-DefaultController", "localhost", 6633}
+           ]},
+          {ports,
+           [
+            {1, [{interface, "eth0"}]},
+            {2, [{interface, "eth1"}]}
+           ]}
         ]}
+      ]}
     ]}.
 
 At the moment you can change the list of controllers and ports used by the
@@ -125,8 +128,7 @@ please contact <openflow@erlang-solutions.com>.
  [ofp2]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.1.0.pdf 
  [ofp3]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.2.pdf 
  [ofp4]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.3.0.pdf 
- [ofc1]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config1dot0-final.pdf
- [ofc2]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config-1.1.pdf
+ [ofc11]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config-1.1.pdf
  [erlang-src]: http://www.erlang.org/download.html
  [erlang-bin]: http://www.erlang-solutions.com/section/132/download-erlang-otp
  [esl]: http://www.erlang-solutions.com

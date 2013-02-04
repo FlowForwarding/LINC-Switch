@@ -38,15 +38,15 @@ start_link() ->
     {ok, Pid} = supervisor:start_link(?MODULE, []),
     start_ofconfig(Pid),
 
-    ?INFO("sys.config: ~p", [application:get_env(linc,
-                                                 logical_switches)]),
+    ?DEBUG("sys.config: ~p", [application:get_env(linc,
+                                                  logical_switches)]),
     Config = case application:get_env(linc, of_config) of
                  {ok, enabled} ->
-                     ?INFO("Old startup: ~p",
-                           [mnesia:dirty_read(linc_ofconfig_startup,
-                                              startup)]),
+                     ?DEBUG("Old startup: ~p",
+                            [mnesia:dirty_read(linc_ofconfig_startup,
+                                               startup)]),
                      C = linc_ofconfig:read_and_update_startup(),
-                     ?INFO("New startup: ~p",
+                     ?DEBUG("New startup: ~p",
                             [mnesia:dirty_read(linc_ofconfig_startup,
                                                startup)]),
                      C;
@@ -55,7 +55,7 @@ start_link() ->
                                                           logical_switches),
                      Switches
              end,
-    ?INFO("Configuration: ~p", [Config]),
+    ?DEBUG("Configuration: ~p", [Config]),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.

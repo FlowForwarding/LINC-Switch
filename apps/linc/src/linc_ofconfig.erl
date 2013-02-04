@@ -641,12 +641,16 @@ extract_operations(#capable_switch{resources = Resources,
                 [];
             _ ->
                 [{op(DefOp, Op),
-                  {port, extract_port_id(ResourceIdStr), Config, Features}}
+                  {port, extract_port_id(ResourceIdStr), Config,
+                   case PortFeatures of
+                       #port_features{
+                          advertised = Features} -> Features;
+                       undefined -> undefined
+                   end}}
                  || #port{operation = Op,
                           resource_id = ResourceIdStr,
                           configuration = Config,
-                          features = #port_features{
-                                        advertised = Features}} <- Resources]
+                          features = PortFeatures} <- Resources]
         end,
     Q = case Resources of
             undefined ->

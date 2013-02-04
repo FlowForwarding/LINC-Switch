@@ -1,4 +1,5 @@
 -define(PORT_SPEED, 5000). %% Port speed in kbps = 5Mbps
+-define(FEATURES, ['100mb_fd', copper, autoneg]).
 
 -record(linc_port, {
           port_no :: ofp_port_no(),
@@ -6,8 +7,11 @@
          }).
 
 %% LINC swich port configuration stored in sys.config
--type linc_port_config() :: tuple(interface, string()) |
-                            tuple(ip, string()).
+-type linc_port_config() :: tuple(interface, string())
+                          | tuple(ip, string())
+                          | tuple(config, record())
+                          | tuple(features, record())
+                          | tuple(queues, record()).
 
 -type linc_port_type() :: physical | logical | reserved.
 -type linc_queues_state() :: enabled | disabled.

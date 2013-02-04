@@ -29,7 +29,7 @@
 
 %% Port API
 -export([start_link/2,
-         initialize/1,
+         initialize/2,
          terminate/1,
          modify/2,
          send/2,
@@ -72,8 +72,8 @@
 start_link(SwitchId, PortConfig) ->
     gen_server:start_link(?MODULE, [SwitchId, PortConfig], []).
 
--spec initialize(integer()) -> ok.
-initialize(SwitchId) ->
+-spec initialize(integer(), tuple(config, list(linc_port_config()))) -> ok.
+initialize(SwitchId, Config) ->
     LincPorts = ets:new(linc_ports, [public,
                                      {keypos, #linc_port.port_no},
                                      {read_concurrency, true}]),
@@ -89,7 +89,7 @@ initialize(SwitchId) ->
         false ->
             ok
     end,
-    UserspacePorts = ports_for_switch(SwitchId),
+    UserspacePorts = ports_for_switch(SwitchId, Config),
     [add(physical, SwitchId, Port) || Port <- UserspacePorts],
     ok.
 
@@ -286,11 +286,13 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     PortName = "Port" ++ integer_to_list(PortNo),
+    {features, Advertised} = lists:keyfind(features, 1, PortOpts),
+    {config, PortConfig} = lists:keyfind(config, 1, PortOpts),
     Port = #ofp_port{port_no = PortNo,
                      name = PortName,
-                     config = [], state = [live],
-                     curr = [other], advertised = [other],
-                     supported = [other], peer = [other],
+                     config = port_config(PortConfig), state = [live],
+                     curr = ?FEATURES, advertised = port_features(Advertised),
+                     supported = ?FEATURES, peer = ?FEATURES,
                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
     QueuesState = case queues_enabled(SwitchId) of
                       false ->
@@ -319,7 +321,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                     ets:insert(linc:lookup(SwitchId, linc_port_stats),
                                #ofp_port_stats{port_no = PortNo,
                                                duration_sec = erlang:now()}),
-                    case queues_config(SwitchId) of
+                    case queues_config(SwitchId, PortOpts) of
                         disabled ->
                             disabled;
                         QueuesConfig ->
@@ -343,7 +345,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         nomatch ->
             {Socket, IfIndex, EpcapPid, HwAddr} =
                 linc_us4_port_native:eth(Interface),
-            case queues_config(SwitchId) of
+            case queues_config(SwitchId, PortOpts) of
                 disabled ->
                     disabled;
                 QueuesConfig ->
@@ -434,7 +436,7 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    queues = QueuesState,
                    ifindex = Ifindex,
                    switch_id = SwitchId} = State) ->
-    case lists:member(no_fwd, PortConfig) of
+    case check_port_config(no_fwd, PortConfig) of
         true ->
             drop;
         false ->
@@ -529,13 +531,13 @@ remove(SwitchId, PortNo) ->
     end.
 
 handle_frame(Frame, SwitchId, PortNo, PortConfig) ->
-    case lists:member(no_recv, PortConfig) of
+    case check_port_config(no_recv, PortConfig) of
         true ->
             drop;
         false ->
             LincPkt = linc_us4_packet:binary_to_record(Frame, SwitchId, PortNo),
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
-            case lists:member(no_packet_in, PortConfig) of
+            case check_port_config(no_packet_in, PortConfig) of
                 false ->
                     linc_us4_routing:spawn_route(LincPkt);
                 true ->
@@ -624,13 +626,12 @@ queues_enabled(SwitchId) ->
             false
     end.
 
--spec queues_config(integer()) -> [term()] | disabled.
-queues_config(SwitchId) ->
+-spec queues_config(integer(), list(linc_port_config())) -> [term()] |
+                                                            disabled.
+queues_config(SwitchId, PortOpts) ->
     case queues_enabled(SwitchId) of
         true ->
-            {ok, Switches} = application:get_env(linc, logical_switches),
-            {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
-            case lists:keyfind(queues, 1, Opts) of
+            case lists:keyfind(queues, 1, PortOpts) of
                 false ->
                     disabled;
                 {queues, Queues} ->
@@ -640,8 +641,54 @@ queues_config(SwitchId) ->
             disabled
     end.
 
-ports_for_switch(SwitchId) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
-    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Switches),
+ports_for_switch(SwitchId, Config) ->
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
     {ports, Ports} = lists:keyfind(ports, 1, Opts),
     Ports.
+
+port_config(#port_configuration{admin_state = State,
+                                no_receive = NoReceive,
+                                no_forward = NoForward,
+                                no_packet_in = NoPacketIn}) ->
+    translate([{State, down, port_down},
+               {NoReceive, true, no_recv},
+               {NoForward, true, no_fwd},
+               {NoPacketIn, true, no_packet_in}]).
+
+port_features(#features{rate = Rate2,
+                        auto_negotiate = Auto,
+                        medium = Medium,
+                        pause = Pause}) ->
+    Rate = list_to_atom(string:to_lower(atom_to_list(Rate2))),
+    translate([{Rate, '10Mb-HD', '10mb_hd'},
+               {Rate, '10Mb-FD', '10mb_fd'},
+               {Rate, '100Mb-HD', '100mb_hd'},
+               {Rate, '100Mb-FD', '100mb_fd'},
+               {Rate, '1Gb-HD', '1gb_hd'},
+               {Rate, '1Gb-FD', '1gb_fd'},
+               {Rate, '10Gb', '10gb_fd'},
+               {Rate, '40Gb', '40gb_fd'},
+               {Rate, '100Gb', '100gb_fd'},
+               {Rate, '1Tb', '1tb_fd'},
+               {Rate, other, other},
+               {Medium, copper, copper},
+               {Medium, fiber, fiber},
+               {Auto, true, autoneg},
+               {Pause, symmetric, pause},
+               {Pause, asymmetric, pause_asym}]).
+
+translate(List) ->
+    translate(List, []).
+
+translate([], Acc) ->
+    lists:reverse(Acc);
+translate([{Value, Indicator, Atom} | Rest], Acc) ->
+    case Value == Indicator of
+        true ->
+            translate(Rest, [Atom | Acc]);
+        false ->
+            translate(Rest, Acc)
+    end.
+
+check_port_config(Flag, Config) ->
+    lists:member(port_down, Config) orelse lists:member(Flag, Config).

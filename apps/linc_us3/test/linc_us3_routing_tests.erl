@@ -23,11 +23,14 @@
                               check_if_called/1,
                               check_output_on_ports/0]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us3.hrl").
 
 -define(MOCKED, [port]).
+-define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -166,29 +169,31 @@ spawn_route() ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
+    linc:create(?SWITCH_ID),
     mock(?MOCKED).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
 
 foreach_setup() ->
-    linc_us3_flow:initialize().
+    linc_us3_flow:initialize(?SWITCH_ID).
 
 foreach_teardown(State) ->
     ok = linc_us3_flow:terminate(State).
 
 flow_entry(FlowId, Matches) ->
-    true = ets:insert(flow_entry_counters,
+    true = ets:insert(linc:lookup(?SWITCH_ID, flow_entry_counters),
                       #flow_entry_counter{id = FlowId}),
     MatchFields = [#ofp_field{name = Type, value = Value}
                    || {Type, Value} <- Matches],
     #flow_entry{id = FlowId, match = #ofp_match{fields = MatchFields}}.
-    
+
 flow_table(TableId, FlowEntries, Config) ->
     TableConfig = #flow_table_config{id = TableId, config = Config},
     TableName = list_to_atom("flow_table_" ++ integer_to_list(TableId)),
-    ets:insert(flow_table_config, TableConfig),
-    ets:insert(TableName, FlowEntries).
+    ets:insert(linc:lookup(?SWITCH_ID, flow_table_config), TableConfig),
+    ets:insert(linc:lookup(?SWITCH_ID, TableName), FlowEntries).
 
 pkt(Matches) ->
     MatchFields = [#ofp_field{name = Type, value = Value}

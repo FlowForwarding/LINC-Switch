@@ -23,20 +23,23 @@
                               check_if_called/1,
                               check_output_on_ports/0]).
 
+-include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
 
--define(MOCKED, [port_native]).
+-define(MOCKED, [logic, port_native]).
+-define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
 
 port_test_() ->
     {setup, fun setup/0, fun teardown/1,
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
-      [{"Port: port_mod", fun port_mod/0},
+      [
+       {"Port: port_mod", fun port_mod/0},
        {"Port: is_valid", fun is_valid/0},
        {"Port send: in_port", fun send_in_port/0},
        {"Port send: table", fun send_table/0},
@@ -55,32 +58,32 @@ port_test_() ->
        {"Port config: no_pkt_in", fun config_no_pkt_in/0},
        {"Port state: link_down", fun state_link_down/0},
        {"Port state: blocked", fun state_blocked/0},
-       {"Port state: live", fun state_live/0}
+       {"Port state: live", fun state_live/0},
+       {"Port features: change advertised features", fun advertised_features/0}
       ]}}.
 
 port_mod() ->
     BadPort = 999,
     PortMod1 = #ofp_port_mod{port_no = BadPort},
     Error1 = {error, {bad_request, bad_port}},
-    ?assertEqual(Error1, linc_us4_port:modify(PortMod1)),
+    ?assertEqual(Error1, linc_us4_port:modify(?SWITCH_ID, PortMod1)),
 
     Port = 1,
     BadHwAddr = <<2,2,2,2,2,2>>,
     PortMod2 = #ofp_port_mod{port_no = Port, hw_addr = BadHwAddr},
     ?assertEqual({error, {bad_request, bad_hw_addr}},
-                 linc_us4_port:modify(PortMod2)),
+                 linc_us4_port:modify(?SWITCH_ID, PortMod2)),
 
     HwAddr = <<1,1,1,1,1,1>>,
     PortMod3 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
                              config = [], mask = [],
                              advertise = [copper, autoneg]},
-    ?assertEqual(ok, linc_us4_port:modify(PortMod3)),
-    ok.
+    ?assertEqual(ok, linc_us4_port:modify(?SWITCH_ID, PortMod3)).
 
 is_valid() ->
-    ?assertEqual(true, linc_us4_port:is_valid(any)),
-    ?assertEqual(true, linc_us4_port:is_valid(1)),
-    ?assertEqual(false, linc_us4_port:is_valid(999)).
+    ?assertEqual(true, linc_us4_port:is_valid(?SWITCH_ID, any)),
+    ?assertEqual(true, linc_us4_port:is_valid(?SWITCH_ID, 1)),
+    ?assertEqual(false, linc_us4_port:is_valid(?SWITCH_ID, 999)).
 
 send_in_port() ->
     Pkt = pkt(1),
@@ -99,11 +102,12 @@ send_flood() ->
     ?assertEqual(bad_port, linc_us4_port:send(pkt(), flood)).
 
 send_all() ->
-    ?assertEqual(ok, linc_us4_port:send(pkt(), all)).
-    %% ?assertEqual(2, meck:num_calls(linc_us4_port_native, send, '_')).
+    ?assertEqual(ok, linc_us4_port:send(pkt(), all)),
+    %% wait because send to port is a gen_server:cast
+    timer:sleep(500),
+    ?assertEqual(2, meck:num_calls(linc_us4_port_native, send, '_')).
 
 send_controller() ->
-    ?assertEqual(ok, linc_us4_port:send(#ofp_port_status{}, controller)),
     ?assertEqual(ok, linc_us4_port:send(pkt(controller,no_match), controller)).
 
 send_local() ->
@@ -116,7 +120,7 @@ send_port_number() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(), 1)).
 
 port_desc_request() ->
-    Desc = linc_us4_port:get_desc(),
+    Desc = linc_us4_port:get_desc(?SWITCH_ID),
     ?assertMatch(#ofp_port_desc_reply{}, Desc),
     Body = Desc#ofp_port_desc_reply.body,
     ?assert(length(Body) =/= 0),
@@ -128,11 +132,11 @@ port_stats_request() ->
     BadPort = 999,
     StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_port},
-                 linc_us4_port:get_stats(StatsRequest1)),
+                 linc_us4_port:get_stats(?SWITCH_ID, StatsRequest1)),
 
     ValidPort = 1,
     StatsRequest2 = #ofp_port_stats_request{port_no = ValidPort},
-    StatsReply2 = linc_us4_port:get_stats(StatsRequest2),
+    StatsReply2 = linc_us4_port:get_stats(?SWITCH_ID, StatsRequest2),
     ?assertEqual(1, length(StatsReply2#ofp_port_stats_reply.body)),
     [PortStats2] = StatsReply2#ofp_port_stats_reply.body,
     ?assertEqual(0, PortStats2#ofp_port_stats.duration_sec),
@@ -140,69 +144,102 @@ port_stats_request() ->
 
     AllPorts = any,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
-    StatsReply3 = linc_us4_port:get_stats(StatsRequest3),
+    StatsReply3 = linc_us4_port:get_stats(?SWITCH_ID, StatsRequest3),
     ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)).
 
 config_port_down() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [port_down])),
-    ?assertEqual([port_down], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [port_down])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([port_down], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_recv() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_recv])),
-    ?assertEqual([no_recv], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_recv])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([no_recv], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_fwd() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_fwd])),
-    ?assertEqual([no_fwd], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_fwd])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([no_fwd], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 config_no_pkt_in() ->
-    ?assertEqual([], linc_us4_port:get_config(1)),
-    ?assertEqual(ok, linc_us4_port:set_config(1, [no_pkt_in])),
-    ?assertEqual([no_pkt_in], linc_us4_port:get_config(1)).
+    ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_config(?SWITCH_ID, 1, [no_pkt_in])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([no_pkt_in], linc_us4_port:get_config(?SWITCH_ID, 1)).
 
 state_link_down() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [link_down])),
-    ?assertEqual([link_down], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [link_down])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([link_down], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_blocked() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [blocked])),
-    ?assertEqual([blocked], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [blocked])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([blocked], linc_us4_port:get_state(?SWITCH_ID, 1)).
 
 state_live() ->
-    ?assertEqual([live], linc_us4_port:get_state(1)),
-    ?assertEqual(ok, linc_us4_port:set_state(1, [live])),
-    ?assertEqual([live], linc_us4_port:get_state(1)).
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)),
+    ?assertEqual(ok, linc_us4_port:set_state(?SWITCH_ID, 1, [live])),
+    ?assertEqual(1, meck:num_calls(linc_logic, send_to_controllers, '_')),
+    ?assertEqual([live], linc_us4_port:get_state(?SWITCH_ID, 1)).
+
+advertised_features() ->
+    FeatureSet1 = [other],
+    FeatureSet2 = [copper, autoneg],
+    ?assertEqual(ok,
+                 linc_us4_port:set_advertised_features(?SWITCH_ID, 1,
+                                                       FeatureSet1)),
+    ?assertEqual(FeatureSet1,
+                 linc_us4_port:get_advertised_features(?SWITCH_ID, 1)),
+    ?assertEqual(ok,
+                 linc_us4_port:set_advertised_features(?SWITCH_ID, 1,
+                                                       FeatureSet2)),
+    ?assertEqual(FeatureSet2,
+                 linc_us4_port:get_advertised_features(?SWITCH_ID, 1)).
 
 %% Fixtures --------------------------------------------------------------------
 
+ports() ->
+    [{port, 1, [{interface, "dummy1"},
+                {features, #features{}},
+                {config, #port_configuration{}}]},
+     {port, 2, [{interface, "dummy2"},
+                {features, #features{}},
+                {config, #port_configuration{}}]}].
+
+ports_without_queues() ->
+    Ports = ports(),
+    [{switch, 0, [{ports, Ports},
+                  {queues_status, disabled},
+                  {queues, []}]}].
+
 setup() ->
     mock(?MOCKED),
-    application:unset_env(linc, backends),
-    linc_us4_sup:start_link(),
-    Queues = [{port, 1, [{port_rate, {100, kbps}},
-                         {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
-                                        {2, [{min_rate, 100}, {max_rate, 100}]}
-                                       ]}]}],
-    Backend = {linc_us4, [{ports, [{1, [{interface, "dummy1"}]},
-                                   {2, [{interface, "dummy2"}]}]},
-                          {queues_status, enabled},
-                          {queues, Queues}
-                         ]},
-    application:set_env(linc, backends_opts, [Backend]).
+    linc:create(?SWITCH_ID),
+    linc_us4_test_utils:add_logic_path(),
+    {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
+    Config = ports_without_queues(),
+    application:load(linc),
+    application:set_env(linc, logical_switches, Config).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
 
 foreach_setup() ->
-    ok = linc_us4_port:initialize().
+    ok = meck:reset(linc_logic),
+    ok = meck:reset(linc_us4_port_native),
+    {ok, Switches} = application:get_env(linc, logical_switches),
+    ok = linc_us4_port:initialize(?SWITCH_ID, Switches).
 
 foreach_teardown(_) ->
-    ok = linc_us4_port:terminate().
+    ok = linc_us4_port:terminate(?SWITCH_ID).
 
 pkt() ->
     #linc_pkt{packet = [<<>>]}.

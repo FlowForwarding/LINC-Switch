@@ -26,8 +26,10 @@
 -compile([export_all]).
 -endif.
 
--include("linc_us3.hrl").
 -include_lib("pkt/include/pkt.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
+-include("linc_us3.hrl").
 
 %%%
 %%% Routing functions ----------------------------------------------------------
@@ -50,8 +52,8 @@ route(Pkt) ->
 
 %% @doc Applies flow instructions from the given table to a packet.
 -spec route(#linc_pkt{}, integer()) -> route_result().
-route(Pkt, TableId) ->
-    FlowEntries = linc_us3_flow:get_flow_table(TableId),
+route(#linc_pkt{switch_id = SwitchId} = Pkt, TableId) ->
+    FlowEntries = linc_us3_flow:get_flow_table(SwitchId, TableId),
     case match_flow_entries(Pkt, TableId, FlowEntries) of
         {match, #flow_entry{id = FlowId,
                             instructions = Instructions}, Pkt2} ->
@@ -63,7 +65,7 @@ route(Pkt, TableId) ->
                     route(Pkt3, NextTableId)
             end;
         {table_miss, Pkt2} ->
-            case linc_us3_flow:get_table_config(TableId) of
+            case linc_us3_flow:get_table_config(SwitchId, TableId) of
                 drop ->
                     {table_miss, drop};
                 controller ->
@@ -85,18 +87,18 @@ match_flow_entries(Pkt, TableId, [FlowEntry | Rest]) ->
         {match, FlowEntry} ->
             {match, FlowEntry, Pkt#linc_pkt{table_id = TableId}}
     end;
-match_flow_entries(Pkt, TableId, []) ->
-    linc_us3_flow:update_lookup_counter(TableId),
+match_flow_entries(#linc_pkt{switch_id = SwitchId} = Pkt, TableId, []) ->
+    linc_us3_flow:update_lookup_counter(SwitchId, TableId),
     {table_miss, Pkt#linc_pkt{table_id = TableId, packet_in_reason = no_match}}.
 
 -spec match_flow_entry(#linc_pkt{}, integer(), #flow_entry{}) -> match | nomatch.
-match_flow_entry(Pkt, TableId, FlowEntry) ->
+match_flow_entry(#linc_pkt{switch_id = SwitchId} = Pkt, TableId, FlowEntry) ->
     case fields_match(Pkt#linc_pkt.fields#ofp_match.fields,
                       FlowEntry#flow_entry.match#ofp_match.fields) of
         false ->
             nomatch;
         true ->
-            linc_us3_flow:update_match_counters(TableId,
+            linc_us3_flow:update_match_counters(SwitchId, TableId,
                                                 FlowEntry#flow_entry.id,
                                                 Pkt#linc_pkt.size),
             {match, FlowEntry}

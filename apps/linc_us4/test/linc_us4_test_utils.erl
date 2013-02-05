@@ -25,36 +25,37 @@
          check_output_on_ports/0,
          check_output_to_groups/0,
          check_if_called/1,
-         check_if_called/2]).
+         check_if_called/2,
+         add_logic_path/0]).
 
 mock([]) ->
     mocked;
 mock([flow | Rest]) ->
     ok = meck:new(linc_us4_flow),
     ok = meck:expect(linc_us4_flow, delete_where_group,
-                     fun(_) ->
+                     fun(_, _) ->
                              ok
                      end),
     mock(Rest);
 mock([logic | Rest]) ->
     ok = meck:new(linc_logic),
     ok = meck:expect(linc_logic, send_to_controllers,
-                     fun(_) ->
+                     fun(_, _) ->
                              ok
                      end),
     mock(Rest);
 mock([meter | Rest]) ->
     ok = meck:new(linc_us4_meter),
     ok = meck:expect(linc_us4_meter, is_valid,
-                     fun (X) when X<8 ->
+                     fun (_, X) when X < 8 ->
                              true;
-                         (_) ->
+                         (_, _) ->
                              false
                      end),
     meck:expect(linc_us4_meter, apply,
-                fun(1, _Pkt) ->
+                fun(_, 1, _Pkt) ->
                         drop;
-                   (_, Pkt) ->
+                   (_, _, Pkt) ->
                         {continue, Pkt}
                 end),
     mock(Rest);
@@ -65,9 +66,9 @@ mock([port | Rest]) ->
                              ok
                      end),
     ok = meck:expect(linc_us4_port, is_valid,
-                     fun (X) when X>32 ->
+                     fun (_, X) when X>32 ->
                              false;
-                         (_) ->
+                         (_, _) ->
                              true
                      end),
     mock(Rest);
@@ -97,13 +98,13 @@ mock([group | Rest]) ->
                              ok
                      end),
     ok = meck:expect(linc_us4_groups, is_valid,
-                     fun (X) when X>32 ->
+                     fun (_, X) when X>32 ->
                              false;
-                         (_) ->
+                         (_, _) ->
                              true
                      end),
     ok = meck:expect(linc_us4_groups, update_reference_count,
-                     fun(_GroupId, _Incr) ->
+                     fun(_SwitchId, _GroupId, _Incr) ->
                              ok
                      end),
     mock(Rest);
@@ -172,3 +173,6 @@ check_if_called({Module, Fun, Arity}, {Times, times}) ->
         4 ->
             [x || {_, {_, F, [_, _, _, _]}, _} <- History, F == Fun]
     end == [x || _ <- lists:seq(1, Times)].
+
+add_logic_path() ->
+    true = code:add_path("../../linc/ebin").

@@ -21,10 +21,13 @@
 -import(linc_us3_test_utils, [mock/1,
                               unmock/1]).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v3.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us3.hrl").
 
 -define(MOCKED, [flow, port]).
+-define(SWITCH_ID, 0).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
@@ -51,18 +54,19 @@ add_group() ->
     ?assertEqual(ok, M1),
     ?assertEqual(true, group_exists(1)),
 
-	%% Duplicate group should fail
+    %% Duplicate group should fail
     M1Err = call_group_mod(add, 1, all, []),
     ?assertMatch({error, #ofp_error_msg{}}, M1Err),
 
-    linc_us3_groups:update_reference_count(1, 333),
+    linc_us3_groups:update_reference_count(?SWITCH_ID, 1, 333),
 
     %% Inserting duplicate group should fail
     MDup = call_group_mod(add, 1, all, []),
     ?assertMatch({error, #ofp_error_msg{}}, MDup),
 
     %% check that counters are zero
-    G1Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    G1Stats = linc_us3_groups:get_stats(?SWITCH_ID,
+                                        #ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(333, stats_get(G1Stats, 1, reference_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
@@ -72,7 +76,8 @@ add_group() ->
     linc_us3_groups:apply(1, Pkt2),
 
     %% check that counters changed
-    G2Stats = linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    G2Stats = linc_us3_groups:get_stats(?SWITCH_ID,
+                                        #ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
     ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
@@ -185,39 +190,43 @@ stats_and_features() ->
     M1 = call_group_mod(add, 1, select, [B1]),
     ?assertEqual(ok, M1),
 
-    D1 = linc_us3_groups:get_desc(#ofp_group_desc_stats_request{}),
+    D1 = linc_us3_groups:get_desc(?SWITCH_ID, #ofp_group_desc_stats_request{}),
     ?assertMatch(#ofp_group_desc_stats_reply{}, D1),
 
     D2 = linc_us3_groups:get_features(#ofp_group_features_stats_request{}),
     ?assertMatch(#ofp_group_features_stats_reply{}, D2),
 
     %% try stats for nonexisting group
-    linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = 332211 }),
+    linc_us3_groups:get_stats(?SWITCH_ID,
+                              #ofp_group_stats_request{ group_id = 332211 }),
     %% try stats for ALL groups
-    linc_us3_groups:get_stats(#ofp_group_stats_request{ group_id = all }).
+    linc_us3_groups:get_stats(?SWITCH_ID,
+                              #ofp_group_stats_request{ group_id = all }).
 
 %%--------------------------------------------------------------------
 is_valid() ->
-    ?assertEqual(false, linc_us3_groups:is_valid(1)),
+    ?assertEqual(false, linc_us3_groups:is_valid(?SWITCH_ID, 1)),
     M1 = call_group_mod(add, 1, all, []),
     ?assertEqual(ok, M1),
-    ?assertEqual(true, linc_us3_groups:is_valid(1)).
+    ?assertEqual(true, linc_us3_groups:is_valid(?SWITCH_ID, 1)).
     
 %%%
 %%% Fixtures --------------------------------------------------------------------
 %%%
 
 setup() ->
+    linc:create(?SWITCH_ID),
     mock(?MOCKED).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
 
 foreach_setup() ->
-    linc_us3_groups:create().
+    linc_us3_groups:initialize(?SWITCH_ID).
 
 foreach_teardown(_) ->
-    linc_us3_groups:destroy().
+    linc_us3_groups:terminate(?SWITCH_ID).
 
 %%%
 %%% Tools --------------------------------------------------------------------
@@ -226,16 +235,16 @@ foreach_teardown(_) ->
 %% @internal
 %% @doc Peeks to group_table checking if group exists
 group_exists(GroupId) ->
-    case ets:lookup(group_table, GroupId) of
+    case ets:lookup(linc:lookup(?SWITCH_ID, group_table), GroupId) of
         [] -> false;
         L when is_list(L) -> true
     end.
 
 call_group_mod(Command, GroupId, Type, Buckets) ->
-    linc_us3_groups:modify(#ofp_group_mod{
-                              command = Command, group_id = GroupId,
-                              type = Type, buckets = Buckets
-                             }).
+    linc_us3_groups:modify(?SWITCH_ID, #ofp_group_mod{
+                                          command = Command, group_id = GroupId,
+                                          type = Type, buckets = Buckets
+                                         }).
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.

@@ -63,7 +63,8 @@ meter() ->
 apply_actions() ->
     Pkt = #linc_pkt{},
     ApplyActions = #ofp_instruction_apply_actions{actions = []},
-    ?assertMatch({stop, Pkt}, linc_us4_instructions:apply(Pkt, [ApplyActions])).
+    ?assertMatch({stop, Pkt},
+                 linc_us4_instructions:apply(Pkt, [ApplyActions])).
 
 clear_actions() ->
     SomeAction = #ofp_action_output{port = 0},
@@ -84,8 +85,9 @@ write_metadata() ->
     OldMetadata = <<111:64>>,
     Metadata = <<333:64>>,
     MetadataMask = <<222:64>>,
-    WriteMetadata = #ofp_instruction_write_metadata{metadata = Metadata,
-                                                    metadata_mask = MetadataMask},
+    WriteMetadata = #ofp_instruction_write_metadata{
+                       metadata = Metadata,
+                       metadata_mask = MetadataMask},
     %% No metadata in packet before, ignore mask
     Packet1 = #linc_pkt{fields = #ofp_match{}},
     {_, NewPacket1} = linc_us4_instructions:apply(Packet1, [WriteMetadata]),
@@ -95,8 +97,10 @@ write_metadata() ->
     ?assertEqual(Metadata, MetadataField1#ofp_field.value),
     
     %% Metadata in packet before, apply mask
-    Packet2 = #linc_pkt{fields = #ofp_match{fields = [#ofp_field{name = metadata,
-                                                                value = OldMetadata}]}},
+    Packet2 = #linc_pkt{fields = #ofp_match{
+                                    fields = [#ofp_field{
+                                                 name = metadata,
+                                                 value = OldMetadata}]}},
     {_, NewPacket2} = linc_us4_instructions:apply(Packet2, [WriteMetadata]),
     %% From OpenFlow 1.3.1 spec, page 15:
     %% new metadata = (old metadata & ~mask) | (value & mask)
@@ -108,18 +112,17 @@ write_metadata() ->
 
 goto_table() ->
     GotoTable = #ofp_instruction_goto_table{table_id = 5},
-    ?assertEqual({{goto, 5}, pkt},
-                 linc_us4_instructions:apply(pkt, [GotoTable])).
+    ?assertEqual({{goto, 5}, #linc_pkt{}},
+                 linc_us4_instructions:apply(#linc_pkt{}, [GotoTable])).
 
 empty() ->
-    ?assertEqual({stop, pkt}, linc_us4_instructions:apply(pkt, [])).
+    ?assertEqual({stop, #linc_pkt{}},
+                 linc_us4_instructions:apply(#linc_pkt{}, [])).
 
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
-    mock(?MOCKED),
-    ok.
+    mock(?MOCKED).
 
-teardown(ok) ->
-    unmock(?MOCKED),
-    ok.
+teardown(_) ->
+    unmock(?MOCKED).

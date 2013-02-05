@@ -36,11 +36,15 @@ switch_setup_test_() ->
      ]}.
 
 no_ofconfig() ->
-    add_logic_path(),
-
     application:load(linc),
     application:set_env(linc, of_config, disabled),
-    application:set_env(linc, backend, linc_us4),
+    Config = [{switch, 0,
+               [{backend, linc_us4},
+                {controllers, []},
+                {ports, []},
+                {queues_status, disabled},
+                {queues, []}]}],
+    application:set_env(linc, logical_switches, Config),
 
     [begin
          ?assertEqual(ok, application:start(linc)),
@@ -49,10 +53,8 @@ no_ofconfig() ->
      end || _ <- [lists:seq(1,10)]].
 
 with_ofconfig() ->
-    add_logic_path(),
-    %% Default sshd port is 830 and requires root or cap_net_admin capability 
+    %% Default sshd port is 830 and requires root or cap_net_admin capability
     %% on the beam to open the port, thus we change it to value above 1024.
-
     application:load(linc),
     application:set_env(enetconf, sshd_port, 1830),
     application:set_env(linc, of_config, enabled),
@@ -66,10 +68,8 @@ with_ofconfig() ->
 
 %% Fixtures --------------------------------------------------------------------
 
-add_logic_path() ->
-    true = code:add_path("../../linc/ebin").
-
 setup() ->
+    linc_us4_test_utils:add_logic_path(),
     error_logger:tty(false),
     ok = application:start(xmerl),
     ok = application:start(mnesia),

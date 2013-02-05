@@ -42,18 +42,19 @@ apply(Pkt, Instructions) ->
              Instructions :: list(ofp_instruction()),
              TerminationType :: instructions_apply_result())
             -> instructions_apply_output().
-apply2(Pkt,
+apply2(#linc_pkt{switch_id = SwitchId} = Pkt,
        [#ofp_instruction_meter{meter_id = MeterId} | InstructionsRest],
        stop) ->
     %% From Open Flow spec 1.3.1 page 15:
     %% Direct packet to the specified meter.
     %% As the result of the metering, the packet may be dropped.
-    {NewPkt, TerminationType}  = case linc_us4_meter:apply(MeterId, Pkt) of
-                                     drop ->
-                                         {Pkt, drop};
-                                     {continue, P} ->
-                                         {P, stop}
-                                 end,
+    {NewPkt, TerminationType} = case linc_us4_meter:apply(SwitchId,
+                                                          MeterId, Pkt) of
+                                    drop ->
+                                        {Pkt, drop};
+                                    {continue, P} ->
+                                        {P, stop}
+                                end,
     apply2(NewPkt, InstructionsRest, TerminationType);
 apply2(Pkt,
        [#ofp_instruction_apply_actions{actions = Actions} | InstructionsRest],

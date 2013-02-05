@@ -27,6 +27,7 @@
 -include("linc_us4.hrl").
 
 -define(MOCKED, [flow, port]).
+-define(SWITCH_ID, 0).
 
 %%%
 %%% Tests -----------------------------------------------------------------------
@@ -53,20 +54,21 @@ add_group() ->
     ?assertEqual(ok, M1),
     ?assertEqual(true, group_exists(1)),
 
-    linc_us4_groups:update_reference_count(1, 333),
+    linc_us4_groups:update_reference_count(?SWITCH_ID, 1, 333),
 
     %% Inserting duplicate group should fail
     MDup = call_group_mod(add, 1, all, []),
     ?assertMatch({error, #ofp_error_msg{}}, MDup),
 
     %% check that counters are zero
-    G1Stats = linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    G1Stats = linc_us4_groups:get_stats(?SWITCH_ID,
+                                        #ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(333, stats_get(G1Stats, 1, reference_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, packet_count)),
     ?assertEqual(0, stats_get(G1Stats, 1, byte_count)),
 
     %% check that time elapsed isn't zero
-	G1StatsTime = stats_get(G1Stats, 1, time),
+    G1StatsTime = stats_get(G1Stats, 1, time),
     ?assert(0 < G1StatsTime),
 
     %% send a random package
@@ -74,12 +76,13 @@ add_group() ->
     linc_us4_groups:apply(1, Pkt2),
 
     %% check that counters changed
-    G2Stats = linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 1 }),
+    G2Stats = linc_us4_groups:get_stats(?SWITCH_ID,
+                                        #ofp_group_stats_request{ group_id = 1 }),
     ?assertEqual(1, stats_get(G2Stats, 1, packet_count)),
 
-	%% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
-	timer:sleep(1),
-	G2StatsTime = stats_get(G2Stats, 1, time),
+    %% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
+    timer:sleep(1),
+    G2StatsTime = stats_get(G2Stats, 1, time),
     ?assert(G1StatsTime + 1000 =< G2StatsTime),
 
     ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
@@ -90,7 +93,7 @@ modify_group() ->
     M1 = call_group_mod(add, 1, all, [B1]),
     ?assertEqual(ok, M1),
 
-	%% Duplicate group should fail
+    %% Duplicate group should fail
     M1Err = call_group_mod(add, 1, all, [B1]),
     ?assertMatch({error, #ofp_error_msg{}}, M1Err),
 
@@ -197,39 +200,43 @@ stats_and_features() ->
     M1 = call_group_mod(add, 1, select, [B1]),
     ?assertEqual(ok, M1),
 
-    D1 = linc_us4_groups:get_desc(#ofp_group_desc_request{}),
+    D1 = linc_us4_groups:get_desc(?SWITCH_ID, #ofp_group_desc_request{}),
     ?assertMatch(#ofp_group_desc_reply{}, D1),
 
     D2 = linc_us4_groups:get_features(#ofp_group_features_request{}),
     ?assertMatch(#ofp_group_features_reply{}, D2),
 
     %% try stats for nonexisting group
-    linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = 332211 }),
+    linc_us4_groups:get_stats(?SWITCH_ID,
+                              #ofp_group_stats_request{ group_id = 332211 }),
     %% try stats for ALL groups
-    linc_us4_groups:get_stats(#ofp_group_stats_request{ group_id = all }).
+    linc_us4_groups:get_stats(?SWITCH_ID,
+                              #ofp_group_stats_request{ group_id = all }).
 
 %%--------------------------------------------------------------------
 is_valid() ->
-    ?assertEqual(false, linc_us4_groups:is_valid(1)),
+    ?assertEqual(false, linc_us4_groups:is_valid(?SWITCH_ID, 1)),
     M1 = call_group_mod(add, 1, all, []),
     ?assertEqual(ok, M1),
-    ?assertEqual(true, linc_us4_groups:is_valid(1)).
-    
+    ?assertEqual(true, linc_us4_groups:is_valid(?SWITCH_ID, 1)).
+
 %%%
 %%% Fixtures --------------------------------------------------------------------
 %%%
 
 setup() ->
+    linc:create(?SWITCH_ID),
     mock(?MOCKED).
 
 teardown(_) ->
+    linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
 
 foreach_setup() ->
-    linc_us4_groups:create().
+    linc_us4_groups:initialize(?SWITCH_ID).
 
 foreach_teardown(_) ->
-    linc_us4_groups:destroy().
+    linc_us4_groups:terminate(?SWITCH_ID).
 
 %%%
 %%% Tools --------------------------------------------------------------------
@@ -238,16 +245,16 @@ foreach_teardown(_) ->
 %% @internal
 %% @doc Peeks to group_table checking if group exists
 group_exists(GroupId) ->
-    case ets:lookup(group_table, GroupId) of
+    case ets:lookup(linc:lookup(?SWITCH_ID, group_table), GroupId) of
         [] -> false;
         L when is_list(L) -> true
     end.
 
 call_group_mod(Command, GroupId, Type, Buckets) ->
-    linc_us4_groups:modify(#ofp_group_mod{
-                              command = Command, group_id = GroupId,
-                              type = Type, buckets = Buckets
-                             }).
+    linc_us4_groups:modify(?SWITCH_ID, #ofp_group_mod{
+                                          command = Command, group_id = GroupId,
+                                          type = Type, buckets = Buckets
+                                         }).
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.
@@ -257,18 +264,18 @@ stats_get(#ofp_group_stats_reply{ body = Stats }, GroupId, Key) ->
         GroupStats ->
             case Key of
                 reference_count ->
-					GroupStats#ofp_group_stats.ref_count;
+                    GroupStats#ofp_group_stats.ref_count;
                 packet_count ->
-					GroupStats#ofp_group_stats.packet_count;
+                    GroupStats#ofp_group_stats.packet_count;
                 byte_count ->
-					GroupStats#ofp_group_stats.byte_count;
-				time ->
-					S = GroupStats#ofp_group_stats.duration_sec,
-					NS = GroupStats#ofp_group_stats.duration_nsec,
-					%% ensure nanosec is in range 0..(1 billion - 1)
-					?assert(NS >= 0),
-					?assert(NS =< 999999999),
-					S * 10000000 + NS / 1000
+                    GroupStats#ofp_group_stats.byte_count;
+                time ->
+                    S = GroupStats#ofp_group_stats.duration_sec,
+                    NS = GroupStats#ofp_group_stats.duration_nsec,
+                    %% ensure nanosec is in range 0..(1 billion - 1)
+                    ?assert(NS >= 0),
+                    ?assert(NS =< 999999999),
+                    S * 10000000 + NS / 1000
             end
     end.
 

@@ -181,6 +181,7 @@
           no_packet_in = false        :: boolean(),
           packet_in_reason            :: ofp_packet_in_reason(),
           packet_in_bytes = no_buffer :: ofp_packet_in_bytes(),
-          cookie = <<-1:64>>          :: binary()
+          cookie = <<-1:64>>          :: binary(),
+          switch_id = 0               :: integer()
          }).
 -type linc_pkt() :: #linc_pkt{}.

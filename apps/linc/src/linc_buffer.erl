@@ -20,13 +20,13 @@
 -module(linc_buffer).
 
 %% API
--export([initialize/0,
+-export([initialize/1,
          terminate/1,
-         save_buffer/1,
-         get_buffer/1]).
+         save_buffer/2,
+         get_buffer/2]).
 
 %% Internal
--export([expire_buffers/0]).
+-export([expire_buffers/1]).
 
 -record(linc_buffer, {id :: non_neg_integer(),
                       expires :: erlang:timestamp(),
@@ -39,50 +39,54 @@
 -define(INTERVAL, 1). % In seconds
 -define(MAX_AGE, 2).  % In seconds
 
--record(state, {tref}).
+-record(state, {linc_buffers :: ets:tid(),
+                linc_buffer_id :: ets:tid(),
+                tref :: timer:tref()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec initialize() -> #state{}.
-initialize() ->
-    linc_buffers = ets:new(linc_buffers,
-                           [named_table,
-                            public,
-                            {keypos, #linc_buffer.id}]),
-
-    linc_buffer_id = ets:new(linc_buffer_id,
-                             [named_table,
-                              public,
-                              {keypos, #linc_buffer_id.key}]),
-
-    ets:insert(linc_buffer_id, #linc_buffer_id{key=key, id_num=0}),
-
+-spec initialize(integer()) -> #state{}.
+initialize(SwitchId) ->
+    LincBuffers = ets:new(linc_buffers,
+                          [public,
+                           {keypos, #linc_buffer.id}]),
+    LincBufferId = ets:new(linc_buffer_id,
+                           [public,
+                            {keypos, #linc_buffer_id.key}]),
+    linc:register(SwitchId, linc_buffers, LincBuffers),
+    linc:register(SwitchId, linc_buffer_id, LincBufferId),
+    ets:insert(LincBufferId, #linc_buffer_id{key=key, id_num=0}),
     {ok,Tref} = timer:apply_interval(timer:seconds(?INTERVAL),
-                                     ?MODULE, expire_buffers, []),
-    #state{tref=Tref}.
+                                     ?MODULE, expire_buffers, [SwitchId]),
+    #state{linc_buffers = LincBuffers,
+           linc_buffer_id = LincBufferId,
+           tref=Tref}.
 
-terminate(#state{tref=Tref}) ->
+terminate(#state{linc_buffers = LincBuffers,
+                 linc_buffer_id = LincBufferId,
+                 tref=Tref}) ->
     timer:cancel(Tref),
-    ets:delete(linc_buffers),
-    ets:delete(linc_buffer_id).
+    ets:delete(LincBuffers),
+    ets:delete(LincBufferId).
 
 %% @doc Save a packet.
 %% @end
--spec save_buffer(term()) -> non_neg_integer().
-save_buffer(Packet) ->
-    Id = next_id(),
-    ets:insert(linc_buffers, #linc_buffer{id = Id,
-                                          expires = expiration_time(),
-                                          packet = Packet}),
+-spec save_buffer(integer(), term()) -> non_neg_integer().
+save_buffer(SwitchId, Packet) ->
+    Id = next_id(SwitchId),
+    ets:insert(linc:lookup(SwitchId, linc_buffers),
+               #linc_buffer{id = Id,
+                            expires = expiration_time(),
+                            packet = Packet}),
     Id.
 
 %% @doc Retreive a packet. If the packet has already been expired 
 %% not_found is returned.
--spec get_buffer(non_neg_integer()) -> term() | not_found.
-get_buffer(BufferId) ->
-    case ets:lookup(linc_buffers,BufferId) of
+-spec get_buffer(integer(), non_neg_integer()) -> term() | not_found.
+get_buffer(SwitchId, BufferId) ->
+    case ets:lookup(linc:lookup(SwitchId, linc_buffers),BufferId) of
         [#linc_buffer{packet=Packet}] ->
             Packet;
         [] ->
@@ -92,8 +96,9 @@ get_buffer(BufferId) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-next_id() ->
-    ets:update_counter(linc_buffer_id, key, {#linc_buffer_id.id_num, 1, ?MAX_ID, 0}).
+next_id(SwitchId) ->
+    ets:update_counter(linc:lookup(SwitchId, linc_buffer_id), key,
+                       {#linc_buffer_id.id_num, 1, ?MAX_ID, 0}).
 
 expiration_time() ->
     {Mega,Secs,Micro} = os:timestamp(),
@@ -104,11 +109,12 @@ expiration_time() ->
             {Mega,S,Micro}
     end.
 
-expire_buffers() ->
+expire_buffers(SwitchId) ->
     Now = os:timestamp(),
+    LincBuffers = linc:lookup(SwitchId, linc_buffers),
     ets:foldl(fun (#linc_buffer{id=Id,expires=Expires}, Acc) when Expires<Now ->
-                      ets:delete(linc_buffers,Id),
+                      ets:delete(LincBuffers, Id),
                       Acc;
                   (_Buffer, Acc) ->
                       Acc
-              end, ok, linc_buffers).
+              end, ok, LincBuffers).

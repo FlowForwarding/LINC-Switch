@@ -22,7 +22,16 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/2,
+         stop/1]).
+
+-export([create/1,
+         delete/1,
+         register/3,
+         lookup/2,
+         controllers_for_switch/2]).
+
+-include("linc_logger.hrl").
 
 %%------------------------------------------------------------------------------
 %% Application callbacks
@@ -31,9 +40,49 @@
 %% @doc Starts the application.
 -spec start(any(), any()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
-    linc_sup:start_link().
+    linc_capable_sup:start_link().
 
 %% @doc Stops the application.
 -spec stop(any()) -> ok.
 stop(_State) ->
     ok.
+
+%%------------------------------------------------------------------------------
+%% Common LINC helper functions
+%%------------------------------------------------------------------------------
+
+-spec create(integer()) -> ets:tid().
+create(SwitchId) ->
+    ets:new(name(SwitchId), [named_table, public,
+                             {read_concurrency, true}]).
+
+-spec delete(integer()) -> true.
+delete(SwitchId) ->
+    true = ets:delete(name(SwitchId)).
+
+-spec register(integer(), atom(), pid() | ets:tid()) -> true.
+register(SwitchId, Name, Pid) ->
+    true = ets:insert(name(SwitchId), {Name, Pid}).
+
+-spec lookup(integer(), atom()) -> term().
+lookup(SwitchId, Name) ->
+    case ets:lookup(name(SwitchId), Name) of
+        [{Name, Pid}] ->
+            Pid;
+        [] ->
+            ?DEBUG("Failed lookup: ~p ~p", [SwitchId, Name]),
+            undefined
+    end.
+
+-spec controllers_for_switch(integer(), term()) -> list(tuple()).
+controllers_for_switch(SwitchId, Config) ->
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
+    {controllers, Controllers} = lists:keyfind(controllers, 1, Opts),
+    Controllers.
+
+%%------------------------------------------------------------------------------
+%% Local helpers
+%%------------------------------------------------------------------------------
+
+name(SwitchId) ->
+    list_to_atom("linc_switch_" ++ integer_to_list(SwitchId)).

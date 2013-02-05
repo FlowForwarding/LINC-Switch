@@ -40,7 +40,6 @@
                               write_setfield_miss,
                               apply_setfield_miss]).
 
-                              
 handle_req(#ofp_table_features_request{body=[]}) ->
     %% Read request
     #ofp_table_features_reply{body = get_all_features()};

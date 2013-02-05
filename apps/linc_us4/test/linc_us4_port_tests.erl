@@ -205,25 +205,26 @@ advertised_features() ->
 
 %% Fixtures --------------------------------------------------------------------
 
+ports() ->
+    [{port, 1, [{interface, "dummy1"},
+                {features, #features{}},
+                {config, #port_configuration{}}]},
+     {port, 2, [{interface, "dummy2"},
+                {features, #features{}},
+                {config, #port_configuration{}}]}].
+
+ports_without_queues() ->
+    Ports = ports(),
+    [{switch, 0, [{ports, Ports},
+                  {queues_status, disabled},
+                  {queues, []}]}].
+
 setup() ->
     mock(?MOCKED),
     linc:create(?SWITCH_ID),
     linc_us4_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
-    Queues = [{port, 1, [{port_rate, {100, kbps}},
-                         {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
-                                        {2, [{min_rate, 100}, {max_rate, 100}]}
-                                       ]}]}],
-    Ports = [{port, 1, [{interface, "dummy1"},
-                        {features, #features{}},
-                        {config, #port_configuration{}}]},
-             {port, 2, [{interface, "dummy2"},
-                        {features, #features{}},
-                        {config, #port_configuration{}}]}],
-    Config = [{switch, 0,
-               [{ports, Ports},
-                {queues_status, enabled},
-                {queues, Queues}]}],
+    Config = ports_without_queues(),
     application:load(linc),
     application:set_env(linc, logical_switches, Config).
 

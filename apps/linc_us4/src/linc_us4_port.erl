@@ -448,10 +448,8 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    queues = QueuesState,
                    ifindex = Ifindex,
                    switch_id = SwitchId} = State) ->
-    io:format(user, "~n@@@@@@@@~nSEND~n", []),
     case check_port_config(no_fwd, PortConfig) of
         true ->
-            io:format(user, "~n@@@@@@@@~nDROP~n", []),
             drop;
         false ->
             Frame = pkt:encapsulate(Packet),
@@ -460,14 +458,11 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                 disabled ->
                     case {Port, Ifindex} of
                         {undefined, _} ->
-                            io:format(user, "~n@@@@@@@@~nSEND~n", []),
                             linc_us4_port_native:send(Socket, Ifindex, Frame);
                         {_, undefined} ->
-                            io:format(user, "~n@@@@@@@@~nDISABLED~n", []),
                             port_command(Port, Frame)
                     end;
                 enabled ->
-                    io:format(user, "~n@@@@@@@@~nQUEUE~n", []),
                     linc_us4_queue:send(SwitchId, PortNo, QueueId, Frame)
             end
     end,
@@ -661,7 +656,11 @@ queues_config(SwitchId, PortOpts) ->
 ports_for_switch(SwitchId, Config) ->
     {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
     {ports, Ports} = lists:keyfind(ports, 1, Opts),
-    Ports.
+    QueuesStatus = lists:keyfind(queues_status, 1, Opts),
+    Queues = lists:keyfind(queues, 1, Opts),
+    [begin
+         {port, PortNo, [QueuesStatus | [Queues | PortConfig]]}
+     end || {port, PortNo, PortConfig} <- Ports].
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).

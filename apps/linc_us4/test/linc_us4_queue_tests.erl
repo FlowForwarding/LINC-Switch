@@ -60,7 +60,6 @@ queue_stats_request() ->
     StatsReply2 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest2),
     ?assertEqual(#ofp_error_msg{type = bad_request, code = bad_queue},
                  StatsReply2),
-
     StatsRequest3 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = ValidQueue},
     StatsReply3 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest3),
@@ -68,7 +67,7 @@ queue_stats_request() ->
     [QueueStats] = StatsReply3#ofp_queue_stats_reply.body,
     ?assertEqual(0, QueueStats#ofp_queue_stats.duration_sec),
     ?assertNot(QueueStats#ofp_queue_stats.duration_nsec == 0),
-    
+
     StatsRequest4 = #ofp_queue_stats_request{port_no = ValidPort,
                                              queue_id = all},
     StatsReply4 = linc_us4_queue:get_stats(?SWITCH_ID, StatsRequest4),
@@ -108,24 +107,32 @@ max_rate() ->
 
 %% Fixtures --------------------------------------------------------------------
 
-setup() ->
-    mock(?MOCKED),
-    linc:create(?SWITCH_ID),
-    {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
+ports() ->
+    [{port, 1, [{interface, "dummy1"},
+                {features, #features{}},
+                {config, #port_configuration{}}]},
+     {port, 2, [{interface, "dummy2"},
+                {features, #features{}},
+                {config, #port_configuration{}}]}].
+
+ports_with_queues() ->
+    %% Port 1 with two explicit queues
+    %% Port 2 with implicit default queue
     Queues = [{port, 1, [{port_rate, {100, kbps}},
                          {port_queues, [{1, [{min_rate, 100}, {max_rate, 100}]},
                                         {2, [{min_rate, 100}, {max_rate, 100}]}
                                        ]}]}],
-    Ports = [{port, 1, [{interface, "dummy1"},
-                        {features, #features{}},
-                        {config, #port_configuration{}}]},
-             {port, 2, [{interface, "dummy2"},
-                        {features, #features{}},
-                        {config, #port_configuration{}}]}],
-    Config = [{switch, 0,
-               [{ports, Ports},
-                {queues_status, enabled},
-                {queues, Queues}]}],
+    Ports = ports(),
+    [{switch, 0, [{ports, Ports},
+                  {queues_status, enabled},
+                  {queues, Queues}]}].
+
+setup() ->
+    mock(?MOCKED),
+    linc:create(?SWITCH_ID),
+    {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
+    Config = ports_with_queues(),
+    application:load(linc),
     application:set_env(linc, logical_switches, Config),
     linc_us4_port:initialize(?SWITCH_ID, Config).
 

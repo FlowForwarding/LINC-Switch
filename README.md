@@ -94,7 +94,7 @@ Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` fi
           {backend, linc_us4},
           {controllers,
            [
-            {"Switch0-DefaultController", "localhost", 6633}
+            {"Switch0-DefaultController", "localhost", 6633, tcp}
            ]},
           {ports,
            [

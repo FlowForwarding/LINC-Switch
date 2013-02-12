@@ -44,7 +44,7 @@
          set_queue_max_rate/4,
          is_queue_valid/3,
          %% Controllers
-         open_controller/4
+         open_controller/5
         ]).
 
 %% Internal API
@@ -157,9 +157,9 @@ is_queue_valid(SwitchId, PortNo, QueueId) ->
     gen_server:call(linc:lookup(SwitchId, linc_logic), {is_queue_valid,
                                                         PortNo, QueueId}).
 
-open_controller(SwitchId, Id, Host, Port) ->
+open_controller(SwitchId, Id, Host, Port, Proto) ->
     gen_server:cast(linc:lookup(SwitchId, linc_logic), {open_controller, Id,
-                                                        Host, Port}).
+                                                        Host, Port, Proto}).
 
 %% @doc Start the OF Switch logic.
 -spec start_link(integer(), atom(), term(), term()) -> {ok, pid()} |
@@ -280,12 +280,12 @@ handle_cast({set_queue_max_rate, PortNo, QueueId, Rate},
                    switch_id = SwitchId} = State) ->
     OFConfigBackendMod:set_queue_max_rate(SwitchId, PortNo, QueueId, Rate),
     {noreply, State};
-handle_cast({open_controller, ControllerId, Host, Port},
+handle_cast({open_controller, ControllerId, Host, Port, Proto},
             #state{version = Version,
                    switch_id = SwitchId} = State) ->
     Channel = linc:lookup(SwitchId, channel_sup),
     Opts = [{controlling_process, self()}, {version, Version}],
-    ofp_channel:open(Channel, ControllerId, Host, Port, Opts),
+    ofp_channel:open(Channel, ControllerId, Host, Port, Proto, Opts),
     {noreply, State};
 handle_cast(_Message, State) ->
     {noreply, State}.
@@ -313,13 +313,13 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     Controllers = linc:controllers_for_switch(SwitchId, Config),
     Opts = [{controlling_process, self()}, {version, Version}],
     Ctrls = [case Ctrl of
-                 {Id, Host, Port} ->
-                     {Id, Host, Port, Opts};
-                 {Id, Host, Port, SysOpts} ->
-                     {Id, Host, Port, Opts ++ SysOpts}
+                 {Id, Host, Port, Protocol} ->
+                     {Id, Host, Port, Protocol, Opts};
+                 {Id, Host, Port, Protocol, SysOpts} ->
+                     {Id, Host, Port, Protocol, Opts ++ SysOpts}
              end || Ctrl <- Controllers],
-    [ofp_channel:open(ChannelSupPid, Id, Host, Port, Opt)
-     || {Id, Host, Port, Opt} <- Ctrls],
+    [ofp_channel:open(ChannelSupPid, Id, Host, Port, Protocol, Opt)
+     || {Id, Host, Port, Protocol, Opt} <- Ctrls],
     {noreply, State#state{version = Version,
                           backend_state = BackendState2,
                           datapath_id = DatapathId}};

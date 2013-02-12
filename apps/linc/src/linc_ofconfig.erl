@@ -28,7 +28,8 @@
          convert_port_config/1,
          convert_port_features/1,
          convert_port_state/1,
-         read_and_update_startup/0]).
+         read_and_update_startup/0,
+         get_certificates/0]).
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,
@@ -82,7 +83,7 @@
                             SwitchId :: integer()},
                            Host :: string(),
                            Port :: integer(),
-                           Protocol :: tcp}.
+                           Protocol :: tcp | tls}.
 
 -type ofc_switch() :: {switch,
                        SwitchId :: integer(),
@@ -94,11 +95,11 @@
           queues = [] :: [ofc_queue()],
           switches = [] :: [ofc_switch()],
           controllers = [] :: [ofc_controller()],
-          certificates = [] :: [{Id :: string(), Certificate :: binary()}]
+          certificates = [] :: [{Id :: string(), Certificate :: string()}]
          }).
 
 -record(state, {
-          certificates = [] :: [{Id :: string(), Certificate :: binary()}]
+          certificates = [] :: [{Id :: string(), Certificate :: string()}]
          }).
 
 %%------------------------------------------------------------------------------
@@ -108,6 +109,14 @@
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+get_certificates() ->
+    case application:get_env(linc, of_config) of
+        {ok, enabled} ->
+            gen_server:call(?MODULE, get_certificates);
+        _ ->
+            []
+    end.
 
 -spec get_state(list()) -> #capable_switch{}.
 get_state(Certs) ->
@@ -420,8 +429,9 @@ update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
                     NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
 
 update_controllers(Ctrls, SwitchId, OldCtrls) ->
-    OldCtrls2 = [{ControllerId, Host, Port} || {controller, {ControllerId, SId},
-                                  Host, Port, _} <- OldCtrls, SId == SwitchId],
+    OldCtrls2 = [{ControllerId, Host, Port, Protocol}
+                 || {controller, {ControllerId, SId},
+                     Host, Port, Protocol} <- OldCtrls, SId == SwitchId],
     Ctrls ++ OldCtrls2.
 
 %%------------------------------------------------------------------------------
@@ -522,6 +532,8 @@ handle_call({get, _SessionId, _Filter}, _From,
     ConfigAndState = get_state(Certs),
     EncodedConfigAndState = of_config:encode(ConfigAndState),
     {reply, {ok, EncodedConfigAndState}, State};
+handle_call(get_certificates, _From, #state{certificates = Certs} = State) ->
+    {reply, Certs, State};
 handle_call(_, _, State) ->
     {reply, {error, {operation_failed, application}}, State}.
 
@@ -811,7 +823,7 @@ do_running([{Op, {switch, SwitchId, DatapathId}} | Rest], OnError, Certs) ->
             do_running(Rest, OnError, Certs)
     end;
 do_running([{Op, {controller, {ControllerId, SwitchId},
-                  Host, Port, _}} | Rest], OnError, Certs) ->
+                  Host, Port, Proto}} | Rest], OnError, Certs) ->
     Host2 = case Host of
                 undefined -> "localhost";
                 _ -> Host
@@ -820,6 +832,10 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                 undefined -> 6633;
                 _ -> Port
             end,
+    Proto2 = case Proto of
+                 undefined -> tls;
+                 _ -> Proto
+             end,
     case Op of
         create ->
             case is_valid_controller(SwitchId, ControllerId) of
@@ -827,7 +843,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                     handle_running_error(data_exists, OnError, Rest, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,
-                                               Host2, Port2),
+                                               Host2, Port2, Proto2),
                     do_running(Rest, OnError, Certs)
             end;
         delete ->
@@ -853,7 +869,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                     do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,
-                                               Host2, Port2),
+                                               Host2, Port2, Proto2),
                     do_running(Rest, OnError, Certs)
             end
     end;

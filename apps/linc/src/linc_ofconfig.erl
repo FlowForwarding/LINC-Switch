@@ -315,7 +315,8 @@ read_and_update_startup() ->
     {ok, Sys} = application:get_env(linc, logical_switches),
     InitNew = {[], #ofconfig{name = startup}},
     {Config, NewStartup} = update_switches(Sys, Startup, InitNew),
-    mnesia_write(startup, NewStartup),
+    mnesia_write(startup, NewStartup#ofconfig{
+                            certificates = Startup#ofconfig.certificates}),
     Config.
 
 update_switches([], _, New) ->

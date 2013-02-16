@@ -121,7 +121,8 @@ For detailed explanation on how to setup simple LINC testbed check the
 ## Support
 
 If you have any technical questions, problems or suggestions regarding LINC
-please contact <openflow@erlang-solutions.com>.
+please send them to <linc-dev@flowforwarding.org> mailing list or create an
+Issue. Thanks.
 
  [ovs]: http://openvswitch.org
  [ofp1]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.0.0.pdf

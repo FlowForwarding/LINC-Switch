@@ -21,7 +21,7 @@ To start the controller we execute the Erlang shell,
 
 Compile the controller,
 
-    (controller)1> c("scripts/of_controller.erl").
+    (controller)1> c("scripts/of_controller_v4.erl").
 
 Load records needed to send OpenFlow Protocol messages to the Switch,
 
@@ -29,7 +29,7 @@ Load records needed to send OpenFlow Protocol messages to the Switch,
 
 And actually start the Controller on port 6633.
 
-    (controller)3> {ok, CtrlPid} = of_controller:start(6633).
+    (controller)3> {ok, CtrlPid} = of_controller_v4:start(6633).
 
 ### OpenFlow Switch
 
@@ -37,20 +37,51 @@ When the Controller is running we can start our Erlang OpenFlow Switch implement
 
 We edit the `rel/files/sys.config` file, which contains the Switch configuration and check if the Controller (`localhost:6633`) and two ports (`tap0` and `tap1`) are specified and uncommented.
 
-    {linc,
+        {linc,
      [
-      {controllers, [
-                     {"localhost", 6633}
-                    ]},
-      {ports, [
-               [{ofs_port_no, 1}, {interface, "tap0"}, {ip, "10.0.0.1"},
-                {queues, [{0, [{ofp_queue_prop_min_rate, 0}, {ofp_queue_prop_max_rate, 1000}]}]},
-                {rate, {1, gibps}}],
-               [{ofs_port_no, 2}, {interface, "tap1"}, {ip, "10.0.0.2"},
-                {queues, [{0, [{ofp_queue_prop_min_rate, 0}, {ofp_queue_prop_max_rate, 1000}]}]},
-                {rate, {1, gibps}}]
-              ]}
-     ]},
+     {of_config, enabled},
+
+     {logical_switches,
+      [
+      {switch, 0,
+       [
+       {backend, linc_us4},
+
+       {controllers,
+        [
+        {"Switch0-DefaultController", "localhost", 6633, tcp}
+        ]},
+
+       {ports,
+        [
+        {port, 1, [{interface, "eth0"}]},
+        {port, 2, [{interface, "tap0"}]},
+        {port, 3, [{interface, "tap1"}, {ip, "10.0.0.1"}]}
+        ]},
+
+       {queues_status, enabled},
+
+       {queues,
+        [
+        {port, 1, [{port_rate, {100, kbps}},
+                   {port_queues, [
+                                 {1, [{min_rate, 100}, {max_rate, 100}]},
+                                 {2, [{min_rate, 100}, {max_rate, 100}]}
+                                 ]}]},
+        {port, 2, [{port_rate, {100, kbps}},
+                   {port_queues, [
+                                 {1, [{min_rate, 100}, {max_rate, 100}]},
+                                 {2, [{min_rate, 100}, {max_rate, 100}]}
+                                 ]}]},
+        {port, 3, [{port_rate, {100, kbps}},
+                   {port_queues, [
+                                 {1, [{min_rate, 100}, {max_rate, 100}]},
+                                 {2, [{min_rate, 100}, {max_rate, 100}]}
+                                 ]}]}
+
+        ]}
+       ]}
+
      ...
     
 We build and run the switch (we need `sudo` to create the ports).

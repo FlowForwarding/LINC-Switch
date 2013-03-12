@@ -324,7 +324,7 @@ group_caps([], Capabilities) ->
 group_caps([select_weight | Rest], Capabilities) ->
     group_caps(Rest, ['select-weight' | Capabilities]);
 group_caps([select_liveness | Rest], Capabilities) ->
-    group_caps(Rest, ['select_liveness' | Capabilities]);
+    group_caps(Rest, ['select-liveness' | Capabilities]);
 group_caps([chaining | Rest], Capabilities) ->
     group_caps(Rest, [chaining | Capabilities]);
 group_caps([chaining_check | Rest], Capabilities) ->

@@ -37,7 +37,7 @@ When the Controller is running we can start our Erlang OpenFlow Switch implement
 
 We edit the `rel/files/sys.config` file, which contains the Switch configuration and check if the Controller (`localhost:6633`) and two ports (`tap0` and `tap1`) are specified and uncommented.
 
-        {linc,
+    {linc,
      [
      {of_config, enabled},
 
@@ -59,27 +59,7 @@ We edit the `rel/files/sys.config` file, which contains the Switch configuration
         {port, 3, [{interface, "tap1"}, {ip, "10.0.0.1"}]}
         ]},
 
-       {queues_status, enabled},
-
-       {queues,
-        [
-        {port, 1, [{port_rate, {100, kbps}},
-                   {port_queues, [
-                                 {1, [{min_rate, 100}, {max_rate, 100}]},
-                                 {2, [{min_rate, 100}, {max_rate, 100}]}
-                                 ]}]},
-        {port, 2, [{port_rate, {100, kbps}},
-                   {port_queues, [
-                                 {1, [{min_rate, 100}, {max_rate, 100}]},
-                                 {2, [{min_rate, 100}, {max_rate, 100}]}
-                                 ]}]},
-        {port, 3, [{port_rate, {100, kbps}},
-                   {port_queues, [
-                                 {1, [{min_rate, 100}, {max_rate, 100}]},
-                                 {2, [{min_rate, 100}, {max_rate, 100}]}
-                                 ]}]}
-
-        ]}
+       {queues_status, disabled}
        ]}
 
      ...
@@ -103,9 +83,9 @@ These interfaces must be upped.
     % ifconfig tap0 up
     % ifconfig tap1 up
 
-Erlang representation of those ports are stored in `ofs_ports` ets table.
+Erlang representation of those ports are stored in `linc_ports` ets table.
 
-    (switch)1> ets:tab2list(ofs_ports).
+    (switch)1> ets:tab2list(linc:lookup(0, linc_ports)).
 
 ### Receiving port
 
@@ -119,8 +99,8 @@ On the receiving port (`tap1`) we run `tcpdump` to watch for pong (ICMP Echo Rep
 
 Without any input from the Controller all the packets received by the Switch are dropped as the first table has no flow entires to match on.
 
-    (switch)2> ets:lookup(flow_tables, 0).
-    [{flow_table,0,[],drop}]
+    (switch)2> ets:tab2list(linc:lookup(0, flow_table_0)).
+    []
 
 When we send a single ping on `tap0` using `tcpreplay`...
 
@@ -133,7 +113,6 @@ When we send a single ping on `tap0` using `tcpreplay`...
 We create a `flow_mod` message containing a match field (match on packets received from port 1) and an action (send matched packets to port 2).
 
     (controller)4> FlowMod = #ofp_message{
-                                experimental = true,
                                 version = 3,
                                 xid = 100,
                                 body = #ofp_flow_mod{
@@ -170,15 +149,14 @@ We send it to the switch.
 
 We can take a look at the flow table `0` now to see it contains one flow entry received from the Controller.
 
-    (switch)3> ets:lookup(flow_tables, 0).
-    [{flow_table,0,
-                 [{flow_entry,1,
-                              {ofp_match,oxm,
-                                     [{ofp_field,openflow_basic,in_port,false,
-                                                 <<0,0,0,1>>,
-                                                 undefined}]},
-                              [{ofp_instruction_write_actions,[{ofp_action_output,14,2,64}]}]}],
-                 drop}]
+    (switch)3> ets:tab2list(linc:lookup(0, flow_table_0)).
+    [{flow_entry,1,
+                 {ofp_match,oxm,
+                        [{ofp_field,openflow_basic,in_port,false,
+                                    <<0,0,0,1>>,
+                                    undefined}]},
+                 [{ofp_instruction_write_actions,[{ofp_action_output,14,2,64}]}]
+      }]
 
 Now when we send the same ping packet using `tcpreplay`...
 
@@ -194,7 +172,6 @@ Now when we send the same ping packet using `tcpreplay`...
 We create another `flow_mod` message - this time we want to remove all the flow entires from the flow table `0`.
 
     (controller)7> RemoveFlows = #ofp_message{
-                                    experimental = true,
                                     version = 3,
                                     xid = 200,
                                     body = #ofp_flow_mod{
@@ -220,8 +197,8 @@ We send it to the Switch.
 
 We can check if the flow entry we added earlier is gone from the flow table `0`.
 
-    (switch)4> ets:lookup(flow_tables, 0).
-    [{flow_table,0,[],drop}]
+    (switch)4> ets:tab2list(linc:lookup(0, flow_table_0)).
+    []
 
 We send the ping packet again...
 

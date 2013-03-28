@@ -6,9 +6,6 @@ from ryu.controller.ofp_event import EventOFPPacketIn
 from ryu.controller.handler import set_ev_cls
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import MAIN_DISPATCHER
-from ryu.controller.dispatcher import EventQueueCreate
-from ryu.controller.dispatcher import EventDispatcherChange
-from ryu.controller.dispatcher import QUEUE_EV_DISPATCHER
 from ryu.ofproto.ofproto_v1_2 import OFPG_ANY
 from ryu.ofproto.ofproto_v1_3 import OFP_VERSION
 from ryu.lib.mac import haddr_to_bin
@@ -118,11 +115,3 @@ class L2Switch(RyuApp):
                                          ofproto.OFPP_CONTROLLER,
                                          [output_all], data)
         datapath.send_msg(packet_out)
-
-    @set_ev_cls(EventQueueCreate, QUEUE_EV_DISPATCHER)
-    def queue_create(self, ev):
-        pass
-
-    @set_ev_cls(EventDispatcherChange, QUEUE_EV_DISPATCHER)
-    def dispatcher_change(self, ev):
-        pass

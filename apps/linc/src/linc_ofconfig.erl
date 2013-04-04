@@ -29,7 +29,8 @@
          convert_port_features/1,
          convert_port_state/1,
          read_and_update_startup/0,
-         get_certificates/0]).
+         get_certificates/0,
+         get_switch_state/1]).
 
 %% gen_netconf callbacks
 -export([handle_get_config/3,

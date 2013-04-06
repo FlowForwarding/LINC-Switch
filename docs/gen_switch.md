@@ -1,11 +1,14 @@
-The gen\_switch behaviour
+The gen_switch behaviour
 ======================
 
 The `gen_switch` is a behaviour that defines set of callbacks that one has to
-provide in order to implement the switch. Currently there is only one
-implementation of `gen_switch` behaviour – `linc_us3` which is a purely
-userspace, Erlang implementation of OFP 1.2 switch. One can think of various
-other backends to implement, like:
+provide in order to implement the switch. Currently there are
+two implementations of `gen_switch` behaviour: 
+
+  * `linc_us3` which is a purely userspace, Erlang implementation of an OFP 1.2 switch
+  * `linc_us4` which is a purely userspace, Erlang implementation of an OFP 1.3 switch
+
+One can think of various other backends to implement, like:
 
  * hardware based switch,
  * userspace implementation in other programming language (like C),

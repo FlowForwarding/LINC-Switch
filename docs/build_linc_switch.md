@@ -98,6 +98,7 @@ Step 6: Check created bridges and taps
 ## Running LINC OpenFlow Switch
     #  cd /usr/local/src/linc
     #  rel/linc bin/linc console
+    (type with out quotes: "q()." at the prompt to quit console)
     (alternatively, you can also run this as a deamon)
     #  rel/linc/bin/linc
     
@@ -106,4 +107,8 @@ Start the Ryu Controller in Flow Learning mode for OpenFlow v 1.3.1
 
     #  cd /usr/local/src/ryu
     #  bin/ryu-manager --verbose /usr/local/src/linc/LINC-Switch/scripts/ryu/l2_switch_v13.py
+    (press CNTRL+C to quit)
+
+## Questions?
+Subscribe and post questions, suggestions, comments and answers to linc-dev@flowforwarding.org mailing list
     

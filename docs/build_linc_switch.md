@@ -4,7 +4,7 @@
 >1. Standard Intel x86-64 CPU with 4GB RAM and four network ports (minimum), capable of running Linux v. 3.1+ kernel.
 >2. American Portwell Technology, Inc., model [CAR-4010](http://www.portwell.com/products/ca.asp), available with either four 1GbE RJ45 ports or four SFP ports.
 
->_Note: LINC can also work on other higher end platforms such as [Tilera](http://www.tilera.com")._
+>_Note: LINC has been tested to also work on other higher end platforms such as [Tilera](http://www.tilera.com")._
 
 >*Additional accessories needed: USB Keyboard, VGA monitor, Power Cord, and Ethernet cables.*
 

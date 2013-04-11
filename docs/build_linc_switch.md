@@ -18,6 +18,8 @@
 >3. Connect the power cable to the hardware box and power it on and boot from CD/USB to install the LINC Software
 
 ### Post Install setup:
+*Note: All operations are executed as user "root"*
+
 Step 1: Login to the "LINC" box using credentials:
     
     username: root 
@@ -43,3 +45,65 @@ Step 5: Restart network services
 
     service network restart
 
+Step 6: Check created bridges and taps
+
+    brctl show
+    
+    bridge name  bridge id           STP enabled       interfaces
+    br1          8000.0090fb3771ef   no                eth1
+                                                       tap1
+    br10         8000.0090fb411cba   no                eth10
+                                                       tap10
+    br11         8000.0090fb411cbb   no                eth11
+                                                       tap11
+    br12         8000.0090fb411cbc   no                eth12
+                                                       tap12
+    br13         8000.0090fb411cbd   no                eth13
+                                                       tap13
+    br14         8000.0090fb411cbe   no                eth14
+                                                       tap14
+    br15         8000.0090fb411cbf   no                eth15
+                                                       tap15
+    br2          8000.0090fb3771f0   no                eth2
+                                                       tap2
+    br3          8000.0090fb3771f1   no                eth3
+                                                       tap3
+    br4          8000.0090fb3771f2   no                eth4
+                                                       tap4
+    br5          8000.0090fb3771f3   no                eth5
+                                                       tap5
+    br6          8000.0090fb3771f4   no                eth6
+                                                       tap6
+    br7          8000.0090fb3771f5   no                eth7
+                                                       tap7
+    br8          8000.0090fb411cb8   no                eth8
+                                                       tap8
+    br9          8000.0090fb411cb9   no                eth9
+                                                       tap9
+### Setup LINC OpenFlow Switch
+    #  mkdir -p /usr/local/src/linc
+    #  cd /usr/local/src/linc/
+    #  git clone https://github.com/FlowForwarding/LINC-Switch
+    #  cd LINC-Switch
+    #  vi rel/files/sys.config - modify LINC Switch configuration parameters.  See section on modifying sys.config
+    #  make compile
+    #  make rel
+    
+### Setup Ryu OpenFlow Controller
+    #  cd /usr/local/src/
+    #  git clone https://github.com/osrg/ryu
+    #  cd ryu
+    #  python setup.py install
+    
+## Running LINC OpenFlow Switch
+    #  cd /usr/local/src/linc
+    #  rel/linc bin/linc console
+    (alternatively, you can also run this as a deamon)
+    #  rel/linc/bin/linc
+    
+## Running Ryu OpenFlow Controller
+Start the Ryu Controller in Flow Learning mode for OpenFlow v 1.3.1
+
+    #  cd /usr/local/src/ryu
+    #  bin/ryu-manager --verbose /usr/local/src/linc/LINC-Switch/scripts/ryu/l2_switch_v13.py
+    

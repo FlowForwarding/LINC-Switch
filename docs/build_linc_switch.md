@@ -26,15 +26,15 @@ Step 1: Login to the "LINC" box using credentials:
     password: linc
 Step 2: Set time synchronization:
     
-    ntpdate time.nist.gov
+    #  ntpdate time.nist.gov
 Step 3: Set Git configuration:
 
-    git config --global http.sslVerify false
+    #  git config --global http.sslVerify false
 Step 4: Create the necessary ethernet, bridge and tap configuration files:
 
 create\_ifcfg\_eth\_br\_tap is a script file that creates necessary ethernet, bridge and tap configuration files. By default, the script creates 15 network interfaces. To change the number of network interfaces, edit the script modify the value of num_interfaces=15 and then execute the same.
 
-    /usr/local/src/linc/misc_tools/create_ifcfg_eth_br_tap
+    #  /usr/local/src/linc/misc_tools/create_ifcfg_eth_br_tap
 
     Files will be created under: /etc/sysconfig/network
     Look for files starting from ifcfg-*
@@ -43,11 +43,11 @@ create\_ifcfg\_eth\_br\_tap is a script file that creates necessary ethernet, br
 
 Step 5: Restart network services
 
-    service network restart
+    #  service network restart
 
 Step 6: Check created bridges and taps
 
-    brctl show
+    #  brctl show
     
     bridge name  bridge id           STP enabled       interfaces
     br1          8000.0090fb3771ef   no                eth1

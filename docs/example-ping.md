@@ -25,7 +25,7 @@ Compile the controller,
 
 Load records needed to send OpenFlow Protocol messages to the Switch,
 
-    (controller)2> rr(of_protocol).
+    (controller)2> rr(of_protocol), rr(ofp_v4).
 
 And actually start the Controller on port 6633.
 
@@ -128,12 +128,11 @@ We create a `flow_mod` message containing a match field (match on packets receiv
                                           out_group = 5,
                                           flags = [],
                                           match = #ofp_match{
-                                                     type = oxm,
-                                                     oxm_fields = [#ofp_field{
-                                                                      class = openflow_basic,
-                                                                      field = in_port,
-                                                                      has_mask = false,
-                                                                      value = <<1:32>>}]},
+                                                     fields = [#ofp_field{
+                                                                class = openflow_basic,
+                                                                name = in_port,
+                                                                has_mask = false,
+                                                                value = <<1:32>>}]},
                                           instructions = [#ofp_instruction_write_actions{
                                                              actions = [#ofp_action_output{
                                                                            port = 2,
@@ -141,17 +140,17 @@ We create a `flow_mod` message containing a match field (match on packets receiv
 
 We query the switch's connection.
 
-    (controller)5> {ok, [Conn|_]} = of_controller:get_connections(CtrlPid).
+    (controller)5> {ok, [Conn|_]} = of_controller_v4:get_connections(CtrlPid).
 
 We send it to the switch.
 
-    (controller)6> of_controller:send(CtrlPid, Conn, FlowMod).
+    (controller)6> of_controller_v4:send(CtrlPid, Conn, FlowMod).
 
 We can take a look at the flow table `0` now to see it contains one flow entry received from the Controller.
 
     (switch)3> ets:tab2list(linc:lookup(0, flow_table_0)).
     [{flow_entry,1,
-                 {ofp_match,oxm,
+                 {ofp_match,
                         [{ofp_field,openflow_basic,in_port,false,
                                     <<0,0,0,1>>,
                                     undefined}]},
@@ -186,14 +185,12 @@ We create another `flow_mod` message - this time we want to remove all the flow 
                                               out_port = 3,
                                               out_group = 5,
                                               flags = [],
-                                              match = #ofp_match{
-                                                         type = oxm,
-                                                         oxm_fields = []},
+                                              match = #ofp_match{fields = []},
                                               instructions = []}}.
 
 We send it to the Switch.
 
-    (controller)8> of_controller:send(CtrlPid, Conn, RemoveFlows).
+    (controller)8> of_controller_v4:send(CtrlPid, Conn, RemoveFlows).
 
 We can check if the flow entry we added earlier is gone from the flow table `0`.
 

@@ -30,5 +30,7 @@ test1()->
     {ok, Result} = enetconf_client:edit_config(C, running, {xml, Config}),
     io:format("Edit complete...~n"
               "Result = ~s~n", [Result]),
+    timer:sleep(1000),
     {ok, NewRunningConfig} = enetconf_client:get_config(C, running),
-    io:format("NewRunningConfig = ~s~n", [NewRunningConfig]).
+    io:format("NewRunningConfig = ~s~n", [NewRunningConfig]),
+    enetconf_client:close_session(C).

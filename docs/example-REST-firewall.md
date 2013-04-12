@@ -3,13 +3,13 @@
 ## Start LINC in OF 1.2 mode 
 Modify $LINC_ROOT/rel/files/sys.config - value for backend must be linc_us3
 ```bash
-#  make compile rel
-#  cd $LINC_ROOT; rel/linc/bin/linc console
+$  make compile rel
+$  cd $LINC_ROOT; rel/linc/bin/linc console
 ```
 
 ## Start Ryu Controller with REST service
 ```bash
-#  cd $RYU_ROOT; bin/ryu-manager --verbose --use-stderr ryu/app/rest_firewall.py ryu/lib/ofctl_v1_2.py
+$  cd $RYU_ROOT; bin/ryu-manager --verbose --use-stderr ryu/app/rest_firewall.py ryu/lib/ofctl_v1_2.py
 
 You will see an output like this on Ryu console
     EVENT dpset->RestFirewallAPI EventDP
@@ -21,7 +21,7 @@ You will see an output like this on Ryu console
 
 ### Check Firewall Status
 ```bash
-# curl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/module/status
+$ curl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/module/status
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=UTF-8
 Content-Length: 54
@@ -32,7 +32,7 @@ Date: Sat, 13 Apr 2013 04:18:22 GMT
 
 ### Enable Firewall Service
 ```bash
-# curl -i -H "Accept: application/json" -X PUT -d '{"switch_id": "0"}' http://localhost:8080/firewall/module/enable/all
+$ curl -i -H "Accept: application/json" -X PUT -d '{"switch_id": "0"}' http://localhost:8080/firewall/module/enable/all
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=UTF-8
 Content-Length: 86
@@ -43,7 +43,7 @@ Date: Sat, 13 Apr 2013 04:23:10 GMT
 
 ### Check Firewall Status
 ```bash
-# curl -i -H "Accept: application/json" -X PUT -d '{"switch_id": "00:90:FB:37:71:EE:00:00"}' hcurl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/module/status
+$ curl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/module/status
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=UTF-8
 Content-Length: 53
@@ -54,19 +54,19 @@ Date: Sat, 13 Apr 2013 04:24:12 GMT
 
 ### Now add a rule to block connection from MAC address 12:34:56:78:9a:bc
 ```bash
-# curl -X POST -d '{"dl_src": "12:34:56:78:9a:bc", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+$ curl -X POST -d '{"dl_src": "12:34:56:78:9a:bc", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
 {"switch_id: 0090fb3771ee0000": {"result": "success", "details": "Rule added. : rule_id=1"}}
 ```
 
 ### Now add a rule to block connection to 10.100.5.0/24 subnet
 ```bash
-# curl -X POST -d '{"dl_type": "IPv4", "nw_dst": "10.100.5.0/24", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+$ curl -X POST -d '{"dl_type": "IPv4", "nw_dst": "10.100.5.0/24", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
 {"switch_id: 0090fb3771ee0000": {"result": "success", "details": "Rule added. : rule_id=2"}}
 ```
 
 ### Check Firewall Rules added
 ```bash
-# curl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/rules/0090fb3771ee0000
+$ curl -i -H "Accept: application/json" -X GET http://localhost:8080/firewall/rules/0090fb3771ee0000
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=UTF-8
 Content-Length: 114
@@ -79,6 +79,6 @@ Date: Sat, 13 Apr 2013 04:58:33 GMT
 
 ### Delete All rules installed on the switch (not working for me - getting HTTP 400 error)
 ```bash
-#  curl -i -H "Accept: application/json" -X DELETE http://localhost:8080/firewall/rules/0090fb3771ee0000
+$  curl -i -H "Accept: application/json" -X DELETE http://localhost:8080/firewall/rules/0090fb3771ee0000
 ```
 

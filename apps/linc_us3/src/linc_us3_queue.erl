@@ -212,7 +212,7 @@ init([SwitchId, [{PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
             _ -> "Queue" ++ integer_to_list(QueueNo)
         end,
     {ok, #state{queue_key = Key,
-                resource_id = ResourceId,
+                resource_id = list_to_binary(ResourceId),
                 port_rate_bps = PortRateBps,
                 min_rate_bps = MinRateBps,
                 max_rate_bps = MaxRateBps,

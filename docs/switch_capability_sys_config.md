@@ -61,8 +61,11 @@ When you are building release from LINC source, the sys.config file is copied ov
 ].
 ```
 
-### Erlang configuration syntaxConfiguration file of LINC is a value of Erlang language, and has the syntax of Erlang term. Configuration file must always end with period. Terms used in LINC configuration can be tuples (containing any amount of terms wrapped with curly braces), lists (containing any amount of terms, wrapped in square braces), strings (characters wrapped in double quotes), numbers and atoms (named lowercase constants without a specific numeric value).>String example: “localhost”.
->Number example: 1234, or 1.234 (floating point number).>Atom example: this_is_atom.>Tuple example: {ofs_port_no, 1} -- tuple contains pair of atom ‘ofs_port’ and number 1. >Tuples containing just 2 values can sometimes be called “pairs”.>List example: [1, 2, 3] -- contains three numbers, or [{“localhost”, 1234}] -- contains one tuple, which contains a string and a number.
+### Erlang configuration syntaxConfiguration file of LINC is a value of Erlang language, and has the syntax of Erlang term. Configuration file must always end with period. Terms used in LINC configuration can be tuples (containing any amount of terms wrapped with curly braces), lists (containing any amount of terms, wrapped in square braces), strings (characters wrapped in double quotes), numbers and atoms (named lowercase constants without a specific numeric value).>String example: “localhost”.
+
+>Number example: 1234, or 1.234 (floating point number).>Atom example: this_is_atom.>Tuple example: {ofs_port_no, 1} -- tuple contains pair of atom ‘ofs_port’ and number 1. 
+
+>Tuples containing just 2 values can sometimes be called “pairs”.>List example: [1, 2, 3] -- contains three numbers, or [{“localhost”, 1234}] -- contains one tuple, which contains a string and a number.
 
 ### OF-Config Section
 This setting enables or disables OF-Config subsystem which consists of three applications: ssh, enetconf and of_config. Allowed values: 'enabled' or 'disabled'
@@ -215,5 +218,6 @@ Sasl is another logging mechanism that is built into Erlang.
 ```
 ## Examples of sys.config in real switches
 ### 1 Logical Switch (or Standard OpenFlow Switch)
+*Incomplete*
 ### 2 Logical Switches
-
+*Incomplete*

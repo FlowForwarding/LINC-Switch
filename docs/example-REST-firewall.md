@@ -77,8 +77,12 @@ Date: Sat, 13 Apr 2013 04:58:33 GMT
 **(seems to be a bug as I have 2 rules added and only 1 is returned)**
 ```
 
-### Delete All rules installed on the switch (not working for me - getting HTTP 400 error)
+### Delete rules installed on the switch
 ```bash
-$  curl -i -H "Accept: application/json" -X DELETE http://localhost:8080/firewall/rules/0090fb3771ee0000
+Delete Rule given ID number:
+$  curl -i -H "Accept: application/json" -X DELETE -d '{"rule_id":"1"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+
+Delete All Rules:
+$  curl -i -H "Accept: application/json" -X DELETE -d '{"rule_id":"all"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
 ```
 

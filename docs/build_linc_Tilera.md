@@ -63,7 +63,7 @@ eval `/opt/tilera/TileraMDE-4.1.4.152692/tilegx/bin/tile-env`
 ```
 Tile-monitor is a application that helps connect the Linux Host to the Tilera Card via PCIe.   Start the tile-monitor process:
 ```bash
-# tile-monitor --dev gxpci0 –root 
+# tile-monitor --dev gxpci0 –-root 
 ```
 
 At the Command: prompt, type the following commands.

@@ -61,7 +61,15 @@ $ curl -X POST -d '{"dl_src": "12:34:56:78:9a:bc", "actions": "DENY"}' http://lo
 ### Now add a rule to block connection to 10.100.5.0/24 subnet
 ```bash
 $ curl -X POST -d '{"dl_type": "IPv4", "nw_dst": "10.100.5.0/24", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+
 {"switch_id: 0090fb3771ee0000": {"result": "success", "details": "Rule added. : rule_id=2"}}
+```
+
+### Block all TCP packets
+```bash
+# curl -X POST -d '{"dl_type": "IPv4", "nw_proto": "TCP", "actions": "DENY"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+
+{"switch_id: 0090fb3771ee0000": {"result": "success", "details": "Rule added. : rule_id=3"}
 ```
 
 ### Check Firewall Rules added
@@ -84,5 +92,12 @@ $  curl -i -H "Accept: application/json" -X DELETE -d '{"rule_id":"1"}' http://l
 
 Delete All Rules:
 $  curl -i -H "Accept: application/json" -X DELETE -d '{"rule_id":"all"}' http://localhost:8080/firewall/rules/0090fb3771ee0000
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=UTF-8
+Content-Length: 96
+Date: Tue, 16 Apr 2013 07:18:09 GMT
+
+{"switch_id: 0090fb3771ee0000": {"result": "success", "details": "Rule deleted. : ruleID=3,1,"}
 ```
 

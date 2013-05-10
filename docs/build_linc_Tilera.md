@@ -106,7 +106,48 @@ Enable rest of the xgbe interfaces:
 
 >>NOTE: As Tilera OS uses RAM FS (in this scenario), it erases all changes after disconnection, so one has to repeat aforementioned steps each time you log in to Tilera box/card.
 
+Alternatively, one could tile-monitor untility from the command line using the below script which automates the above manual steps:
+```bash
+#!/bin/sh
 
+tile-monitor --dev gxpci0 \
+  --root \
+  --tunnel 10022 22 \
+  --mount-same /usr/local/src/linc/tilera/LINC-Switch \
+  --mount-same /usr/local/src/erlang/R16B-tile \
+  --mount-same /usr/local/src/erlang/otp_src_R16B \
+  --upload-same setpath \
+  --run -+- ifup gbe1 -+- \
+  --run -+- ifconfig -a -+- \
+  --run -+- groupadd nogroup -+- \
+  --upload tilesudoers /etc/sudoers \
+  --run -+- ifconfig xgbe2 0.0.0.0 promisc up -+- \
+  --run -+- ifconfig xgbe3 0.0.0.0 promisc up -+- \
+  --run -+- ifconfig xgbe4 0.0.0.0 promisc up -+- \
+```
+There are 2 files associated with the above script.  The contents of the same are:
+```bash
+# more setpath 
+PATH=/usr/local/src/erlang/R16B-tile/bin:$PATH
+# 
+
+# more tilesudoers
+
+# Defaults    requiretty
+Defaults   !visiblepw
+Defaults    always_set_home
+
+Defaults    env_reset
+Defaults    env_keep =  "COLORS DISPLAY HOSTNAME HISTSIZE INPUTRC KDEDIR LS_COLORS"
+Defaults    env_keep += "MAIL PS1 PS2 QTDIR USERNAME LANG LC_ADDRESS LC_CTYPE"
+Defaults    env_keep += "LC_COLLATE LC_IDENTIFICATION LC_MEASUREMENT LC_MESSAGES"
+Defaults    env_keep += "LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE"
+Defaults    env_keep += "LC_TIME LC_ALL LANGUAGE LINGUAS _XKB_CHARSET XAUTHORITY"
+Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin
+root    ALL=(ALL)       ALL
+
+
+```
 Now, compile Erlang. (Note the use of –-prefix which tells configuration to install the final binaries in that directory)
 ```bash
 # LANG=C; export LANG

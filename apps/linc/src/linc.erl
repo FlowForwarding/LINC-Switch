@@ -70,7 +70,6 @@ lookup(SwitchId, Name) ->
         [{Name, Pid}] ->
             Pid;
         [] ->
-            ?DEBUG("Failed lookup: ~p ~p", [SwitchId, Name]),
             undefined
     end.
 

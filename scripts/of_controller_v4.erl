@@ -28,6 +28,7 @@
          remove_all_flows/0,
          group_mod/0,
          port_mod/0,
+         port_desc/0,
          set_config/0,
          role_request/0,
 
@@ -138,6 +139,13 @@ loop(Connections) ->
                             set_config,
                             %% group_mod,
                             port_mod,
+                            port_desc,
+                            %% table_mod,
+                            %% table_features,
+                            %% meter_mod,
+                            %% meter_features,
+                            %% meter_stats,
+                            %% meter_config,
 
                             desc_request,
                             %% flow_stats_request,
@@ -153,7 +161,6 @@ loop(Connections) ->
                             role_request,
                             barrier_request
                            ]],
-            
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
@@ -353,6 +360,9 @@ port_mod() ->
                           config = [],
                           mask = [],
                           advertise = [fiber]}).
+
+port_desc() ->
+    message(#ofp_port_desc_request{}).
 
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).

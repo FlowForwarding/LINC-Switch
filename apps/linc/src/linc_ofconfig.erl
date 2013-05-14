@@ -148,7 +148,7 @@ get_switch_state(SwitchId) ->
                        lost_connection_behavior = failSecureMode,
                        capabilities =
                            linc_logic:get_backend_capabilities(SwitchId),
-                       controllers = get_controllers(SwitchId),
+                       controllers = get_logical_switch_controllers(SwitchId),
                        resources = Refs
                       },
     {Resources, [LogicalSwitch]}.
@@ -171,18 +171,11 @@ get_config(SwitchId) ->
                                 MinRate, MaxRate}
                        end, linc_logic:get_backend_queues(SwitchId)),
     Switches = [{switch, SwitchId, linc_logic:get_datapath_id(SwitchId)}],
-    Controllers = lists:map(fun(#controller{id = ControllerId,
-                                            ip_address = IPAddress,
-                                            port = Port,
-                                            protocol = Protocol}) ->
-                                    {controller, {ControllerId, SwitchId},
-                                     IPAddress, Port, Protocol}
-                            end, get_controllers(SwitchId)),
     #ofconfig{name = running,
               ports = Ports,
               queues = Queues,
               switches = Switches,
-              controllers = Controllers}.
+              controllers = get_controllers(SwitchId)}.
 
 -spec flow_table_name(integer(), string(), integer()) -> string().
 flow_table_name(SwitchId, DatapathId, TableId) ->
@@ -431,9 +424,8 @@ update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
                     NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
 
 update_controllers(Ctrls, SwitchId, OldCtrls) ->
-    OldCtrls2 = [{ControllerId, Host, Port, Protocol}
-                 || {controller, {ControllerId, SId},
-                     Host, Port, Protocol} <- OldCtrls, SId == SwitchId],
+    OldCtrls2 = [Controller || {SId, #controller{} = Controller} <- OldCtrls,
+                               SId == SwitchId],
     Ctrls ++ OldCtrls2.
 
 %%------------------------------------------------------------------------------
@@ -634,14 +626,7 @@ convert_before_merge(#ofconfig{ports = Ports,
           || {queue, {QueueId, PortId, QSwitchId}, MinRate, MaxRate} <- Queues],
      [#logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
                       datapath_id = DatapathId,
-                      controllers =
-                          [#controller{id = Id,
-                                       ip_address = Host,
-                                       port = Port,
-                                       protocol = Protocol}
-                           || {controller, {Id, CSwitchId},
-                               Host, Port, Protocol} <- Controllers,
-                              CSwitchId == SwitchId]}
+                      controllers = [C || {_SwitchId, C} <- Controllers]}
       || {switch, SwitchId, DatapathId} <- Switches]}.
 
 op(Default, undefined) ->
@@ -1119,14 +1104,18 @@ get_flow_tables_refs(FlowTables) ->
                       {flow_table, ResourceId}
               end, FlowTables).
 
-get_controllers(SwitchId) ->
-    lists:foldl(fun(controller_not_connected, Controllers) ->
-                        Controllers;
-                   ({ResourceId, Role,
-                     {ControllerIP, ControllerPort},
-                     {LocalIP, LocalPort},
-                     Protocol, ConnectionState,
-                     CurrentVersion, SupportedVersions}, Controllers) ->
+get_logical_switch_controllers(SwitchId) ->
+    lists:foldl(fun(#controller_status{
+                       resource_id = ResourceId,
+                       role = Role,
+                       controller_ip = ControllerIP,
+                       controller_port = ControllerPort,
+                       local_ip = LocalIP,
+                       local_port = LocalPort,
+                       protocol = Protocol,
+                       connection_state = ConnectionState,
+                       current_version = CurrentVersion,
+                       supported_versions = SupportedVersions}, Controllers) ->
                         C = #controller{
                                id = ResourceId,
                                role = Role,
@@ -1144,6 +1133,9 @@ get_controllers(SwitchId) ->
                                          }},
                         [C | Controllers]
                 end, [], ofp_client:get_controllers_state(SwitchId)).
+
+get_controllers(SwitchId) ->
+    [{SwitchId, C} || C <- get_logical_switch_controllers(SwitchId)].
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions
@@ -1182,12 +1174,18 @@ rate(Features) ->
                  end, Rates),
     hd(Rates).
 
+ip(undefined) ->
+    undefined;
+ip(String) when is_list(String) ->
+    String;
 ip({A, B, C, D}) ->
     integer_to_list(A) ++ "."
         ++ integer_to_list(B) ++ "."
         ++ integer_to_list(C) ++ "."
         ++ integer_to_list(D).
 
+version(undefined) ->
+    undefined;
 version(1) ->
     '1.0';
 version(2) ->

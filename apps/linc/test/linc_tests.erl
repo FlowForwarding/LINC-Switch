@@ -53,6 +53,8 @@ logic() ->
 
 setup() ->
     error_logger:tty(false),
+    ok = application:start(public_key),
+    ok = application:start(ssh),
     ok = application:start(xmerl),
     ok = application:start(mnesia),
     ok = application:start(syntax_tools),
@@ -65,4 +67,7 @@ teardown(_) ->
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
-    ok = application:stop(lager).
+    ok = application:stop(lager),
+    ok = application:stop(public_key),
+    ok = application:stop(ssh).
+

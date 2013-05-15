@@ -70,7 +70,7 @@ port_mod() ->
     Port = 1,
     BadHwAddr = <<2,2,2,2,2,2>>,
     PortMod2 = #ofp_port_mod{port_no = Port, hw_addr = BadHwAddr},
-    ?assertEqual({error, {bad_request, bad_hw_addr}},
+    ?assertEqual({error, {port_mod_failed, bad_hw_addr}},
                  linc_us3_port:modify(?SWITCH_ID, PortMod2)),
 
     HwAddr = <<1,1,1,1,1,1>>,

@@ -387,7 +387,7 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {ok, Port#ofp_port{config = Config,
                                                   advertised = Advertise}};
                            false ->
-                               {{error, {bad_request, bad_hw_addr}}, Port}
+                               {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
 handle_call(get_port, _From, #state{port = Port} = State) ->

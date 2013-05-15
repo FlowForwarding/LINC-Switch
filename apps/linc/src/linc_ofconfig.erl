@@ -852,7 +852,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         Op when Op == merge orelse Op == replace ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:replace_connection(Pid, Host2, Port2),
+                    ofp_client:replace_connection(Pid, Host2, Port2, Proto2),
                     do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,

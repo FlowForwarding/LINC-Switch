@@ -385,16 +385,16 @@ match_queue(SwitchId, PortMatch, QueueMatch) ->
 match_queue(SwitchId, PortNo, PortMatch, QueueMatch) ->
     case linc_us4_port:is_valid(SwitchId, PortNo) of
         false ->
-            #ofp_error_msg{type = bad_request, code = bad_port};
+            #ofp_error_msg{type = queue_op_failed, code = bad_port};
         true ->
             MatchSpec = #linc_port_queue{key = {PortMatch, QueueMatch},
                                          _ = '_'},
             LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
             case catch ets:match_object(LincPortQueue, MatchSpec) of
                 [] ->
-                    #ofp_error_msg{type = bad_request, code = bad_queue};
+                    #ofp_error_msg{type = queue_op_failed, code = bad_queue};
                 {'EXIT', _} ->
-                    #ofp_error_msg{type = bad_request, code = bad_queue};
+                    #ofp_error_msg{type = queue_op_failed, code = bad_queue};
                 L ->
                     F = fun(#linc_port_queue{key = {_, default}}) ->
                                 false;

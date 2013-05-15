@@ -153,7 +153,6 @@ loop(Connections) ->
                             role_request,
                             barrier_request
                            ]],
-            
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
@@ -375,7 +374,7 @@ get_xid() ->
 %%%-----------------------------------------------------------------------------
 
 parse_tcp(Socket, Parser, Data) ->
-    lager:debug("Received TCP data from ~p: ~p", [Socket, Data]),
+    %% lager:debug("Received TCP data from ~p: ~p", [Socket, Data]),
     inet:setopts(Socket, [{active, once}]),
     {ok, NewParser, Messages} = ofp_parser:parse(Parser, Data),
     lists:foreach(fun(Message) ->

@@ -28,7 +28,7 @@
          remove_all_flows/0,
          group_mod/0,
          port_mod/0,
-         port_desc/0,
+         port_desc_request/0,
          set_config/0,
          role_request/0,
 
@@ -137,26 +137,24 @@ loop(Connections) ->
                             features_request,
                             get_config_request,
                             set_config,
-                            %% group_mod,
+                            group_mod,
                             port_mod,
-                            port_desc,
-                            %% table_mod,
-                            %% table_features,
-                            %% meter_mod,
-                            %% meter_features,
-                            %% meter_stats,
-                            %% meter_config,
-
+                            port_desc_request,
+                            %% %% table_mod
+                            %% %% table_features,
+                            %% %% meter_mod,
+                            %% %% meter_features,
+                            %% %% meter_stats,
+                            %% %% meter_config,
                             desc_request,
-                            %% flow_stats_request,
-                            %% aggregate_stats_request,
-                            %% table_stats_request,
+                            flow_stats_request,
+                            aggregate_stats_request,
+                            table_stats_request,
                             port_stats_request,
                             queue_stats_request,
-                            %% group_stats_request,
-                            %% group_desc_request,
-                            %% group_features_request,
-
+                            group_stats_request,
+                            group_desc_request,
+                            group_features_request,
                             queue_get_config_request,
                             role_request,
                             barrier_request
@@ -341,7 +339,7 @@ remove_all_flows() ->
     message(#ofp_flow_mod{command = delete}).
 
 set_config() ->
-    message(#ofp_set_config{miss_send_len = 16#ffff}).
+    message(#ofp_set_config{miss_send_len = no_buffer}).
 
 group_mod() ->
     message(#ofp_group_mod{
@@ -361,7 +359,7 @@ port_mod() ->
                           mask = [],
                           advertise = [fiber]}).
 
-port_desc() ->
+port_desc_request() ->
     message(#ofp_port_desc_request{}).
 
 role_request() ->
@@ -390,7 +388,7 @@ get_xid() ->
 %%%-----------------------------------------------------------------------------
 
 parse_tcp(Socket, Parser, Data) ->
-    lager:info("Received TCP data from ~p: ~p", [Socket, Data]),
+    %% lager:info("Received TCP data from ~p: ~p", [Socket, Data]),
     inet:setopts(Socket, [{active, once}]),
     {ok, NewParser, Messages} = ofp_parser:parse(Parser, Data),
     lists:foreach(fun(Message) ->

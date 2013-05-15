@@ -232,7 +232,7 @@ ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
                                     {reply, ofp_get_config_reply(), #state{}}.
 ofp_get_config_request(State, #ofp_get_config_request{}) ->
     ConfigReply = #ofp_get_config_reply{flags = [],
-                                        miss_send_len = ?OFPCML_NO_BUFFER},
+                                        miss_send_len = no_buffer},
     {reply, ConfigReply, State}.
 
 %% @doc Set switch configuration.

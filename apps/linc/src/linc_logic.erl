@@ -251,7 +251,7 @@ handle_call(_Message, _From, State) ->
 handle_cast({send_to_controllers, Message},
             #state{xid = Xid,
                    switch_id = SwitchId} = State) ->
-    ofp_channel:send(SwitchId, Message#ofp_message{xid = Xid}),
+    ofp_channel_send(SwitchId, Message#ofp_message{xid = Xid}),
     {noreply, State#state{xid = Xid + 1}};
 handle_cast({set_datapath_id, DatapathId},
             #state{backend_mod = Backend,
@@ -332,7 +332,7 @@ handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
                     {noreply, NewState} ->
                         NewState;
                     {reply, ReplyBody, NewState} ->
-                        ofp_channel:send(Pid,
+                        ofp_channel_send(Pid,
                                          Message#ofp_message{body = ReplyBody}),
                         NewState
                 end,
@@ -396,3 +396,33 @@ extract_mac([N1, N2 | Rest], Mac) ->
     B1 = list_to_integer([N1], 16),
     B2 = list_to_integer([N2], 16),
     extract_mac(Rest, <<Mac/binary, B1:4, B2:4>>).
+
+ofp_channel_send(Id, Message) ->
+    case ofp_channel:send(Id, Message) of
+        ok ->
+            ok;
+        {error, not_connected} = Error ->
+            %% Don't log not_connected errors, as they pollute debug output.
+            %% This error occurs each time when packet is received by
+            %% the switch but switch didn't connect to the controller yet.
+            Error;
+        {error, Reason} = Error ->
+            log_channel_send_error(Message, Id, Reason),
+            Error;
+        L when is_list(L) ->
+            lists:map(fun(ok) ->
+                              ok;
+                         ({error, not_connected} = Error) ->
+                              %% Same as previous comment
+                              Error;
+                         ({error, Reason} = Error) ->
+                              log_channel_send_error(Message, Id, Reason),
+                              Error
+                      end, L)
+    end.
+
+log_channel_send_error(Message, Id, Reason) ->
+    ?ERROR("~nMessage: ~p~n"
+           "Channel id: ~p~n"
+           "Message cannot be sent through OFP Channel because:~n"
+           "~p~n", [Message, Id, Reason]).

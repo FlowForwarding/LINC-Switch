@@ -323,6 +323,24 @@ action_copy_ttl_inwards() ->
                   #ipv4{ttl = ?INIT_VAL}],
     check_action(Action, Packet3, NewPacket3).
 
+actions_complex_test_() ->
+    {setup, fun setup/0, fun teardown/1,
+     [{"Change dest IP and output to egress port", fun action_complex_1/0}]}.
+
+action_complex_1() ->
+    Daddr1 = daddr1,
+    Daddr2 = daddr2,
+    Pkt = #linc_pkt{packet = [#ipv4{daddr = Daddr1}]},
+    PktExpected = #linc_pkt{packet = [#ipv4{daddr = Daddr2}]},
+    Port = 500,
+    Field = #ofp_field{name = ipv4_dst, value = Daddr2},
+    Action1 = #ofp_action_set_field{field = Field},
+    Action2 = #ofp_action_output{port = Port},
+    ?assertEqual({PktExpected, [{output, Port, PktExpected}]},
+                 linc_us3_actions:apply_list(Pkt, [Action1, Action2])),
+    ?assert(check_if_called({linc_us3_port, send, 2})),
+    ?assertEqual([{PktExpected, Port}], check_output_on_ports()).
+
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->

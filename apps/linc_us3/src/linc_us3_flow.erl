@@ -610,9 +610,9 @@ prerequisite_for(ip_ecn) ->
 prerequisite_for(ip_proto) ->
     [{eth_type,<<16#800:16>>},{eth_type,<<16#86dd:16>>}];
 prerequisite_for(ipv4_src) ->
-    [{eth_type,16#800}];
+    [{eth_type,<<16#800:16>>}];
 prerequisite_for(ipv4_dst) ->
-    [{eth_type,16#800}];
+    [{eth_type,<<16#800:16>>}];
 prerequisite_for(tcp_src) ->
     [{ip_proto,6}];
 prerequisite_for(tcp_dst) ->

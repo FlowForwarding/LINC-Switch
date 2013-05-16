@@ -618,9 +618,9 @@ prerequisite_for(openflow_basic, ip_ecn) ->
 prerequisite_for(openflow_basic, ip_proto) ->
     [{{openflow_basic,eth_type},<<16#800:16>>},{{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ipv4_src) ->
-    [{{openflow_basic,eth_type},16#800}];
+    [{{openflow_basic,eth_type},<<16#800:16>>}];
 prerequisite_for(openflow_basic, ipv4_dst) ->
-    [{{openflow_basic,eth_type},16#800}];
+    [{{openflow_basic,eth_type},<<16#800:16>>}];
 prerequisite_for(openflow_basic, tcp_src) ->
     [{{openflow_basic,ip_proto},6}];
 prerequisite_for(openflow_basic, tcp_dst) ->

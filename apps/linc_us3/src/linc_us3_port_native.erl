@@ -41,10 +41,12 @@ tap(Interface, PortOpts) ->
                 {unix, darwin} ->
                     {ip, IP} = lists:keyfind(ip, 1, PortOpts),
                     ok = tuncer:up(Pid, IP);
-                %% We assume that under linux TAP interfaces are
+                %% We assume that under linux and NetBSD TAP interfaces are
                 %% already set up in persistent state and
                 %% configured with proper IP addresses.
                 {unix, linux} ->
+                    ok;
+                {unix, netbsd} ->
                     ok
             end,
             Fd = tuncer:getfd(Pid),

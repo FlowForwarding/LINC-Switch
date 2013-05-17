@@ -317,13 +317,25 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
     State = #state{resource_id = ResourceId, interface = Interface, port = Port,
                    queues = QueuesState, switch_id = SwitchId},
-
-    case re:run(Interface, "^tap.*$", [{capture, none}]) of
+    Type = case lists:keyfind(type, 1, PortOpts) of
+        {type, Type1} ->
+            Type1;
+        _ ->
+            %% The type is not specified explicitly.
+            %% Guess from the interface name.
+            case re:run(Interface, "^tap.*$", [{capture, none}]) of
+                match ->
+                    tap;
+                nomatch ->
+                    eth
+            end
+    end,
+    case Type of
         %% When switch connects to a tap interface, erlang receives file
         %% descriptor to read/write ethernet frames directly from the
         %% desired /dev/tapX character device. No socket communication
         %% is involved.
-        match ->
+        tap ->
             case linc_us4_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
@@ -354,7 +366,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %% * sending ethernet frames is done by writing to
         %%   a RAW socket binded with given network interface.
         %%   Handling of RAW sockets differs between OSes.
-        nomatch ->
+        eth ->
             {Socket, IfIndex, EpcapPid, HwAddr} =
                 linc_us4_port_native:eth(Interface),
             case queues_config(SwitchId, PortOpts) of

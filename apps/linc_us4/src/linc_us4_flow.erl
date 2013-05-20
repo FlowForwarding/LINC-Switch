@@ -612,67 +612,74 @@ prerequisite_for(openflow_basic, vlan_pcp) ->
     %% this needs work
     [{{openflow_basic,vlan_vid},none}];
 prerequisite_for(openflow_basic, ip_dscp) ->
-    [{{openflow_basic,eth_type},16#800},{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#800:16>>},
+     {{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ip_ecn) ->
-    [{{openflow_basic,eth_type},16#800},{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#800:16>>},
+     {{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ip_proto) ->
-    [{{openflow_basic,eth_type},<<16#800:16>>},{{openflow_basic,eth_type},<<16#86dd:16>>}];
+    [{{openflow_basic,eth_type},<<16#800:16>>},
+     {{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ipv4_src) ->
     [{{openflow_basic,eth_type},<<16#800:16>>}];
 prerequisite_for(openflow_basic, ipv4_dst) ->
     [{{openflow_basic,eth_type},<<16#800:16>>}];
 prerequisite_for(openflow_basic, tcp_src) ->
-    [{{openflow_basic,ip_proto},6}];
+    [{{openflow_basic,ip_proto},<<6:8>>}];
 prerequisite_for(openflow_basic, tcp_dst) ->
-    [{{openflow_basic,ip_proto},6}];
+    [{{openflow_basic,ip_proto},<<6:8>>}];
 prerequisite_for(openflow_basic, udp_src) ->
-    [{{openflow_basic,ip_proto},17}];
+    [{{openflow_basic,ip_proto},<<17:8>>}];
 prerequisite_for(openflow_basic, udp_dst) ->
-    [{{openflow_basic,ip_proto},17}];
+    [{{openflow_basic,ip_proto},<<17:8>>}];
 prerequisite_for(openflow_basic, sctp_src) ->
-    [{{openflow_basic,ip_proto},132}];
+    [{{openflow_basic,ip_proto},<<132:8>>}];
 prerequisite_for(openflow_basic, sctp_dst) ->
-    [{{openflow_basic,ip_proto},132}];
+    [{{openflow_basic,ip_proto},<<132:8>>}];
 prerequisite_for(openflow_basic, icmpv4_type) ->
-    [{{openflow_basic,ip_proto},1}];
+    [{{openflow_basic,ip_proto},<<1:8>>}];
 prerequisite_for(openflow_basic, icmpv4_code) ->
-    [{{openflow_basic,ip_proto},1}];
+    [{{openflow_basic,ip_proto},<<1:8>>}];
 prerequisite_for(openflow_basic, arp_op) ->
-    [{{openflow_basic,eth_type},16#806}];
+    [{{openflow_basic,eth_type},<<16#806:16>>}];
 prerequisite_for(openflow_basic, arp_spa) ->
-    [{{openflow_basic,eth_type},16#806}];
+    [{{openflow_basic,eth_type},<<16#806:16>>}];
 prerequisite_for(openflow_basic, arp_tpa) ->
-    [{{openflow_basic,eth_type},16#806}];
+    [{{openflow_basic,eth_type},<<16#806:16>>}];
 prerequisite_for(openflow_basic, arp_sha) ->
-    [{{openflow_basic,eth_type},16#806}];
+    [{{openflow_basic,eth_type},<<16#806:16>>}];
 prerequisite_for(openflow_basic, arp_tha) ->
-    [{{openflow_basic,eth_type},16#806}];
+    [{{openflow_basic,eth_type},<<16#806:16>>}];
 prerequisite_for(openflow_basic, ipv6_src) ->
-    [{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ipv6_dst) ->
-    [{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, ipv6_flabel) ->
-    [{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, icmpv6_type) ->
-    [{{openflow_basic,ip_proto},58}];
+    [{{openflow_basic,ip_proto},<<58:8>>}];
 prerequisite_for(openflow_basic, icmpv6_code) ->
-    [{{openflow_basic,ip_proto},58}];
+    [{{openflow_basic,ip_proto},<<58:8>>}];
 prerequisite_for(openflow_basic, ipv6_nd_target) ->
-    [{{openflow_basic,icmpv6_type},135},{{openflow_basic,icmpv6_type},136}];
+    [{{openflow_basic,icmpv6_type},<<135:8>>},
+     {{openflow_basic,icmpv6_type},<<136:8>>}];
 prerequisite_for(openflow_basic, ipv6_nd_sll) ->
-    [{{openflow_basic,icmpv6_type},135}];
+    [{{openflow_basic,icmpv6_type},<<135:8>>}];
 prerequisite_for(openflow_basic, ipv6_nd_tll) ->
-    [{{openflow_basic,icmpv6_type},136}];
+    [{{openflow_basic,icmpv6_type},<<136:8>>}];
 prerequisite_for(openflow_basic, mpls_label) ->
-    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+    [{{openflow_basic,eth_type},<<16#8847:16>>},
+     {{openflow_basic,eth_type},<<16#8848:16>>}];
 prerequisite_for(openflow_basic, mpls_tc) ->
-    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+    [{{openflow_basic,eth_type},<<16#8847:16>>},
+     {{openflow_basic,eth_type},<<16#8848:16>>}];
 prerequisite_for(openflow_basic, mpls_bos) ->
-    [{{openflow_basic,eth_type},16#8847},{{openflow_basic,eth_type},16#8848}];
+    [{{openflow_basic,eth_type},<<16#8847:16>>},
+     {{openflow_basic,eth_type},<<16#8848:16>>}];
 prerequisite_for(openflow_basic, pbb_isid) ->
-    [{{openflow_basic,eth_type},16#88E7}];
+    [{{openflow_basic,eth_type},<<16#88E7:16>>}];
 prerequisite_for(openflow_basic, ipv6_exthdr) ->
-    [{{openflow_basic,eth_type},16#86dd}];
+    [{{openflow_basic,eth_type},<<16#86dd:16>>}];
 prerequisite_for(openflow_basic, _) ->
     [].
 

@@ -150,8 +150,7 @@ scenario(all_messages) ->
      role_request,
      barrier_request];
 scenario(delete_all_flows) ->
-    [flow_mod_table_miss,
-     flow_mod_issue68,
+    [flow_mod_issue68,
      flow_mod_issue79,
      flow_stats_request,
      flow_mod_delete_all_flows,

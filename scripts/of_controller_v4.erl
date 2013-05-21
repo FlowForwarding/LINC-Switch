@@ -20,7 +20,8 @@
 -export([hello/0,
          flow_mod_issue68/0,
          flow_mod_issue79/0,
-         table_miss_flow_mod/0,
+         flow_mod_table_miss/0,
+         flow_mod_delete_all_flows/0,
          get_config_request/0,
          echo_request/0,
          echo_request/1,
@@ -119,6 +120,43 @@ accept(Parent, LSocket) ->
     Parent ! {accept, Socket, Pid},
     accept(Parent, LSocket).
 
+scenario(all_messages) ->
+    [flow_mod_table_miss,
+     flow_mod_issue68,
+     flow_mod_issue79,
+     flow_stats_request,
+     echo_request,
+     features_request,
+     get_config_request,
+     set_config,
+     group_mod,
+     port_mod,
+     port_desc_request,
+     %% table_mod
+     %% table_features,
+     %% meter_mod,
+     %% meter_features,
+     %% meter_stats,
+     %% meter_config,
+     desc_request,
+     aggregate_stats_request,
+     table_stats_request,
+     port_stats_request,
+     queue_stats_request,
+     group_stats_request,
+     group_desc_request,
+     group_features_request,
+     queue_get_config_request,
+     role_request,
+     barrier_request];
+scenario(delete_all_flows) ->
+    [flow_mod_table_miss,
+     flow_mod_issue68,
+     flow_mod_issue79,
+     flow_stats_request,
+     flow_mod_delete_all_flows,
+     flow_stats_request].
+
 loop(Connections) ->
     receive
         {accept, Socket, Pid} ->
@@ -134,36 +172,7 @@ loop(Connections) ->
                      _Error ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
-             end || Fun <- [
-                            table_miss_flow_mod,
-                            flow_mod_issue68,
-                            flow_mod_issue79,
-                            echo_request,
-                            features_request,
-                            get_config_request,
-                            set_config,
-                            group_mod,
-                            port_mod,
-                            port_desc_request,
-                            %% %% table_mod
-                            %% %% table_features,
-                            %% %% meter_mod,
-                            %% %% meter_features,
-                            %% %% meter_stats,
-                            %% %% meter_config,
-                            desc_request,
-                            flow_stats_request,
-                            aggregate_stats_request,
-                            table_stats_request,
-                            port_stats_request,
-                            queue_stats_request,
-                            group_stats_request,
-                            group_desc_request,
-                            group_features_request,
-                            queue_get_config_request,
-                            role_request,
-                            barrier_request
-                           ]],
+             end || Fun <- scenario(all_messages)],
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
@@ -370,13 +379,17 @@ port_desc_request() ->
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).
 
-table_miss_flow_mod() ->
+flow_mod_table_miss() ->
     Action = #ofp_action_output{port = controller},
     Instruction = #ofp_instruction_apply_actions{actions = [Action]},
     message(#ofp_flow_mod{table_id = 0,
                           command = add,
                           priority = 0,
                           instructions = [Instruction]}).
+
+flow_mod_delete_all_flows() ->
+    message(#ofp_flow_mod{table_id = all,
+                          command = delete}).
 
 %% Flow mod to test behaviour reported in:
 %% https://github.com/FlowForwarding/LINC-Switch/issues/68

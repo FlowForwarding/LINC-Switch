@@ -18,7 +18,8 @@
 
 %% Message generators
 -export([hello/0,
-         flow_mod/0,
+         flow_mod_issue68/0,
+         flow_mod_issue79/0,
          table_miss_flow_mod/0,
          get_config_request/0,
          echo_request/0,
@@ -128,13 +129,15 @@ loop(Connections) ->
                  Msg = ?MODULE:Fun(),
                  case of_protocol:encode(Msg) of
                      {ok, EncodedMessage} ->
+                         timer:sleep(200),
                          ok = gen_tcp:send(Socket, EncodedMessage);
                      _Error ->
                          lager:error("Error in encode of: ~p", [Msg])
                  end
              end || Fun <- [
-                            flow_mod,
                             table_miss_flow_mod,
+                            flow_mod_issue68,
+                            flow_mod_issue79,
                             echo_request,
                             features_request,
                             get_config_request,
@@ -375,7 +378,9 @@ table_miss_flow_mod() ->
                           priority = 0,
                           instructions = [Instruction]}).
 
-flow_mod() ->
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/68
+flow_mod_issue68() ->
     %% Match fields
     MatchField1 = #ofp_field{class = openflow_basic,
                              has_mask = false,
@@ -384,13 +389,55 @@ flow_mod() ->
     MatchField2 = #ofp_field{class = openflow_basic,
                              has_mask = false,
                              name = ipv4_src,
-                             value = <<192:8,168:8,11:8,99:8>>},
+                             value = <<192:8,168:8,0:8,68:8>>},
     Match = #ofp_match{fields = [MatchField1, MatchField2]},
     %% Instructions
     SetField = #ofp_field{class = openflow_basic,
-                          has_mask = false,
-                          name = ipv4_dst,
-                          value = <<10:8,0:8,0:8,1:8>>},
+                           has_mask = false,
+                           name = ipv4_dst,
+                           value = <<10:8,0:8,0:8,68:8>>},
+    Action1 = #ofp_action_set_field{field = SetField},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1, Action2]},
+    %% Flow Mod
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = Match,
+               instructions = [Instruction]
+              }).
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/79
+flow_mod_issue79() ->
+    %% Match fields
+    MatchField1 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = eth_type,
+                             value = <<2048:16>>},
+    MatchField2 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = ip_proto,
+                             value = <<6:8>>},
+    MatchField3 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = ipv4_src,
+                             value = <<192:8,168:8,0:8,79:8>>},
+    Match = #ofp_match{fields = [MatchField1, MatchField2, MatchField3]},
+    %% Instructions
+    SetField = #ofp_field{class = openflow_basic,
+                           has_mask = false,
+                           name = tcp_dst,
+                           value = <<7979:16>>},
     Action1 = #ofp_action_set_field{field = SetField},
     Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
     Instruction = #ofp_instruction_apply_actions{actions = [Action1, Action2]},

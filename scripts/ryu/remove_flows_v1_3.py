@@ -27,10 +27,6 @@ class L2Switch(RyuApp):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
         empty_match = parser.OFPMatch()
-        output = parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
-                                        ofproto.OFPCML_NO_BUFFER)
-        write = parser.OFPInstructionActions(ofproto.OFPIT_WRITE_ACTIONS,
-                                             [output])
         instructions = []
         flow_mod = self.remove_table_flows(datapath, table_id,
                                         empty_match, instructions)

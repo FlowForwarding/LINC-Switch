@@ -25,6 +25,7 @@
 %% Internal API
 -export([start_link/0,
          flow_table_name/3,
+         get_linc_logical_switches/0,
          convert_port_config/1,
          convert_port_features/1,
          convert_port_state/1,
@@ -121,7 +122,7 @@ get_certificates() ->
 
 -spec get_state(list()) -> #capable_switch{}.
 get_state(Certs) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
+    Switches = get_linc_logical_switches(),
     Config = merge([get_switch_state(Id) || {switch, Id, _} <- Switches]),
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
     Config#capable_switch{id = CapSwitchId,
@@ -182,6 +183,43 @@ flow_table_name(SwitchId, DatapathId, TableId) ->
     "Switch" ++ integer_to_list(SwitchId)
         ++ DatapathId
         ++ "FlowTable" ++ integer_to_list(TableId).
+
+-spec get_linc_logical_switches() -> term().
+get_linc_logical_switches() ->
+    {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
+    {ok, CapableSwitchPorts} = application:get_env(linc, capable_switch_ports),
+    {ok, CapableSwitchQueues} = application:get_env(linc, capable_switch_queues),
+    [convert_logical_switch(S, CapableSwitchPorts, CapableSwitchQueues)
+     || S <- LogicalSwitches].
+
+convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
+                       CapableSwitchPorts, CapableSwitchQueues) ->
+    {ports, LogicalPorts} = lists:keyfind(ports, 1, LogicalSwitchConfig),
+    {NewPorts, NewQueues} =
+        lists:foldl(fun({port, PortNo, QueuesConfig}, {Ports, Queues}) ->
+                            {port, PortNo, PortConfig} =
+                                lists:keyfind(PortNo, 2, CapableSwitchPorts),
+                            PortRate = lists:keyfind(port_rate, 1, PortConfig),
+                            NewPortQueues = convert_queues(PortNo, PortRate,
+                                                           QueuesConfig,
+                                                           CapableSwitchQueues),
+                            NewPort = {port, PortNo, PortConfig},
+                            {[NewPort | Ports], [NewPortQueues | Queues]}
+                    end, {[], []}, LogicalPorts),
+    NewLogicalSwitchConfig1 =
+        lists:keyreplace(ports, 1, LogicalSwitchConfig, {ports, NewPorts}),
+    NewLogicalSwitchConfig2 =
+        lists:keystore(queues, 1, NewLogicalSwitchConfig1, {queues, NewQueues}),
+    {switch, SwitchId, NewLogicalSwitchConfig2}.
+
+convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
+    PortQueues =
+        [begin
+             {queue, QId, QueueConfig} = lists:keyfind(QId, 2,
+                                                       CapableSwitchQueues),
+             {QId, QueueConfig}
+         end || QId <- QueueIds],
+    {port, PortNo, [PortRate, {port_queues, PortQueues}]}.
 
 -spec convert_port_config([atom()] | #port_configuration{}) ->
                                  #port_configuration{} | [atom()].
@@ -247,7 +285,7 @@ convert_port_state(State) ->
                 live = Live}.
 
 delete_startup() ->
-    {ok, Sys} = application:get_env(linc, logical_switches),
+    Sys = get_linc_logical_switches(),
     NewStartup = delete_startup_switches(Sys, #ofconfig{name = startup}),
     mnesia_write(startup, NewStartup#ofconfig{certificates = []}).
 
@@ -306,7 +344,7 @@ delete_startup_queues(SysQPorts, SwitchId) ->
 
 read_and_update_startup() ->
     [Startup] = mnesia_read(startup),
-    {ok, Sys} = application:get_env(linc, logical_switches),
+    Sys = get_linc_logical_switches(),
     InitNew = {[], #ofconfig{name = startup}},
     {Config, NewStartup} = update_switches(Sys, Startup, InitNew),
     mnesia_write(startup, NewStartup#ofconfig{
@@ -513,7 +551,7 @@ handle_call({edit_config, _SessionId, Target, {xml, Xml}, DefaultOp, OnError},
     end;
 handle_call({copy_config, _SessionId, running, startup}, _From,
             #state{certificates = Certs} = State) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
+    Switches = get_linc_logical_switches(),
     Config = merge_ofc([get_config(Id) || {switch, Id, _} <- Switches]),
     mnesia_write(startup, Config#ofconfig{name = startup,
                                           certificates = Certs}),
@@ -599,7 +637,7 @@ merge_ofc([#ofconfig{ports = NewPorts,
                                  controllers = Ctrls ++ NewCtrls}).
 
 get_capable_switch_config(running) ->
-    {ok, Switches} = application:get_env(linc, logical_switches),
+    Switches = get_linc_logical_switches(),
     Config = merge([convert_before_merge(get_config(Id))
                     || {switch, Id, _} <- Switches]),
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),

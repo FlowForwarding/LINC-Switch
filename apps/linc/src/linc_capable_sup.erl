@@ -51,9 +51,7 @@ start_link() ->
                                                startup)]),
                      C;
                  _ ->
-                     {ok, Switches} = application:get_env(linc,
-                                                          logical_switches),
-                     Switches
+                     linc_ofconfig:get_linc_logical_switches()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])

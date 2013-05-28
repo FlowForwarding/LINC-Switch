@@ -207,7 +207,7 @@ convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
                             {[NewPort | Ports], [NewPortQueues | Queues]}
                     end, {[], []}, LogicalPorts),
     NewLogicalSwitchConfig1 =
-        lists:keyreplace(ports, 1, LogicalSwitchConfig, {ports, NewPorts}),
+        lists:keystore(ports, 1, LogicalSwitchConfig, {ports, NewPorts}),
     NewLogicalSwitchConfig2 =
         lists:keystore(queues, 1, NewLogicalSwitchConfig1, {queues, NewQueues}),
     {switch, SwitchId, NewLogicalSwitchConfig2}.
@@ -382,7 +382,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
     NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
 
     NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
-    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, []}),
+    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
     NewOpts3 = lists:keyreplace(controllers, 1,
                                 NewOpts2, {controllers, NewCtrls}),
 

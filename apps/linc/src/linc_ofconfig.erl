@@ -640,12 +640,90 @@ get_capable_switch_config(running) ->
     Switches = get_linc_logical_switches(),
     Config = merge([convert_before_merge(get_config(Id))
                     || {switch, Id, _} <- Switches]),
+    Resources = Config#capable_switch.resources,
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
-    Config#capable_switch{id = CapSwitchId};
+    OfflineResources = offline_resources(Resources),
+    Config#capable_switch{id = CapSwitchId,
+                          resources = Resources ++ OfflineResources};
 get_capable_switch_config(startup) ->
     Config = merge([convert_before_merge(hd(mnesia_read(startup)))]),
+    Resources = Config#capable_switch.resources,
     {ok, CapSwitchId} = application:get_env(linc, capable_switch_id),
-    Config#capable_switch{id = CapSwitchId}.
+    OfflineResources = offline_resources(Resources),
+    Config#capable_switch{id = CapSwitchId,
+                          resources = Resources ++ OfflineResources}.
+
+offline_resources(OnlineResources) ->
+    {ok, AllPorts} = application:get_env(linc, capable_switch_ports),
+    {ok, AllQueues} = application:get_env(linc, capable_switch_queues),
+    OfflinePorts = lists:filter(fun({port, PortNum, _Opts}) ->
+                                        is_port_offline(PortNum,
+                                                        OnlineResources)
+                                end, AllPorts),
+    OfflineQueues = lists:filter(fun({queue, QueueId, _Opts}) ->
+                                         is_queue_offline(QueueId,
+                                                          OnlineResources)
+                                 end, AllQueues),
+    OfflinePorts2 = convert_offline_ports(OfflinePorts),
+    OfflineQueues2 = convert_offline_queues(OfflineQueues),
+    OfflinePorts2 ++ OfflineQueues2.
+
+convert_offline_ports(Ports) ->
+    convert_offline_ports(Ports, []).
+
+convert_offline_ports([], Converted) ->
+    Converted;
+convert_offline_ports([{port, PortNum, _Opts} | Rest], Converted) ->
+    ResourceId = "OfflineResource-Port" ++ integer_to_list(PortNum),
+    C = #port{resource_id = ResourceId,
+              configuration = #port_configuration{
+                                 admin_state = down
+                                }
+             },
+    convert_offline_ports(Rest, [C | Converted]).
+
+convert_offline_queues(Queues) ->
+    convert_offline_queues(Queues, []).
+
+convert_offline_queues([], Converted) ->
+    Converted;
+convert_offline_queues([{queue, QueueId, Opts} | Rest], Converted) ->
+    ResourceId = "OfflineResource-Queue" ++ integer_to_list(QueueId),
+    {min_rate, MinRate} = lists:keyfind(min_rate, 1, Opts),
+    {max_rate, MaxRate} = lists:keyfind(max_rate, 1, Opts),
+    C = #queue{resource_id = ResourceId,
+               properties = #queue_properties{min_rate = MinRate,
+                                              max_rate = MaxRate}
+              },
+    convert_offline_queues(Rest, [C | Converted]).
+
+is_port_offline(_, []) ->
+    true;
+is_port_offline(PortNum, [#port{resource_id = ResourceId} | Rest]) ->
+    case re:run(ResourceId,
+                "-Port" ++ integer_to_list(PortNum),
+                [{capture, none}]) of
+        match ->
+            false;
+        nomatch ->
+            is_port_offline(PortNum, Rest)
+    end;
+is_port_offline(PortNum, [_Resource | Rest]) ->
+    is_port_offline(PortNum, Rest).
+
+is_queue_offline(_, []) ->
+    true;
+is_queue_offline(QueueId, [#queue{resource_id = ResourceId} | Rest]) ->
+    case re:run(ResourceId,
+                "-Queue" ++ integer_to_list(QueueId),
+                [{capture, none}]) of
+        match ->
+            false;
+        nomatch ->
+            is_queue_offline(QueueId, Rest)
+    end;
+is_queue_offline(QueueId, [_Resource | Rest]) ->
+    is_queue_offline(QueueId, Rest).
 
 convert_before_merge(#ofconfig{ports = Ports,
                                queues = Queues,

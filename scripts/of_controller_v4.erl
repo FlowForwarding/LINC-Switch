@@ -34,7 +34,6 @@
          port_desc_request/0,
          set_config/0,
          role_request/0,
-
          desc_request/0,
          flow_stats_request/0,
          aggregate_stats_request/0,
@@ -43,7 +42,9 @@
          queue_stats_request/0,
          group_stats_request/0,
          group_desc_request/0,
-         group_features_request/0
+         group_features_request/0,
+         set_async/0,
+         get_async_request/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -154,7 +155,12 @@ scenario(delete_all_flows) ->
      flow_mod_issue79,
      flow_stats_request,
      flow_mod_delete_all_flows,
-     flow_stats_request].
+     flow_stats_request];
+scenario(master_slave) ->
+    [get_async_request,
+     set_async,
+     get_async_request,
+     flow_mod_table_miss].
 
 loop(Connections) ->
     receive
@@ -469,6 +475,22 @@ flow_mod_issue79() ->
                match = Match,
                instructions = [Instruction]
               }).
+
+set_async() ->
+    message(#ofp_set_async{
+               packet_in_mask = {
+                 [no_match],
+                 [action]},
+               port_status_mask = {
+                 [add, delete, modify],
+                 [add, delete, modify]},
+               flow_removed_mask = {
+                 [idle_timeout, hard_timeout, delete, group_delete],
+                 [idle_timeout, hard_timeout, delete, group_delete]
+                }}).
+
+get_async_request() ->
+    message(#ofp_get_async_request{}).
 
 %%% Helpers --------------------------------------------------------------------
 

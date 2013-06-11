@@ -729,21 +729,45 @@ convert_before_merge(#ofconfig{ports = Ports,
                                queues = Queues,
                                switches = Switches,
                                controllers = Controllers}) ->
-    {[#port{resource_id = "LogicalSwitch" ++ integer_to_list(PSwitchId) ++
-                "-Port" ++ integer_to_list(PortId),
-            configuration = Config,
-            features = #port_features{advertised = Features}}
-      || {port, {PortId, PSwitchId}, Config, Features} <- Ports] ++
-         [#queue{resource_id = "LogicalSwitch" ++ integer_to_list(QSwitchId) ++
-                     "-Port" ++ integer_to_list(PortId) ++
-                     "-Queue" ++ integer_to_list(QueueId),
-                 properties = #queue_properties{min_rate = MinRate,
-                                                max_rate = MaxRate}}
-          || {queue, {QueueId, PortId, QSwitchId}, MinRate, MaxRate} <- Queues],
-     [#logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
-                      datapath_id = DatapathId,
-                      controllers = [C || {_SwitchId, C} <- Controllers]}
+    {convert_ports_before_merge(Ports) ++ convert_queues_before_merge(Queues),
+     [begin
+          LSwitchPorts = filter_switch_resources(SwitchId, Ports),
+          LSwitchQueues = filter_switch_resources(SwitchId, Queues),
+          #logical_switch{id = "LogicalSwitch" ++ integer_to_list(SwitchId),
+                          datapath_id = DatapathId,
+                          resources = LSwitchPorts ++ LSwitchQueues,
+                          controllers = [C || {_SwitchId, C} <- Controllers]}
+      end
       || {switch, SwitchId, DatapathId} <- Switches]}.
+
+filter_switch_resources(SwitchId, Resources) ->
+    lists:map(fun({port, {PortId, SId}, _, _}) when SId == SwitchId ->
+                      {port, resource_id(port, {SId, PortId})};
+                 ({queue, {QueueId, PortId, SId}, _, _}) when SId == SwitchId ->
+                      {queue, resource_id(queue, {SId, PortId, QueueId})};
+                 (_) ->
+                      false
+              end, Resources).
+
+convert_ports_before_merge(Ports) ->
+    [#port{resource_id = resource_id(port, {PSwitchId, PortId}),
+           configuration = Config,
+           features = #port_features{advertised = Features}}
+     || {port, {PortId, PSwitchId}, Config, Features} <- Ports].
+
+convert_queues_before_merge(Queues) ->
+    [#queue{resource_id = resource_id(queue, {QSwitchId, PortId, QueueId}),
+            properties = #queue_properties{min_rate = MinRate,
+                                           max_rate = MaxRate}}
+     || {queue, {QueueId, PortId, QSwitchId}, MinRate, MaxRate} <- Queues].
+
+resource_id(port, {SwitchId, PortId}) ->
+    "LogicalSwitch" ++ integer_to_list(SwitchId) ++
+        "-Port" ++ integer_to_list(PortId);
+resource_id(queue, {SwitchId, PortId, QueueId}) ->
+    "LogicalSwitch" ++ integer_to_list(SwitchId) ++
+        "-Port" ++ integer_to_list(PortId) ++
+        "-Queue" ++ integer_to_list(QueueId).
 
 op(Default, undefined) ->
     Default;

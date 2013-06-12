@@ -25,8 +25,8 @@ class L2Switch(RyuApp):
     def create_match(self, parser, fields):
         """Create OFP match struct from the list of fields."""
         match = parser.OFPMatch()
-        for (field, value) in fields.iteritems():
-            match.append_field(field, value)
+        for a in fields:
+            match.append_field(*a)
         return match
 
     def create_flow_mod(self, datapath, priority,
@@ -88,8 +88,8 @@ class L2Switch(RyuApp):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
         match = self.create_match(parser,
-                                  {ofproto.OXM_OF_IN_PORT: in_port,
-                                   ofproto.OXM_OF_ETH_SRC: eth_src})
+                                  [(ofproto.OXM_OF_IN_PORT, in_port),
+                                   (ofproto.OXM_OF_ETH_SRC, eth_src)])
         goto = parser.OFPInstructionGotoTable(1)
         flow_mod = self.create_flow_mod(datapath, 123, 0, match, [goto])
         datapath.send_msg(flow_mod)
@@ -98,7 +98,7 @@ class L2Switch(RyuApp):
         """Install flow entry matching on eth_dst in table 1."""
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
-        match = self.create_match(parser, {ofproto.OXM_OF_ETH_DST: eth_src})
+        match = self.create_match(parser, [(ofproto.OXM_OF_ETH_DST, eth_src)])
         output = parser.OFPActionOutput(in_port, ofproto.OFPCML_NO_BUFFER)
         write = parser.OFPInstructionActions(ofproto.OFPIT_WRITE_ACTIONS,
                                              [output])

@@ -87,6 +87,11 @@ Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` fi
     {linc,
      [
       {of_config, enabled},
+      {capable_switch_ports,
+       [
+        {port, 1, [{interface, "eth0"}]},
+        {port, 2, [{interface, "tap0"}]}
+       ]},
       {logical_switches,
        [
         {switch, 0,
@@ -96,14 +101,15 @@ Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` fi
            [
             {"Switch0-DefaultController", "localhost", 6633, tcp}
            ]},
+          {queues_status, disabled},
           {ports,
            [
-            {1, [{interface, "eth0"}]},
-            {2, [{interface, "eth1"}]}
+            {port, 1, {queues, []}},
+            {port, 2, {queues, []}}
            ]}
-        ]}
-      ]}
-    ]}.
+         ]}
+       ]}
+     ]}.
 
 At the moment you can change the list of controllers and ports used by the
 switch.

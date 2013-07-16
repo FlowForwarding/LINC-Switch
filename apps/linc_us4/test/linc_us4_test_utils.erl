@@ -36,6 +36,10 @@ mock([flow | Rest]) ->
                      fun(_, _) ->
                              ok
                      end),
+    ok = meck:expect(linc_us4_flow, initialize,
+                fun(_) ->
+                        ok
+                end),
     mock(Rest);
 mock([logic | Rest]) ->
     ok = meck:new(linc_logic),
@@ -70,6 +74,10 @@ mock([port | Rest]) ->
                              false;
                          (_, _) ->
                              true
+                     end),
+    ok = meck:expect(linc_us4_port, initialize,
+                     fun(_, _) ->
+                             ok
                      end),
     mock(Rest);
 mock([port_native | Rest]) ->
@@ -107,6 +115,10 @@ mock([group | Rest]) ->
                      fun(_SwitchId, _GroupId, _Incr) ->
                              ok
                      end),
+    ok = meck:expect(linc_us4_groups, initialize,
+                     fun(_) ->
+                             ok
+                     end),
     mock(Rest);
 mock([instructions | Rest]) ->
     ok = meck:new(linc_us4_instructions),
@@ -114,6 +126,13 @@ mock([instructions | Rest]) ->
                      fun(Pkt, _) ->
                              {stop, Pkt}
                      end),
+    mock(Rest);
+mock([sup | Rest]) ->
+    ok = meck:new(linc_us4_sup),
+    ok = meck:expect(linc_us4_sup, start_backend_sup,
+                  fun(_) ->
+                          {ok, ok}
+                  end),
     mock(Rest).
 
 unmock([]) ->
@@ -138,6 +157,9 @@ unmock([group | Rest]) ->
     unmock(Rest);
 unmock([instructions | Rest]) ->
     ok = meck:unload(linc_us4_instructions),
+    unmock(Rest);
+unmock([sup | Rest]) ->
+    ok = meck:unload(linc_us4_sup),
     unmock(Rest).
 
 mock_reset([]) ->

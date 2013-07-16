@@ -20,6 +20,7 @@
 -export([hello/0,
          flow_mod_issue68/0,
          flow_mod_issue79/0,
+         set_config_issue87/0,
          flow_mod_table_miss/0,
          flow_mod_delete_all_flows/0,
          get_config_request/0,
@@ -149,7 +150,8 @@ scenario(all_messages) ->
      group_features_request,
      queue_get_config_request,
      role_request,
-     barrier_request];
+     barrier_request,
+     set_config_issue87];
 scenario(delete_all_flows) ->
     [flow_mod_issue68,
      flow_mod_issue79,
@@ -160,7 +162,10 @@ scenario(master_slave) ->
     [get_async_request,
      set_async,
      get_async_request,
-     flow_mod_table_miss].
+     flow_mod_table_miss];
+scenario(set_config) ->
+    [set_config_issue87,
+     get_config_request].
 
 loop(Connections) ->
     receive
@@ -475,6 +480,13 @@ flow_mod_issue79() ->
                match = Match,
                instructions = [Instruction]
               }).
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/87
+set_config_issue87() ->
+    message(#ofp_set_config{
+               flags = [frag_drop],
+               miss_send_len = 16#FFFF - 100}).
 
 set_async() ->
     message(#ofp_set_async{

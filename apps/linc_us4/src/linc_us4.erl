@@ -68,9 +68,14 @@
           flow_state,
           buffer_state,
           switch_id :: integer(),
-          datapath_mac :: binary()
+          datapath_mac :: binary(),
+          switch_config = [{flags, []}, {miss_send_len, no_buffer}] ::
+            [switch_config_opt()]
          }).
 -type state() :: #state{}.
+
+-type switch_config_opt() :: {flags, list(ofp_config_flags())} |
+                              {miss_send_len, ofp_packet_in_bytes()}.
 
 %%%-----------------------------------------------------------------------------
 %%% gen_switch callbacks
@@ -231,15 +236,22 @@ ofp_echo_request(State, #ofp_echo_request{data = Data}) ->
 %% @doc Reply to get config request.
 -spec ofp_get_config_request(state(), ofp_get_config_request()) ->
                                     {reply, ofp_get_config_reply(), #state{}}.
-ofp_get_config_request(State, #ofp_get_config_request{}) ->
-    ConfigReply = #ofp_get_config_reply{flags = [],
-                                        miss_send_len = no_buffer},
+ofp_get_config_request(#state{switch_config = SwitchConfig} = State,
+                       #ofp_get_config_request{}) ->
+    ConfigReply = #ofp_get_config_reply{flags = proplists:get_value(
+                                                  flags,
+                                                  SwitchConfig),
+                                        miss_send_len = proplists:get_value(
+                                                          miss_send_len,
+                                                          SwitchConfig)},
     {reply, ConfigReply, State}.
 
 %% @doc Set switch configuration.
 -spec ofp_set_config(state(), ofp_set_config()) -> {noreply, state()}.
-ofp_set_config(State, #ofp_set_config{}) ->
-    {noreply, State}.
+ofp_set_config(State, #ofp_set_config{flags = Flags,
+                                      miss_send_len = MissSendLength}) ->
+    SwitchConfig = [{flags, Flags}, {miss_send_len, MissSendLength}],
+    {noreply, State#state{switch_config = SwitchConfig}}.
 
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->

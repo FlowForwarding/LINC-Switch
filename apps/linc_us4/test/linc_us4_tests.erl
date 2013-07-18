@@ -19,10 +19,12 @@
 -module(linc_us4_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
 
 %% Tests -----------------------------------------------------------------------
 
 -define(TIMEOUT, 300).
+-define(MOCKED, [sup, group, flow, port]).
 
 switch_setup_test_() ->
     {setup,
@@ -33,6 +35,20 @@ switch_setup_test_() ->
        fun no_ofconfig/0},
       {"Start/stop LINC v4 switch backend with OF-Config subsystem",
        fun with_ofconfig/0}
+     ]}.
+
+switch_config_request_reply_test_() ->
+    {setup,
+     fun config_request_reply_setup/0,
+     fun config_request_reply_teardown/1,
+     [
+      {foreach,
+       fun mocked_us4_backend_setup/0,
+       fun(_) -> ok end,
+       [
+        fun default_switch_config/1,
+        fun custom_switch_config/1
+       ]}
      ]}.
 
 no_ofconfig() ->
@@ -66,6 +82,45 @@ with_ofconfig() ->
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
 
+default_switch_config(State) ->
+    {"Test if the switch initial config is set correctly",
+     fun() ->
+             [begin
+                  {_, ConfigReply, _} = linc_us4:ofp_get_config_request(
+                                          State, #ofp_get_config_request{}),
+                  ?assertMatch(#ofp_get_config_reply{flags = [],
+                                                     miss_send_len = no_buffer},
+                               ConfigReply)
+              end || _ <- lists:seq(1, 10)]
+     end}.
+
+custom_switch_config(State) ->
+    {"Test if the switch config is set correctly",
+     fun() ->
+             [begin
+                  Flags = case random:uniform(1000) rem 5 of
+                              0 -> [];
+                              1 -> [frag_normal];
+                              2 -> [frag_drop];
+                              3 -> [frag_reasm];
+                              4 -> [frag_drop, frag_reasm]
+                          end,
+                  MissSendLen = 16#FFFF - (I * 100),
+                  {_, NewState} = linc_us4:ofp_set_config(
+                                    State,
+                                    #ofp_set_config{flags = Flags,
+                                                    miss_send_len =
+                                                        MissSendLen}),
+                  {_, ConfigReply, _} = linc_us4:ofp_get_config_request(
+                                          NewState, #ofp_get_config_request{}),
+                  ?assertMatch(#ofp_get_config_reply{flags = Flags,
+                                                     miss_send_len =
+                                                         MissSendLen},
+                               ConfigReply)
+              end || I <- lists:seq(1, 10)]
+     end}.
+
+
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
@@ -84,3 +139,23 @@ teardown(_) ->
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
     ok = application:stop(lager).
+
+config_request_reply_setup() ->
+    mocked = linc_us4_test_utils:mock(?MOCKED),
+
+    meck:new(linc_buffer),
+    meck:expect(linc_buffer, initialize,
+                fun(_) ->
+                        ok
+                end).
+
+config_request_reply_teardown(_) ->
+    unmocked = linc_us4_test_utils:unmock(?MOCKED),
+    meck:unload(linc_buffer).
+
+mocked_us4_backend_setup() ->
+    DummyBackendOpts = [ {Opt, dummy} || Opt <- [switch_id,
+                                                 datapath_mac,
+                                                 config] ],
+    {ok, 4, State} = linc_us4:start(DummyBackendOpts),
+    State.

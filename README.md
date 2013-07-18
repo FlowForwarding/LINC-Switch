@@ -126,11 +126,13 @@ For detailed explanation on how to setup simple LINC testbed check the
 
 ## Development environment
 To facilitate developing LINC application the appropriate environment was prepared. It consists of the following components:
+
 1. "[Sync](https://github.com/mentels/sync)" - scans all the **beam** files and their corresponding source files and reloads or recompiles them respectively if necessary.
 2. "[EDTS](https://github.com/tjarvstrand/edts)" - Emacs mode that among others provides automatic files compilation, finding function declaration etc. For this to work you have to configure your emacs to use EDTS.
 3. Makefile targets - start the development Erlang VM.
 
 Assuming that you have Emacs and EDTS installed and properly configured, to start developing LINC you have follow these steps:
+
 1. Clone the repo.
 2. Enter the project root dir and issue:
     make dev_prepare

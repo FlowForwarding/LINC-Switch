@@ -1,0 +1,15 @@
+#!/bin/bash
+# This script sets the cap_net_admin capability that allows the user to perform various network-related operations.
+
+if [ `uname` = Linux -a `id -u` != 0 ]; then
+    if [ -z "$BEAMSMP_PATH" ]; then
+        ERL_PATH=`readlink -f $( which erl )`
+        BEAMSMP_PATH=${ERL_PATH%/*/*}/erts-*/bin/beam.smp
+    fi
+    if [ ! -x ${BEAMSMP_PATH} ]; then
+        echo "beam.smp executable not found! Assign the path to beam.smp to BEAMSMP_PATH variable, export it and run the script again."
+        exit 1
+    fi
+    sudo -n env PATH=${PATH} setcap cap_net_admin=ep ${BEAMSMP_PATH}
+    echo "cap_net_admin capability set on $( ls ${BEAMSMP_PATH} ). If the beam.smp path is not correct, export the correct one in a BEAMSMP_PATH variable and run the script again."
+fi

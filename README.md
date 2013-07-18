@@ -124,6 +124,25 @@ For further instructions on how to use LINC check the
 For detailed explanation on how to setup simple LINC testbed check the
 "[Testbed setup](https://github.com/FlowForwarding/LINC-Switch/tree/master/docs/testbed-setup.md)".
 
+## Development environment
+To facilitate developing LINC application the appropriate environment was prepared. It consists of the following components:
+
+1. "[Sync](https://github.com/mentels/sync)" - scans all the **beam** files and their corresponding source files and reloads or recompiles them respectively if necessary.
+2. "[EDTS](https://github.com/tjarvstrand/edts)" - Emacs mode that among others provides automatic files compilation, finding function declaration etc. For this to work you have to configure your emacs to use EDTS.
+3. Makefile targets - start the development Erlang VM.
+
+Assuming that you have Emacs and EDTS installed and properly configured, to start developing LINC you have follow these steps:
+
+1. Clone the repo.
+2. Enter the project root dir and issue:
+    make dev_prepare
+   If you get and error saying "beam.smp executable not found!" follow the guidelines and export the BEAMSMP_PATH variable pointing to your `beam.smp` and run the make target againg.
+3. By default only the `procket` module is excluded from scanning by Sync. If you want to prevent additional modules from being scanned modify sync configuration in `rel/files/sys.config` file.
+3. Next start the development Erlang VM:
+    make dev
+
+Now you can develop the LINC application whithout restarting the Erlang VM.
+
 ## Support
 
 If you have any technical questions, problems or suggestions regarding LINC

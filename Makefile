@@ -36,3 +36,9 @@ setup_dialyzer:
 
 dialyzer: compile
 	dialyzer apps/*/ebin
+
+dev_prepare: compile
+	./scripts/pre_develop_hook
+
+dev:
+	erl -pa apps/*/ebin apps/*/test deps/*/ebin -config rel/files/sys.config -args_file rel/files/vm.args -eval "lists:map(fun application:start/1, [kernel, stdlib, public_key, crypto, ssl, compiler, syntax_tools, runtime_tools, xmerl, mnesia, lager, linc, sync])"

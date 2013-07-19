@@ -40,7 +40,12 @@ We edit the `rel/files/sys.config` file, which contains the Switch configuration
     {linc,
      [
      {of_config, enabled},
-
+     {capable_switch_ports,
+      [
+       {port, 1, [{interface, "tap0"}]},
+       {port, 2, [{interface, "tap1"}]}
+      ]},
+     {capable_switch_queues, []},
      {logical_switches,
       [
       {switch, 0,
@@ -54,9 +59,11 @@ We edit the `rel/files/sys.config` file, which contains the Switch configuration
 
        {ports,
         [
-        {port, 1, [{interface, "eth0"}]},
-        {port, 2, [{interface, "tap0"}]},
-        {port, 3, [{interface, "tap1"}, {ip, "10.0.0.1"}]}
+         {ports, 
+          [
+           {port, 1, {queues, []}},
+           {port, 2, {queues, []}}
+          ]}
         ]},
 
        {queues_status, disabled}
@@ -69,42 +76,73 @@ We build and run the switch (we need `sudo` to create the ports).
     % make rel
     % sudo rel/linc/bin/linc console
 
-The switch automatically connects to the controller which accepts the connection.
+The switch automatically connects to the controller which accepts the connection. 
 
     =INFO REPORT==== xx-Apr-2012::xx:xx:xx ===
     Accepted connection from #Port<0.xxxx> {{127,0,0,1},xxxxx}
+    
+Immediately after the connection is established the controller sends tests messages to the switch and its flow table is populated. To see these entries, issue the following command in the switch's console:
+
+    (switch)1> ets:tab2list(linc:lookup(0, flow_table_0)).
 
 Additionally we can see that `tap0` and `tap1` interfaces were created in the system.
 
-    % ifconfig
+    % ifconfig {tap0|tap1}
 
 These interfaces must be upped.
 
-    % ifconfig tap0 up
-    % ifconfig tap1 up
+    % sudo ifconfig tap0 up
+    % sudo ifconfig tap1 up
 
 Erlang representation of those ports are stored in `linc_ports` ets table.
 
-    (switch)1> ets:tab2list(linc:lookup(0, linc_ports)).
+    (switch)2> ets:tab2list(linc:lookup(0, linc_ports)).
+    
+    
+Because the controller populated the switch's flow table with some flows we have to clear them before we move on to the Demo. To clear the flow table we create an appropriate `flow_mod` message:
+
+    (controller)4> ClearFlowTable = #ofp_message{
+                                      version = 3,
+                                      xid = 100,
+                                      body = #ofp_flow_mod{
+                                               cookie = <<0:64>>,
+                                               cookie_mask = <<0:64>>,
+                                               table_id = 0,
+                                               command = delete,
+                                               idle_timeout = 30000,
+                                               hard_timeout = 60000,
+                                               priority = 1,
+                                               buffer_id = 1,
+                                               out_port = any,
+                                               out_group = any,
+                                               flags = [],
+                                               match = #ofp_match{fields = []},
+                                               instructions = []}}.
+                                             
+Then we query the switch's connection and send the message to the switch:
+
+    (controller)5> {ok, [Conn|_]} = of_controller_v4:get_connections(CtrlPid).
+    (controller)6> of_controller_v4:send(CtrlPid, Conn, ClearFlowTable).
+    
+To see if the above commands did their work we check the switch's flow table again:
+
+    (switch)3> ets:tab2list(linc:lookup(0, flow_table_0)).
+    
+The above invocation should return an empty list.
 
 ### Receiving port
 
 On the receiving port (`tap1`) we run `tcpdump` to watch for pong (ICMP Echo Reply).
 
-    % tcpdump -v -i tap1
+    % sudo tcpdump -v -i tap1
 
 ## Demo
 
 ### Part 1: Dropping the packet
 
-Without any input from the Controller all the packets received by the Switch are dropped as the first table has no flow entires to match on.
+Without any input from the Controller all the packets received by the Switch are dropped as the first table has no flow entires to match on. When we send a single ping on `tap0` using `tcpreplay`...
 
-    (switch)2> ets:tab2list(linc:lookup(0, flow_table_0)).
-    []
-
-When we send a single ping on `tap0` using `tcpreplay`...
-
-    % tcpreplay -i tap0 pcap.data/ping.pcap
+    % sudo tcpreplay -i tap0 pcap.data/ping.pcap
 
 ...we're getting nothing on the receiving (`tap1`) port.
 
@@ -112,43 +150,44 @@ When we send a single ping on `tap0` using `tcpreplay`...
 
 We create a `flow_mod` message containing a match field (match on packets received from port 1) and an action (send matched packets to port 2).
 
-    (controller)4> FlowMod = #ofp_message{
+    (controller)7> FlowMod = #ofp_message{
                                 version = 3,
                                 xid = 100,
-                                body = #ofp_flow_mod{
-                                          cookie = <<0:64>>,
-                                          cookie_mask = <<0:64>>,
-                                          table_id = 0,
-                                          command = add,
-                                          idle_timeout = 30000,
-                                          hard_timeout = 60000,
-                                          priority = 1,
-                                          buffer_id = 1,
-                                          out_port = 3,
-                                          out_group = 5,
-                                          flags = [],
-                                          match = #ofp_match{
-                                                     fields = [#ofp_field{
-                                                                class = openflow_basic,
-                                                                name = in_port,
-                                                                has_mask = false,
-                                                                value = <<1:32>>}]},
-                                          instructions = [#ofp_instruction_write_actions{
-                                                             actions = [#ofp_action_output{
-                                                                           port = 2,
-                                                                           max_len = 64}]}]}}.
+                                 body = #ofp_flow_mod{
+                                      cookie = <<0:64>>,
+                                      cookie_mask = <<0:64>>,
+                                      table_id = 0,
+                                      command = add,
+                                      idle_timeout = 30000,
+                                      hard_timeout = 60000,
+                                      priority = 1,
+                                      buffer_id = 1,
+                                      out_port = 2,
+                                      out_group = 5,
+                                      flags = [],
+                                      match = #ofp_match{
+                                                 fields = [#ofp_field{
+                                                            class = openflow_basic,
+                                                            name = in_port,
+                                                            has_mask = false,
+                                                            value = <<1:32>>}]},
+                                      instructions = [#ofp_instruction_write_actions{
+                                                         actions = [#ofp_action_output{
+                                                                       port = 2,
+                                                                       max_len = 64}]}]}}.
+
 
 We query the switch's connection.
 
-    (controller)5> {ok, [Conn|_]} = of_controller_v4:get_connections(CtrlPid).
+    (controller)8> {ok, [Conn|_]} = of_controller_v4:get_connections(CtrlPid).
 
 We send it to the switch.
 
-    (controller)6> of_controller_v4:send(CtrlPid, Conn, FlowMod).
+    (controller)9> of_controller_v4:send(CtrlPid, Conn, FlowMod).
 
 We can take a look at the flow table `0` now to see it contains one flow entry received from the Controller.
 
-    (switch)3> ets:tab2list(linc:lookup(0, flow_table_0)).
+    (switch)4> ets:tab2list(linc:lookup(0, flow_table_0)).
     [{flow_entry,1,
                  {ofp_match,
                         [{ofp_field,openflow_basic,in_port,false,
@@ -159,7 +198,7 @@ We can take a look at the flow table `0` now to see it contains one flow entry r
 
 Now when we send the same ping packet using `tcpreplay`...
 
-    % tcpreplay -i tap0 pcap.data/ping.pcap
+    % sudo tcpreplay -i tap0 pcap.data/ping.pcap
 
 ...it will match on the added flow entry and forwarded to port 2. The output of `tcpdump` should look like this:
 
@@ -170,7 +209,7 @@ Now when we send the same ping packet using `tcpreplay`...
 
 We create another `flow_mod` message - this time we want to remove all the flow entires from the flow table `0`.
 
-    (controller)7> RemoveFlows = #ofp_message{
+    (controller)10> RemoveFlows = #ofp_message{
                                     version = 3,
                                     xid = 200,
                                     body = #ofp_flow_mod{
@@ -182,7 +221,7 @@ We create another `flow_mod` message - this time we want to remove all the flow 
                                               hard_timeout = 60000,
                                               priority = 1,
                                               buffer_id = 1,
-                                              out_port = 3,
+                                              out_port = 2,
                                               out_group = 5,
                                               flags = [],
                                               match = #ofp_match{fields = []},
@@ -190,11 +229,11 @@ We create another `flow_mod` message - this time we want to remove all the flow 
 
 We send it to the Switch.
 
-    (controller)8> of_controller_v4:send(CtrlPid, Conn, RemoveFlows).
+    (controller)11> of_controller_v4:send(CtrlPid, Conn, RemoveFlows).
 
 We can check if the flow entry we added earlier is gone from the flow table `0`.
 
-    (switch)4> ets:tab2list(linc:lookup(0, flow_table_0)).
+    (switch)5> ets:tab2list(linc:lookup(0, flow_table_0)).
     []
 
 We send the ping packet again...

@@ -141,7 +141,7 @@ Assuming that you have Emacs and EDTS installed and properly configured, to star
 3. Next start the development Erlang VM:
     make dev
 
-Now you can develop the LINC application whithout restarting the Erlang VM.
+Now you can develop the LINC application without restarting the Erlang VM.
 
 ## Support
 

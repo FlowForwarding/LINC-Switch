@@ -120,6 +120,7 @@
 -define(MAX, (1 bsl 24)). %% some arbitrary big number
 -define(MAX_FLOW_TABLE_ENTRIES, ?MAX).
 -define(MAX_TABLES, 255).
+-define(MAX_BANDS, 255).
 -define(MAX_PORTS, ?MAX).
 -define(MAX_BUFFERED_PACKETS, 0).
 

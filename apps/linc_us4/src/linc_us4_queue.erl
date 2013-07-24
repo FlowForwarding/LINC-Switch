@@ -459,4 +459,4 @@ microsec_to_sec(Micro) ->
     Micro div 1000000.
 
 microsec_to_nsec(Micro) ->
-    (Micro rem 1000) * 1000.
+    (Micro rem 1000000) * 1000.

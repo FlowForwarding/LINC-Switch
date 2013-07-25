@@ -48,6 +48,7 @@
          meter_mod_add_meter_17/0,
          meter_mod_modify_meter_17/0,
          config_request_meter_17/0,
+         flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0
          ]).
@@ -178,7 +179,10 @@ scenario(add_meter) ->
 scenario(meter_17) ->
     [meter_mod_add_meter_17,
      meter_mod_modify_meter_17,
-     config_request_meter_17].
+     config_request_meter_17];
+scenario(flow_mod_with_flags) ->
+    [flow_mod_with_flags,
+     flow_stats_request].
 
 
 loop(Connections) ->
@@ -531,6 +535,24 @@ config_request_meter_17() ->
     message(#ofp_meter_config_request{
                flags = [],
                meter_id = 17}).
+
+%% Flow mod with flags set to check if they are correctly encoded/decoded.
+flow_mod_with_flags() ->
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 99,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [send_flow_rem, reset_counts],
+               match = #ofp_match{},
+               instructions = []
+              }).
 
 set_async() ->
     message(#ofp_set_async{

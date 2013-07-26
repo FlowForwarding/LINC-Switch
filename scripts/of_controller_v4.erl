@@ -44,6 +44,11 @@
          group_stats_request/0,
          group_desc_request/0,
          group_features_request/0,
+         meter_mod_add_meter/0,
+         meter_mod_add_meter_17/0,
+         meter_mod_modify_meter_17/0,
+         config_request_meter_17/0,
+         flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0
          ]).
@@ -151,7 +156,10 @@ scenario(all_messages) ->
      queue_get_config_request,
      role_request,
      barrier_request,
-     set_config_issue87];
+     set_config_issue87,
+     meter_mod_add_meter_17,
+     meter_mod_modify_meter_17,
+     config_request_meter_17];
 scenario(delete_all_flows) ->
     [flow_mod_issue68,
      flow_mod_issue79,
@@ -165,7 +173,17 @@ scenario(master_slave) ->
      flow_mod_table_miss];
 scenario(set_config) ->
     [set_config_issue87,
-     get_config_request].
+     get_config_request];
+scenario(add_meter) ->
+    [meter_mod_add_meter];
+scenario(meter_17) ->
+    [meter_mod_add_meter_17,
+     meter_mod_modify_meter_17,
+     config_request_meter_17];
+scenario(flow_mod_with_flags) ->
+    [flow_mod_with_flags,
+     flow_stats_request].
+
 
 loop(Connections) ->
     receive
@@ -487,6 +505,54 @@ set_config_issue87() ->
     message(#ofp_set_config{
                flags = [frag_drop],
                miss_send_len = 16#FFFF - 100}).
+
+%% Meter mod to test behaviour related with pull request repotred in:
+%% https://github.com/FlowForwarding/of_protocol/pull/28
+meter_mod_add_meter() ->
+    message(#ofp_meter_mod{
+               command = add,
+               flags = [kbps],
+               meter_id = 1,
+               bands = [#ofp_meter_band_drop{rate  = 200}]}).
+
+%% Meters' messages to test behaviour related with pull request
+%% repotred in: https://github.com/FlowForwarding/of_protocol/pull/23
+meter_mod_add_meter_17() ->
+    message(#ofp_meter_mod{
+               command = add,
+               flags = [kbps],
+               meter_id = 17,
+               bands = [#ofp_meter_band_drop{rate  = 200}]}).
+
+meter_mod_modify_meter_17() ->
+    message(#ofp_meter_mod{
+               command = modify,
+               flags = [kbps],
+               meter_id = 17,
+               bands = [#ofp_meter_band_drop{rate  = 900}]}).
+
+config_request_meter_17() ->
+    message(#ofp_meter_config_request{
+               flags = [],
+               meter_id = 17}).
+
+%% Flow mod with flags set to check if they are correctly encoded/decoded.
+flow_mod_with_flags() ->
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 99,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [send_flow_rem, reset_counts],
+               match = #ofp_match{},
+               instructions = []
+              }).
 
 set_async() ->
     message(#ofp_set_async{

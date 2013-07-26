@@ -50,7 +50,8 @@
          config_request_meter_17/0,
          flow_mod_with_flags/0,
          set_async/0,
-         get_async_request/0
+         get_async_request/0,
+         bin_port_desc_request/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -183,8 +184,8 @@ scenario(meter_17) ->
 scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
      flow_stats_request];
-scenario(port_desc) ->
-    [port_desc_request].
+scenario(port_desc_request_random_padding) ->
+    [bin_port_desc_request].
 
 
 loop(Connections) ->
@@ -566,6 +567,15 @@ set_async() ->
 
 get_async_request() ->
     message(#ofp_get_async_request{}).
+
+%% Binary port description request with 4 byte long random padding to check
+%% behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/110
+bin_port_desc_request() ->
+    {ok, EncodedMessage} = of_protocol:encode(message(#ofp_port_desc_request{})),
+    %% Strip for 4 byte padding from the message.
+    <<(binary:part(EncodedMessage, 0, byte_size(EncodedMessage) - 4))/binary,
+      (random:uniform(16#FFFFFFFF)):32>>.
 
 %%% Helpers --------------------------------------------------------------------
 

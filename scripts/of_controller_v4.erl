@@ -182,7 +182,9 @@ scenario(meter_17) ->
      config_request_meter_17];
 scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
-     flow_stats_request].
+     flow_stats_request];
+scenario(port_desc) ->
+    [port_desc_request].
 
 
 loop(Connections) ->
@@ -193,13 +195,8 @@ loop(Connections) ->
                        [Socket, Address, Port]),
             [begin
                  Msg = ?MODULE:Fun(),
-                 case of_protocol:encode(Msg) of
-                     {ok, EncodedMessage} ->
-                         timer:sleep(200),
-                         ok = gen_tcp:send(Socket, EncodedMessage);
-                     _Error ->
-                         lager:error("Error in encode of: ~p", [Msg])
-                 end
+                 timer:sleep(200),
+                 do_send(Socket, Msg)
              end || Fun <- scenario(all_messages)],
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
@@ -624,6 +621,15 @@ do_send(Connections, {Address, Port}, Message) ->
         false ->
             lager:error("Sending message failed");
         {{Address, Port}, Socket, _} ->
-            {ok, EncodedMessage} = of_protocol:encode(Message),
-            ok = gen_tcp:send(Socket, EncodedMessage)
+            do_send(Socket, Message)
+    end.
+
+do_send(Socket, Message) when is_binary(Message) ->
+    ok = gen_tcp:send(Socket, Message);
+do_send(Socket, Message) when is_tuple(Message) ->
+    case of_protocol:encode(Message) of
+        {ok, EncodedMessage} ->
+            ok = gen_tcp:send(Socket, EncodedMessage);
+        _Error ->
+            lager:error("Error in encode of: ~p", [Message])
     end.

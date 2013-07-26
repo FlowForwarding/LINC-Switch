@@ -422,6 +422,9 @@ ofp_channel_send(Id, Message) ->
                       end, L)
     end.
 
+log_message_sent(#ofp_message{body = Body} = Message)
+  when element(1, Body) =:= ofp_error_msg ->
+    ?DEBUG("[OF_ERROR] Sent message to controller: ~w~n", [Message]);
 log_message_sent(Message) ->
     ?DEBUG("Sent message to controller: ~w~n", [Message]).
 

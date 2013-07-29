@@ -250,8 +250,9 @@ handle_call(_Message, _From, State) ->
 
 handle_cast({send_to_controllers, Message},
             #state{xid = Xid,
-                   switch_id = SwitchId} = State) ->
-    ofp_channel_send(SwitchId, Message#ofp_message{xid = Xid}),
+                   switch_id = SwitchId,
+                   backend_mod = Backend} = State) ->
+    ofp_channel_send(SwitchId, Backend, Message#ofp_message{xid = Xid}),
     {noreply, State#state{xid = Xid + 1}};
 handle_cast({set_datapath_id, DatapathId},
             #state{backend_mod = Backend,
@@ -333,6 +334,7 @@ handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
                         NewState;
                     {reply, ReplyBody, NewState} ->
                         ofp_channel_send(Pid,
+                                         Backend,
                                          Message#ofp_message{body = ReplyBody}),
                         NewState
                 end,
@@ -397,10 +399,10 @@ extract_mac([N1, N2 | Rest], Mac) ->
     B2 = list_to_integer([N2], 16),
     extract_mac(Rest, <<Mac/binary, B1:4, B2:4>>).
 
-ofp_channel_send(Id, Message) ->
+ofp_channel_send(Id, Backend, Message) ->
     case ofp_channel:send(Id, Message) of
         ok ->
-            log_message_sent(Message),
+            log_message_sent(Backend, Message),
             ok;
         {error, not_connected} = Error ->
             %% Don't log not_connected errors, as they pollute debug output.
@@ -422,11 +424,8 @@ ofp_channel_send(Id, Message) ->
                       end, L)
     end.
 
-log_message_sent(#ofp_message{body = Body} = Message)
-  when element(1, Body) =:= ofp_error_msg ->
-    ?DEBUG("[OF_ERROR] Sent message to controller: ~w~n", [Message]);
-log_message_sent(Message) ->
-    ?DEBUG("Sent message to controller: ~w~n", [Message]).
+log_message_sent(Backend, Message) ->
+    Backend:log_message_sent(Message).
 
 log_channel_send_error(Message, Id, Reason) ->
     ?ERROR("~nMessage: ~p~n"

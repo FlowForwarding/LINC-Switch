@@ -475,7 +475,7 @@ group_get_stats(SwitchId, GroupId) ->
                 packet_count  = group_get_stat(SwitchId, GroupId, packet_count),
                 byte_count    = group_get_stat(SwitchId, GroupId, byte_count),
                 bucket_stats  = BStats,
-                duration_sec  = GroupTime / 1000000,           % seconds
+                duration_sec  = GroupTime div 1000000,           % seconds
                 duration_nsec = (GroupTime rem 1000000) * 1000 % microsec * 1000 = nsec
                }]
     end.

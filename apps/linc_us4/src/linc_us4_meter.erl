@@ -183,7 +183,7 @@ get_features() ->
     #ofp_meter_features_reply{max_meter = ?MAX,
                               band_types = ?SUPPORTED_BANDS,
                               capabilities = ?SUPPORTED_FLAGS,
-                              max_bands = ?MAX,
+                              max_bands = ?MAX_BANDS,
                               max_color = 0}.
 
 %% @doc Check if meter with a given id exists.

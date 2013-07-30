@@ -28,6 +28,7 @@ $ java -jar of_controller.jar
 ```
 
 4. Use rest API to setup flow-entry. Below some instances:
+
 ```bash
 $ curl -d '{"switch":"00:0C:29:C9:8E:AE:00:00", "name":"flow-mod-1", "priority":"32768", "ingress-port":"1", "active":"true", "actions":"output=1"}' http://localhost:8080/ff/of/controller/restapi
 

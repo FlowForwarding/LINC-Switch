@@ -45,8 +45,15 @@
          group_stats_request/0,
          group_desc_request/0,
          group_features_request/0,
+         meter_mod_add_meter/0,
+         meter_mod_add_meter_17/0,
+         meter_mod_modify_meter_17/0,
+         config_request_meter_17/0,
+         flow_mod_with_flags/0,
          set_async/0,
-         get_async_request/0
+         get_async_request/0,
+         bin_port_desc_request/0,
+         flow_mod_issue91/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -152,7 +159,10 @@ scenario(all_messages) ->
      queue_get_config_request,
      role_request,
      barrier_request,
-     set_config_issue87];
+     set_config_issue87,
+     meter_mod_add_meter_17,
+     meter_mod_modify_meter_17,
+     config_request_meter_17];
 scenario(delete_all_flows) ->
     [flow_mod_issue68,
      flow_mod_issue79,
@@ -167,9 +177,24 @@ scenario(master_slave) ->
 scenario(set_config) ->
     [set_config_issue87,
      get_config_request];
-scenario(issue90) ->
+scenario(set_vlan_tag) ->
     [flow_mod_delete_all_flows,
-     flow_mod_issue90].
+     flow_mod_issue90];
+scenario(add_meter) ->
+    [meter_mod_add_meter];
+scenario(meter_17) ->
+    [meter_mod_add_meter_17,
+     meter_mod_modify_meter_17,
+     config_request_meter_17];
+scenario(flow_mod_with_flags) ->
+    [flow_mod_with_flags,
+     flow_stats_request];
+scenario(port_desc_request_random_padding) ->
+    [bin_port_desc_request];
+scenario(ipv6_change_dst) ->
+    [flow_mod_delete_all_flows,
+     flow_mod_issue91].
+
 
 loop(Connections) ->
     receive
@@ -179,13 +204,8 @@ loop(Connections) ->
                        [Socket, Address, Port]),
             [begin
                  Msg = ?MODULE:Fun(),
-                 case of_protocol:encode(Msg) of
-                     {ok, EncodedMessage} ->
-                         timer:sleep(200),
-                         ok = gen_tcp:send(Socket, EncodedMessage);
-                     _Error ->
-                         lager:error("Error in encode of: ~p", [Msg])
-                 end
+                 timer:sleep(200),
+                 do_send(Socket, Msg)
              end || Fun <- scenario(all_messages)],
             loop([{{Address, Port}, Socket, Pid} | Connections]);
         {cast, Message, AddressPort} ->
@@ -520,6 +540,54 @@ flow_mod_issue90() ->
                match = #ofp_match{fields = []},
                instructions = [Instriction]}).
 
+%% Meter mod to test behaviour related with pull request repotred in:
+%% https://github.com/FlowForwarding/of_protocol/pull/28
+meter_mod_add_meter() ->
+    message(#ofp_meter_mod{
+               command = add,
+               flags = [kbps],
+               meter_id = 1,
+               bands = [#ofp_meter_band_drop{rate  = 200}]}).
+
+%% Meters' messages to test behaviour related with pull request
+%% repotred in: https://github.com/FlowForwarding/of_protocol/pull/23
+meter_mod_add_meter_17() ->
+    message(#ofp_meter_mod{
+               command = add,
+               flags = [kbps],
+               meter_id = 17,
+               bands = [#ofp_meter_band_drop{rate  = 200}]}).
+
+meter_mod_modify_meter_17() ->
+    message(#ofp_meter_mod{
+               command = modify,
+               flags = [kbps],
+               meter_id = 17,
+               bands = [#ofp_meter_band_drop{rate  = 900}]}).
+
+config_request_meter_17() ->
+    message(#ofp_meter_config_request{
+               flags = [],
+               meter_id = 17}).
+
+%% Flow mod with flags set to check if they are correctly encoded/decoded.
+flow_mod_with_flags() ->
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 99,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [send_flow_rem, reset_counts],
+               match = #ofp_match{},
+               instructions = []
+              }).
+
 set_async() ->
     message(#ofp_set_async{
                packet_in_mask = {
@@ -535,6 +603,53 @@ set_async() ->
 
 get_async_request() ->
     message(#ofp_get_async_request{}).
+
+%% Binary port description request with 4 byte long random padding to check
+%% behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/110
+bin_port_desc_request() ->
+    {ok, EncodedMessage} = of_protocol:encode(message(#ofp_port_desc_request{})),
+    %% Strip for 4 byte padding from the message.
+    <<(binary:part(EncodedMessage, 0, byte_size(EncodedMessage) - 4))/binary,
+      (random:uniform(16#FFFFFFFF)):32>>.
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/91
+flow_mod_issue91() ->
+    MatchField1 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = eth_type,
+                             %% IPv6
+                             value = <<(16#86dd):16>>},
+    MatchField2 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = in_port,
+                             value = <<1:32>>},
+    Match = #ofp_match{fields = [MatchField1, MatchField2]},
+    SetField = #ofp_field{class = openflow_basic,
+                          has_mask = false,
+                          name = ipv6_dst,
+                          value =
+                              <<(16#fe80):16, 0:48, (16#2420):16, (16#52ff):16,
+                                (16#fe8f):16, (16#5189):16>>},
+    Action1 = #ofp_action_set_field{field = SetField},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1, Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = Match,
+               instructions = [Instruction]
+              }).
 
 %%% Helpers --------------------------------------------------------------------
 
@@ -590,6 +705,15 @@ do_send(Connections, {Address, Port}, Message) ->
         false ->
             lager:error("Sending message failed");
         {{Address, Port}, Socket, _} ->
-            {ok, EncodedMessage} = of_protocol:encode(Message),
-            ok = gen_tcp:send(Socket, EncodedMessage)
+            do_send(Socket, Message)
+    end.
+
+do_send(Socket, Message) when is_binary(Message) ->
+    ok = gen_tcp:send(Socket, Message);
+do_send(Socket, Message) when is_tuple(Message) ->
+    case of_protocol:encode(Message) of
+        {ok, EncodedMessage} ->
+            ok = gen_tcp:send(Socket, EncodedMessage);
+        _Error ->
+            lager:error("Error in encode of: ~p", [Message])
     end.

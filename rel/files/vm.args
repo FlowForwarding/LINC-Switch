@@ -4,7 +4,8 @@
 ## Cookie for distributed erlang
 -setcookie linc
 
-## Customize maximum number of ETS tables
+## Customize maximum number of ETS tables; each logical switch allocates approximately
+## 280 ETS tables
 ## With 3000 ETS tables the capable switch can have 10 logical switches with 8 ports each
 -env ERL_MAX_ETS_TABLES 3000
 

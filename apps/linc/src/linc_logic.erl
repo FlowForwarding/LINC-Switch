@@ -402,7 +402,7 @@ extract_mac([N1, N2 | Rest], Mac) ->
 ofp_channel_send(Id, Backend, Message) ->
     case ofp_channel:send(Id, Message) of
         ok ->
-            log_message_sent(Backend, Message),
+            Backend:log_message_sent(Message),
             ok;
         {error, not_connected} = Error ->
             %% Don't log not_connected errors, as they pollute debug output.
@@ -423,9 +423,6 @@ ofp_channel_send(Id, Backend, Message) ->
                               Error
                       end, L)
     end.
-
-log_message_sent(Backend, Message) ->
-    Backend:log_message_sent(Message).
 
 log_channel_send_error(Message, Id, Reason) ->
     ?ERROR("~nMessage: ~p~n"

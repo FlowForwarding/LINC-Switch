@@ -51,7 +51,8 @@
          flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0,
-         bin_port_desc_request/0
+         bin_port_desc_request/0,
+         flow_mod_issue91/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -185,7 +186,10 @@ scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
      flow_stats_request];
 scenario(port_desc_request_random_padding) ->
-    [bin_port_desc_request].
+    [bin_port_desc_request];
+scenario(ipv6_change_dst) ->
+    [flow_mod_delete_all_flows,
+     flow_mod_issue91].
 
 
 loop(Connections) ->
@@ -576,6 +580,44 @@ bin_port_desc_request() ->
     %% Strip for 4 byte padding from the message.
     <<(binary:part(EncodedMessage, 0, byte_size(EncodedMessage) - 4))/binary,
       (random:uniform(16#FFFFFFFF)):32>>.
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/91
+flow_mod_issue91() ->
+    MatchField1 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = eth_type,
+                             %% IPv6
+                             value = <<(16#86dd):16>>},
+    MatchField2 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = in_port,
+                             value = <<1:32>>},
+    Match = #ofp_match{fields = [MatchField1, MatchField2]},
+    SetField = #ofp_field{class = openflow_basic,
+                          has_mask = false,
+                          name = ipv6_dst,
+                          value =
+                              <<(16#fe80):16, 0:48, (16#2420):16, (16#52ff):16,
+                                (16#fe8f):16, (16#5189):16>>},
+    Action1 = #ofp_action_set_field{field = SetField},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1, Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = Match,
+               instructions = [Instruction]
+              }).
 
 %%% Helpers --------------------------------------------------------------------
 

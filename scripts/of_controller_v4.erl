@@ -21,6 +21,7 @@
          flow_mod_issue68/0,
          flow_mod_issue79/0,
          set_config_issue87/0,
+         flow_mod_issue90/0,
          flow_mod_table_miss/0,
          flow_mod_delete_all_flows/0,
          get_config_request/0,
@@ -176,6 +177,9 @@ scenario(master_slave) ->
 scenario(set_config) ->
     [set_config_issue87,
      get_config_request];
+scenario(set_vlan_tag) ->
+    [flow_mod_delete_all_flows,
+     flow_mod_issue90];
 scenario(add_meter) ->
     [meter_mod_add_meter];
 scenario(meter_17) ->
@@ -507,6 +511,34 @@ set_config_issue87() ->
     message(#ofp_set_config{
                flags = [frag_drop],
                miss_send_len = 16#FFFF - 100}).
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/90
+flow_mod_issue90() ->
+    SetField = #ofp_field{class = openflow_basic,
+                          has_mask = false,
+                          name = vlan_vid,
+                          value = <<11:12>>},
+    Action1 = #ofp_action_push_vlan{ethertype = 16#8100},
+    Action2 = #ofp_action_set_field{field = SetField},
+    Action3 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instriction = #ofp_instruction_apply_actions{actions = [Action1,
+                                                            Action2,
+                                                            Action3]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = #ofp_match{fields = []},
+               instructions = [Instriction]}).
 
 %% Meter mod to test behaviour related with pull request repotred in:
 %% https://github.com/FlowForwarding/of_protocol/pull/28

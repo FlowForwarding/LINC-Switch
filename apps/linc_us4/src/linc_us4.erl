@@ -29,7 +29,8 @@
 %% Backend API
 -export([is_port_valid/2,
          is_queue_valid/3,
-         set_datapath_mac/2]).
+         set_datapath_mac/2,
+         log_message_sent/1]).
 
 %% Handle all message types
 -export([ofp_features_request/2,
@@ -129,6 +130,14 @@ is_queue_valid(SwitchId, PortNo, QueueId) ->
 
 set_datapath_mac(State, NewMac) ->
     State#state{datapath_mac = NewMac}.
+
+-spec log_message_sent(ofp_message()) -> term().
+log_message_sent(#ofp_message{body = Body} = Message)
+  when is_record(Body, ofp_error_msg) ->
+    ?DEBUG("[OF_ERROR] Sent message to controller: ~w~n", [Message]);
+log_message_sent(Message) ->
+    ?DEBUG("Sent message to controller: ~w~n", [Message]).
+
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages

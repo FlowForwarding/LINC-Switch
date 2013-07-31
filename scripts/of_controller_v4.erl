@@ -10,6 +10,8 @@
 %% API
 -export([start/0,
          start/1,
+         start_scenario/1,
+         start_scenario/2,
          stop/1,
          get_connections/1,
          send/3,
@@ -53,7 +55,12 @@
          set_async/0,
          get_async_request/0,
          bin_port_desc_request/0,
-         flow_mod_issue91/0
+         flow_mod_issue91/0,
+         equal_role_request/0,
+         slave_role_request/0,
+         async_config_issue97/0,
+         flow_mod_issue97_A/0,
+         flow_mod_issue97_B/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -72,12 +79,18 @@
 %%%-----------------------------------------------------------------------------
 
 start() ->
-    start(6633).
+    start_scenario(6633, all_messages).
 
 start(Port) ->
+    start_scenario(Port, all_messages).
+
+start_scenario(Scenario) ->
+    start_scenario(6633, Scenario).
+
+start_scenario(Port, Scenario) ->
     lager:start(),
     {ok, spawn(fun() ->
-                       init(Port)
+                       init(Port, Scenario)
                end)}.
 
 stop(Pid) ->
@@ -105,7 +118,7 @@ barrier(Pid, To) ->
 %%% Controller logic
 %%%-----------------------------------------------------------------------------
 
-init(Port) ->
+init(Port, Scenario) ->
     Pid = self(),
     spawn_link(fun() ->
                        Opts = [binary, {packet, raw},
@@ -113,7 +126,7 @@ init(Port) ->
                        {ok, LSocket} = gen_tcp:listen(Port, Opts),
                        accept(Pid, LSocket)
                end),
-    loop([]).
+    loop([], Scenario).
 
 accept(Parent, LSocket) ->
     {ok, Socket} = gen_tcp:accept(LSocket),
@@ -193,10 +206,23 @@ scenario(port_desc_request_random_padding) ->
     [bin_port_desc_request];
 scenario(ipv6_change_dst) ->
     [flow_mod_delete_all_flows,
-     flow_mod_issue91].
+     flow_mod_issue91];
+scenario(equal_controller) ->
+    [flow_mod_delete_all_flows,
+     async_config_issue97,
+     equal_role_request,
+     flow_mod_issue97_A,
+     flow_mod_issue97_B,
+     flow_mod_table_miss];
+scenario(slave_controller) ->
+    [async_config_issue97,
+     slave_role_request];
+scenario(_Unknown) ->
+    lager:debug("Unknown controller's scenario. Running `all_messages` one."),
+    scenario(all_messages).
 
 
-loop(Connections) ->
+loop(Connections, Scenario) ->
     receive
         {accept, Socket, Pid} ->
             {ok, {Address, Port}} = inet:peername(Socket),
@@ -206,12 +232,12 @@ loop(Connections) ->
                  Msg = ?MODULE:Fun(),
                  timer:sleep(200),
                  do_send(Socket, Msg)
-             end || Fun <- scenario(all_messages)],
-            loop([{{Address, Port}, Socket, Pid} | Connections]);
+             end || Fun <- scenario(Scenario)],
+            loop([{{Address, Port}, Socket, Pid} | Connections], Scenario);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
             do_send(NewConnections, AddressPort, Message),
-            loop(NewConnections);
+            loop(NewConnections, Scenario);
         {call, #ofp_message{xid = Xid} = Message,
          AddressPort, Ref, ReplyPid, Timeout} ->
             NewConnections = filter_connections(Connections),
@@ -222,10 +248,10 @@ loop(Connections) ->
             after Timeout ->
                     ReplyPid ! {reply, Ref, {error, timeout}}
             end,
-            loop(NewConnections);
+            loop(NewConnections, Scenario);
         {get_connections, Ref, Pid} ->
             Pid ! {connections, Ref, [AP || {AP,_,_} <- Connections]},
-            loop(Connections);
+            loop(Connections, Scenario);
         stop ->
             ok
     end.
@@ -603,6 +629,77 @@ set_async() ->
 
 get_async_request() ->
     message(#ofp_get_async_request{}).
+
+equal_role_request() ->
+    message(#ofp_role_request{role = equal, generation_id = 1}).
+
+slave_role_request() ->
+    message(#ofp_role_request{role = slave, generation_id = 2}).
+
+%% Async config to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/97
+async_config_issue97() ->
+    message(#ofp_set_async{
+               packet_in_mask = {[no_match], [action]},
+               port_status_mask = {[], []},
+               flow_removed_mask = {[], []}
+              }).
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/97
+%% It tells the swtich to forward packets received at port 1 to port 2
+%% to the controller.
+flow_mod_issue97_A() ->
+    MatchField = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = in_port,
+                             value = <<1:32>>},
+    Match = #ofp_match{fields = [MatchField]},
+    Action1 = #ofp_action_output{port = controller, max_len = no_buffer},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1, Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = Match,
+               instructions = [Instruction]
+              }).
+
+%% Flow mod to test behaviour reported 
+%% https://github.com/FlowForwarding/LINC-Switch/issues/97
+%% It tells the swtich to forward packets received at port 2 to port 1.
+flow_mod_issue97_B() ->
+    MatchField = #ofp_field{class = openflow_basic,
+                            has_mask = false,
+                            name = in_port,
+                            value = <<2:32>>},
+    Match = #ofp_match{fields = [MatchField]},
+    Action = #ofp_action_output{port = 1, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = Match,
+               instructions = [Instruction]
+              }).
 
 %% Binary port description request with 4 byte long random padding to check
 %% behaviour reported in:

@@ -404,6 +404,8 @@ ofp_channel_send(Id, Backend, Message) ->
         ok ->
             Backend:log_message_sent(Message),
             ok;
+        {ok, filtered} ->
+            log_message_filtered(Message, Id);
         {error, not_connected} = Error ->
             %% Don't log not_connected errors, as they pollute debug output.
             %% This error occurs each time when packet is received by
@@ -415,6 +417,8 @@ ofp_channel_send(Id, Backend, Message) ->
         L when is_list(L) ->
             lists:map(fun(ok) ->
                               ok;
+                         ({ok, filtered}) ->
+                              log_message_filtered(Message, Id);
                          ({error, not_connected} = Error) ->
                               %% Same as previous comment
                               Error;
@@ -429,3 +433,8 @@ log_channel_send_error(Message, Id, Reason) ->
            "Channel id: ~p~n"
            "Message cannot be sent through OFP Channel because:~n"
            "~p~n", [Message, Id, Reason]).
+
+log_message_filtered(Message, Id) ->
+    ?DEBUG("Message: ~p~n"
+           "filtered and not sent through the channel with id: ~p~n",
+          [Message, Id]).

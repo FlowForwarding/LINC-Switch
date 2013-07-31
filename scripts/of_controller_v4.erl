@@ -10,6 +10,8 @@
 %% API
 -export([start/0,
          start/1,
+         start_scenario/1,
+         start_scenario/2,
          stop/1,
          get_connections/1,
          send/3,
@@ -76,12 +78,18 @@
 %%%-----------------------------------------------------------------------------
 
 start() ->
-    start(6633).
+    start_scenario(6633, all_messages).
 
 start(Port) ->
+    start_scenario(Port, all_messages).
+
+start_scenario(Scenario) ->
+    start_scenario(6633, Scenario).
+
+start_scenario(Port, Scenario) ->
     lager:start(),
     {ok, spawn(fun() ->
-                       init(Port)
+                       init(Port, Scenario)
                end)}.
 
 stop(Pid) ->
@@ -109,7 +117,7 @@ barrier(Pid, To) ->
 %%% Controller logic
 %%%-----------------------------------------------------------------------------
 
-init(Port) ->
+init(Port, Scenario) ->
     Pid = self(),
     spawn_link(fun() ->
                        Opts = [binary, {packet, raw},
@@ -117,7 +125,7 @@ init(Port) ->
                        {ok, LSocket} = gen_tcp:listen(Port, Opts),
                        accept(Pid, LSocket)
                end),
-    loop([]).
+    loop([], Scenario).
 
 accept(Parent, LSocket) ->
     {ok, Socket} = gen_tcp:accept(LSocket),
@@ -204,13 +212,13 @@ scenario(equal_controller) ->
      flow_mod_table_miss];
 scenario(slave_controller) ->
     [async_config_issue97,
-     slave_role_request].
+     slave_role_request];
+scenario(_Unknown) ->
+    lager:debug("Unknown controller's scenario. Running `all_messages` one."),
+    scenario(all_messages).
 
 
-
-
-
-loop(Connections) ->
+loop(Connections, Scenario) ->
     receive
         {accept, Socket, Pid} ->
             {ok, {Address, Port}} = inet:peername(Socket),
@@ -220,12 +228,12 @@ loop(Connections) ->
                  Msg = ?MODULE:Fun(),
                  timer:sleep(200),
                  do_send(Socket, Msg)
-             end || Fun <- scenario(all_messages)],
-            loop([{{Address, Port}, Socket, Pid} | Connections]);
+             end || Fun <- scenario(Scenario)],
+            loop([{{Address, Port}, Socket, Pid} | Connections], Scenario);
         {cast, Message, AddressPort} ->
             NewConnections = filter_connections(Connections),
             do_send(NewConnections, AddressPort, Message),
-            loop(NewConnections);
+            loop(NewConnections, Scenario);
         {call, #ofp_message{xid = Xid} = Message,
          AddressPort, Ref, ReplyPid, Timeout} ->
             NewConnections = filter_connections(Connections),
@@ -236,10 +244,10 @@ loop(Connections) ->
             after Timeout ->
                     ReplyPid ! {reply, Ref, {error, timeout}}
             end,
-            loop(NewConnections);
+            loop(NewConnections, Scenario);
         {get_connections, Ref, Pid} ->
             Pid ! {connections, Ref, [AP || {AP,_,_} <- Connections]},
-            loop(Connections);
+            loop(Connections, Scenario);
         stop ->
             ok
     end.

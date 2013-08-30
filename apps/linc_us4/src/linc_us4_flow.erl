@@ -804,8 +804,8 @@ validate_actions(_SwitchId, [], _Match) ->
 
 validate_action(_SwitchId,
                 #ofp_action_output{port=controller,max_len=MaxLen}, _Match) ->
-    OFPCMLNoBuffer = 16#ffff,
-    case MaxLen /= OFPCMLNoBuffer andalso MaxLen > ?OFPCML_MAX of
+    %% no_buffer represents OFPCML_NO_BUFFER (0xFFFF)
+    case MaxLen /= no_buffer andalso MaxLen > ?OFPCML_MAX of
         true ->
             {error,{bad_action,bad_argument}};
         false ->

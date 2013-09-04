@@ -1,0 +1,138 @@
+#!/usr/bin/env escript 
+
+main([]) ->
+    usage();
+main(Args) ->
+    try parse_args(Args, []) of
+        Config ->
+            {switches, Switches} = lists:keyfind(switches, 1, Config),
+            {output_file, OutputFile} = lists:keyfind(output_file, 1, Config),
+            ok = file:write_file(OutputFile,
+                                 io_lib:fwrite("~p.~n",
+                                               [generate_config(Switches, [])]))
+    catch
+        _:_ ->
+            io:format("Invalid argument.~n"),
+            usage()
+    end.
+
+usage() ->
+    io:format("~s [-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
+              ++ " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
+              ++ " -o OUTPUT_FILE~n",
+             [escript:script_name()]).
+
+parse_args([], Config) ->
+    Config;
+parse_args(["-s", LogicalSwitch | Rest], Config) ->
+    {Interfaces, NewRest} = parse_interfaces(Rest),
+    Switches = case lists:keyfind(switches, 1, Config) of
+                   false ->
+                       [];
+                   {switches, List} ->
+                       List
+               end,
+    parse_args(NewRest,
+               lists:keystore(
+                 switches,
+                 1,
+                 Config,
+                 {switches, [{LogicalSwitch, Interfaces} | Switches]}));
+parse_args(["-o", Outputfile | Rest], Config) ->
+    parse_args(Rest, [{output_file, Outputfile} | Config]);
+parse_args(["-c" | Rest], Config) ->
+    {Controllers, NewRest} = parse_controllers(Rest),
+    parse_args(NewRest, [{controllers, Controllers} | Config]).
+
+parse_interfaces(Args) ->
+    split_to_next_option(Args).
+
+split_to_next_option(Args) ->
+    lists:splitwith(fun(Element) ->
+                            Element =/= "-s"
+                                andalso Element =/= "-o"
+                                andalso Element =/= "-c"
+                    end, Args).
+
+parse_controllers(Args) ->
+    {Controllers, Rest} = split_to_next_option(Args),
+    {lists:foldl(fun(Controller, Acc) ->
+                         [list_to_tuple(string:tokens(Controller, ":")) | Acc]
+                 end, [], Controllers),
+     Rest}.
+
+generate_config(Switches, _Controllers) ->
+    PortsNames = ports_names(Switches),
+    PortsMap = lists:zip(PortsNames, lists:seq(1, length(PortsNames))),
+    [
+     {linc,
+      [
+       {of_config, enabled},
+       {capable_switch_ports, generate_ports(PortsMap)},
+       {capable_switch_queues, []},
+       {logical_switches,
+        generate_logical_switches(Switches, PortsMap)}
+      ]},
+     {enetconf,
+      [
+       {capabilities, [{base, {1, 1}},
+                       {startup, {1, 0}},
+                       {'writable-running', {1, 0}}]},
+       {callback_module, linc_ofconfig},
+       {sshd_ip, any},
+       {sshd_port, 1830},
+       {sshd_user_passwords,
+        [
+         {"linc", "linc"}
+        ]}
+      ]},
+     {lager,
+      [
+       {handlers,
+        [
+         {lager_console_backend, debug},
+         {lager_file_backend,
+          [
+           {"log/error.log", error, 10485760, "$D0", 5},
+           {"log/console.log", info, 10485760, "$D0", 5}
+          ]}
+        ]}
+      ]},
+     {sasl,
+      [
+       {sasl_error_logger, {file, "log/sasl-error.log"}},
+       {errlog_type, error},
+       {error_logger_mf_dir, "log/sasl"},      % Log directory
+       {error_logger_mf_maxbytes, 10485760},   % 10 MB max file size
+       {error_logger_mf_maxfiles, 5}           % 5 files max
+      ]},
+     {sync,
+      [
+       {excluded_modules, [procket]}
+      ]}
+    ].
+
+ports_names(Switches) ->
+    lists:foldl(fun({_, Ports}, Acc) ->
+                        Ports ++ Acc
+                end, [], Switches).
+
+
+generate_ports(PortsMap) ->
+    [{port, PortNo, [{interface, PortName}]} || {PortName, PortNo} <- PortsMap].
+
+generate_logical_switches(Switches, PortsMap) ->
+    [
+     {switch, list_to_integer(SwitchId),
+      [
+       {backend, linc_us4},
+       {controllers,[{"Switch" ++ SwitchId ++ "-Controller"
+                      , "localhost", 6633, tcp}]},
+       {queues_status, disabled},
+       {ports, generate_logical_switch_ports(PortsNames, PortsMap)}
+      ]}
+     || {SwitchId, PortsNames} <- Switches].
+
+generate_logical_switch_ports(PortsNames, PortsMap) ->
+    [{port, element(2, lists:keyfind(PortName, 1, PortsMap)), {queues, []}}
+     || PortName <- PortsNames].

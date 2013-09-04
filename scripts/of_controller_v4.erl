@@ -292,6 +292,9 @@ scenario(port_1_to_controller_12_bytes) ->
      flow_mod_output_to_port(1, controller, 12),
      async_config({[action], []}, {[], []}, {[], []})];
 
+scenario(table_miss) ->
+    [flow_mod_table_miss()];
+
 scenario(_Unknown) ->
     lager:debug("Unknown controller's scenario. Running `all_messages` one."),
     scenario(all_messages).

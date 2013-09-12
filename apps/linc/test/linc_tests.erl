@@ -23,10 +23,11 @@
 %% Tests -----------------------------------------------------------------------
 
 switch_setup_test_() ->
-    {setup,
-     fun setup/0,
-     fun teardown/1,
-     [{"Start/stop LINC common logic", fun logic/0}]}.
+    {timeout, 30,
+     {setup,
+      fun setup/0,
+      fun teardown/1,
+      [{"Start/stop LINC common logic", fun logic/0}]}}.
 
 logic() ->
     %% As a logic backend we choose stub module 'linc_backend' from linc/test
@@ -44,12 +45,21 @@ logic() ->
     application:set_env(linc, logical_switches, Config),
     application:set_env(linc, capable_switch_ports, []),
     application:set_env(linc, capable_switch_queues, []),
+    meck:new(inet, [unstick, passthrough]),
+    meck:expect(inet, getifaddrs, 0,
+                {ok, [{"fake0",
+                       [{flags,[up,broadcast,running,multicast]},
+                        {hwaddr,[2,0,0,0,0,1]},
+                        {addr,{192,168,1,1}},
+                        {netmask,{255,255,255,0}},
+                        {broadaddr,{192,168,1,255}}]}]}),
     meck:new(Backend),
     meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
     meck:expect(Backend, stop, fun(_) -> ok end),
     ?assertEqual(ok, application:start(linc)),
     ?assertEqual(ok, application:stop(linc)),
-    meck:unload(Backend).
+    meck:unload(Backend),
+    meck:unload(inet).
 
 %% Fixtures --------------------------------------------------------------------
 

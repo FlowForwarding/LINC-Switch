@@ -132,6 +132,14 @@ custom_switch_config(State) ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
+    meck:new(inet, [unstick, passthrough]),
+    meck:expect(inet, getifaddrs, 0,
+                {ok, [{"fake0",
+                       [{flags,[up,broadcast,running,multicast]},
+                        {hwaddr,[2,0,0,0,0,1]},
+                        {addr,{192,168,1,1}},
+                        {netmask,{255,255,255,0}},
+                        {broadaddr,{192,168,1,255}}]}]}),
     linc_us4_test_utils:add_logic_path(),
     error_logger:tty(false),
     ok = application:start(xmerl),
@@ -142,6 +150,7 @@ setup() ->
     ok = lager:set_loglevel(lager_console_backend, error).
 
 teardown(_) ->
+    meck:unload(inet),
     ok = application:stop(compiler),
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),

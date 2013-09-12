@@ -79,7 +79,13 @@ with_ofconfig() ->
     application:set_env(linc, backend, linc_us4),
 
     [begin
-         ?assertEqual(ok, application:start(linc)),
+         case application:start(linc) of
+	     ok ->
+		 ok;
+	     {error, Error} ->
+		 ?debugFmt("Cannot start linc: ~p~n", [Error]),
+		 erlang:error({start_error, Error})
+	 end,
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].

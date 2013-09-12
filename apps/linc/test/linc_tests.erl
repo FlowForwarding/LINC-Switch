@@ -42,6 +42,8 @@ logic() ->
                 {queues_status, disabled},
                 {queues, []}]}],
     application:set_env(linc, logical_switches, Config),
+    application:set_env(linc, capable_switch_ports, []),
+    application:set_env(linc, capable_switch_queues, []),
     meck:new(Backend),
     meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
     meck:expect(Backend, stop, fun(_) -> ok end),

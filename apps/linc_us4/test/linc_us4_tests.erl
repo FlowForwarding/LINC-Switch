@@ -61,6 +61,8 @@ no_ofconfig() ->
                 {queues_status, disabled},
                 {queues, []}]}],
     application:set_env(linc, logical_switches, Config),
+    application:set_env(linc, capable_switch_ports, []),
+    application:set_env(linc, capable_switch_queues, []),
 
     [begin
          ?assertEqual(ok, application:start(linc)),

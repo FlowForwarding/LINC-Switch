@@ -61,6 +61,8 @@ no_ofconfig() ->
                 {queues_status, disabled},
                 {queues, []}]}],
     application:set_env(linc, logical_switches, Config),
+    application:set_env(linc, capable_switch_ports, []),
+    application:set_env(linc, capable_switch_queues, []),
 
     [begin
          ?assertEqual(ok, application:start(linc)),
@@ -77,7 +79,13 @@ with_ofconfig() ->
     application:set_env(linc, backend, linc_us4),
 
     [begin
-         ?assertEqual(ok, application:start(linc)),
+         case application:start(linc) of
+	     ok ->
+		 ok;
+	     {error, Error} ->
+		 ?debugFmt("Cannot start linc: ~p~n", [Error]),
+		 erlang:error({start_error, Error})
+	 end,
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
@@ -124,6 +132,14 @@ custom_switch_config(State) ->
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
+    meck:new(inet, [unstick, passthrough]),
+    meck:expect(inet, getifaddrs, 0,
+                {ok, [{"fake0",
+                       [{flags,[up,broadcast,running,multicast]},
+                        {hwaddr,[2,0,0,0,0,1]},
+                        {addr,{192,168,1,1}},
+                        {netmask,{255,255,255,0}},
+                        {broadaddr,{192,168,1,255}}]}]}),
     linc_us4_test_utils:add_logic_path(),
     error_logger:tty(false),
     ok = application:start(xmerl),
@@ -134,6 +150,7 @@ setup() ->
     ok = lager:set_loglevel(lager_console_backend, error).
 
 teardown(_) ->
+    meck:unload(inet),
     ok = application:stop(compiler),
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),

@@ -39,29 +39,29 @@ basic_packet_edit_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Edit packet: Ethernet", fun ethernet/0},
-      {"Edit packet: VLAN", fun vlan/0},
-      {"Edit packet: ARP", fun arp/0},
-      {"Edit packet: SCTP", fun sctp/0},
-      {"Edit packet: ICMPv4", fun icmp_v4/0},
-      {"Edit packet: ICMPv6", fun icmp_v6/0},
-      {"Edit packet: TCP", fun tcp/0},
-      {"Edit packet: UDP", fun udp/0},
-      {"Edit packet: MPLS", fun mpls/0},
-      {"Edit packet: IPv4", fun ip_v4/0},
-      {"Edit packet: IPv6", fun ip_v6/0}
+     [{"Edit packet: Ethernet", ethernet()},
+      {"Edit packet: VLAN", vlan()},
+      {"Edit packet: ARP", arp()},
+      {"Edit packet: SCTP", sctp()},
+      {"Edit packet: ICMPv4", icmp_v4()},
+      {"Edit packet: ICMPv6", icmp_v6()},
+      {"Edit packet: TCP", tcp()},
+      {"Edit packet: UDP", udp()},
+      {"Edit packet: MPLS", mpls()},
+      {"Edit packet: IPv4", ip_v4()},
+      {"Edit packet: IPv6", ip_v6()}
      ]}.
 
 corner_cases_packet_edit_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [{"Edit packet: no header", fun no_header/0},
-      {"Edit packet: bad field", fun bad_field/0},
-      {"Edit packet: duplicated header", fun duplicated_header/0},
-      {"Edit packet: nested header", fun nested_header/0},
-      {"Edit packet: skip header", fun skip_header/0},
-      {"Edit packet: outermost header", fun outermost_header/0}
+     [{"Edit packet: no header", no_header()},
+      {"Edit packet: bad field", bad_field()},
+      {"Edit packet: duplicated header", duplicated_header()},
+      {"Edit packet: nested header", nested_header()},
+      {"Edit packet: skip header", skip_header()},
+      {"Edit packet: outermost header", outermost_header()}
      ]}.
 
 no_header() ->
@@ -86,24 +86,33 @@ nested_header() ->
     set_field([{Packet, EditField, NewPacket}]).
 
 skip_header() ->
-    Packet = [#ether{type = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
-    NewPacket = [#ether{type = ?INIT_VAL}, #ether{type = ?NEW_VAL}],
-    SkipCount = 1,
-    EditFun = fun(T) ->
-                      T#ether{type = ?NEW_VAL}
-              end,
-    Packet2 = linc_us4_packet:find_and_edit_skip(Packet, ether,
-                                                      EditFun, SkipCount),
-    ?assertEqual(NewPacket, Packet2).
+    ?_test(
+       begin
+           Packet = [#ether{type = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
+           NewPacket = [#ether{type = ?INIT_VAL}, #ether{type = ?NEW_VAL}],
+           SkipCount = 1,
+           EditFun = fun(T) ->
+                             T#ether{type = ?NEW_VAL}
+                     end,
+           Packet2 = linc_us4_packet:find_and_edit_skip(Packet, ether,
+                                                        EditFun, SkipCount),
+           ?assertEqual(NewPacket, Packet2)
+       end).
 
 outermost_header() ->
-    EmptyOutermostHeader = {[], {ip_proto, ?NEW_VAL}, []},
-    set_field([EmptyOutermostHeader]),
-    
-    Packet = [#ether{}, #ipv4{}],
-    Header = ipv4,
-    Header2 = linc_us4_packet:find_outermost_header(Packet, [ipv4]),
-    ?assertEqual(Header, Header2).
+    [
+     begin
+         EmptyOutermostHeader = {[], {ip_proto, ?NEW_VAL}, []},
+         set_field([EmptyOutermostHeader])
+     end,
+     ?_test(
+        begin
+           Packet = [#ether{}, #ipv4{}],
+           Header = ipv4,
+           Header2 = linc_us4_packet:find_outermost_header(Packet, [ipv4]),
+           ?assertEqual(Header, Header2)
+        end)
+    ].
 
 ethernet() ->
     EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL}, [#ether{type = ?NEW_VAL}]},
@@ -203,8 +212,10 @@ teardown(_) ->
     unmock(?MOCKED).
 
 set_field(TestData) ->
-    [begin
-         Field = #ofp_field{name = Name, value = Value},
-         Packet2 = linc_us4_packet:set_field(Field, Packet),
-         ?assertEqual(NewPacket, Packet2)
-     end || {Packet, {Name, Value}, NewPacket} <- TestData].
+    [{"set field " ++ atom_to_list(Name),
+      ?_test(
+         begin
+             Field = #ofp_field{name = Name, value = Value},
+             Packet2 = linc_us4_packet:set_field(Field, Packet),
+             ?assertEqual(NewPacket, Packet2)
+         end)} || {Packet, {Name, Value}, NewPacket} <- TestData].

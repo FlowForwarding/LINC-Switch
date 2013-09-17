@@ -225,8 +225,9 @@ set_field(#ofp_field{ name = ip_dscp, value = <<Value:6>> }, Pkt) ->
         ipv6 ->
             find_and_edit(
               Pkt, ipv6, fun(H) ->
-                                 <<_:6/bits, ECN:2/bits>> = H#ipv6.class,
-                                 H#ipv6{class = <<Value:6/bits, ECN:2/bits>>}
+                                 <<_:6, ECN:2>> = <<(H#ipv6.class):8>>,
+                                 <<NewClass:8>> = <<Value:6, ECN:2>>,
+                                 H#ipv6{class = NewClass}
                          end)
     end;
 set_field(#ofp_field{ name = ip_ecn, value = <<Value:2>> }, Pkt) ->
@@ -238,8 +239,9 @@ set_field(#ofp_field{ name = ip_ecn, value = <<Value:2>> }, Pkt) ->
         ipv6 ->
             find_and_edit(
               Pkt, ipv6, fun(H) ->
-                                 <<DSCP:6/bits, _:2/bits>> = H#ipv6.class,
-                                 H#ipv6{class = <<DSCP:6/bits, Value:2/bits>>}
+                                 <<DSCP:6, _:2>> = <<(H#ipv6.class):8>>,
+                                 <<NewClass:8>> = <<DSCP:6, Value:2>>,
+                                 H#ipv6{class = NewClass}
                          end)
     end;
 

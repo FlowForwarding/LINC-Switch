@@ -228,7 +228,30 @@ set_field(TestData) ->
              case Value of
                  _ when is_bitstring(Value) -> ok
              end,
+             %% check that the packet can be encoded before the change
+             Packet =/= [] andalso (_ = encode(hd(Packet))),
+             %% perform the change
              Field = #ofp_field{name = Name, value = Value},
              Packet2 = linc_us4_packet:set_field(Field, Packet),
+             %% check that the packet can be encoded after the change
+             Packet2 =/= [] andalso (_ = encode(hd(Packet2))),
+             %% check that the result matches what we expected
              ?assertEqual(NewPacket, Packet2)
          end)} || {Packet, {Name, Value}, NewPacket} <- TestData].
+
+encode(Packet = #ieee802_1q_tag{}) ->
+    pkt:encapsulate([Packet, #ipv4{}, #tcp{}]);
+encode(Packet = #mpls_tag{}) ->
+    pkt:encapsulate([Packet, #ipv4{}, #tcp{}]);
+encode(Packet = #ndp_na{}) ->
+    Ipv6 = #ipv6{saddr = <<0:128>>, daddr = <<0:128>>},
+    pkt:encapsulate([Ipv6, #icmpv6{}, Packet]);
+encode(Packet = #ndp_ns{}) ->
+    Ipv6 = #ipv6{saddr = <<0:128>>, daddr = <<0:128>>},
+    pkt:encapsulate([Ipv6, #icmpv6{}, Packet]);
+encode(_Packet = #sctp{}) ->
+    %% pkt.erl cannot encode SCTP packets
+    ignore;
+encode(Packet) when is_tuple(Packet) ->
+    Type = element(1, Packet),
+    pkt:Type(Packet).

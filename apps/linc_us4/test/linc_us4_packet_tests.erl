@@ -32,6 +32,9 @@
 -define(MOCKED, []).
 -define(INIT_VAL, 100).
 -define(NEW_VAL, 200).
+-define(INIT_VAL(Bits), <<100:Bits>>).
+-define(NEW_VAL(Bits), <<200:Bits>>).
+
 
 %% Tests -----------------------------------------------------------------------
 
@@ -65,24 +68,24 @@ corner_cases_packet_edit_test_() ->
      ]}.
 
 no_header() ->
-    EmptyHeader = {[], {eth_type, ?NEW_VAL}, []},
+    EmptyHeader = {[], {eth_type, ?NEW_VAL(16)}, []},
     set_field([EmptyHeader]).
 
 bad_field() ->
     Packet = [#ether{type = ?INIT_VAL}],
-    BadField = {Packet, {bad_field, ?NEW_VAL}, Packet},
+    BadField = {Packet, {bad_field, ?NEW_VAL(16)}, Packet},
     set_field([BadField]).
 
 duplicated_header() ->
     Packet = [#ether{type = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
     NewPacket = [#ether{type = ?NEW_VAL}, #ether{type = ?INIT_VAL}],
-    DuplicatedHeader = {Packet, {eth_type, ?NEW_VAL}, NewPacket},
+    DuplicatedHeader = {Packet, {eth_type, ?NEW_VAL(16)}, NewPacket},
     set_field([DuplicatedHeader]).
 
 nested_header() ->
     Packet = [#arp{op = ?INIT_VAL}, #ether{type = ?INIT_VAL}],
     NewPacket = [#arp{op = ?INIT_VAL}, #ether{type = ?NEW_VAL}],
-    EditField = {eth_type, ?NEW_VAL},
+    EditField = {eth_type, ?NEW_VAL(16)},
     set_field([{Packet, EditField, NewPacket}]).
 
 skip_header() ->
@@ -102,7 +105,7 @@ skip_header() ->
 outermost_header() ->
     [
      begin
-         EmptyOutermostHeader = {[], {ip_proto, ?NEW_VAL}, []},
+         EmptyOutermostHeader = {[], {ip_proto, ?NEW_VAL(8)}, []},
          set_field([EmptyOutermostHeader])
      end,
      ?_test(
@@ -115,55 +118,58 @@ outermost_header() ->
     ].
 
 ethernet() ->
-    EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL}, [#ether{type = ?NEW_VAL}]},
-    EthDst = {[#ether{dhost = ?INIT_VAL}], {eth_dst, ?NEW_VAL}, [#ether{dhost = ?NEW_VAL}]},
-    EthSrc = {[#ether{shost = ?INIT_VAL}], {eth_src, ?NEW_VAL}, [#ether{shost = ?NEW_VAL}]},
+    EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL(16)}, [#ether{type = ?NEW_VAL}]},
+    EthDst = {[#ether{dhost = ?INIT_VAL(48)}], {eth_dst, ?NEW_VAL(48)}, [#ether{dhost = ?NEW_VAL(48)}]},
+    EthSrc = {[#ether{shost = ?INIT_VAL(48)}], {eth_src, ?NEW_VAL(48)}, [#ether{shost = ?NEW_VAL(48)}]},
     set_field([EthType, EthDst, EthSrc]).
 
 vlan() ->
-    VlanVid = {[#ieee802_1q_tag{vid = ?INIT_VAL}], {vlan_vid, ?NEW_VAL}, [#ieee802_1q_tag{vid = ?NEW_VAL}]},
-    VlanPcp = {[#ieee802_1q_tag{pcp = ?INIT_VAL}], {vlan_pcp, ?NEW_VAL}, [#ieee802_1q_tag{pcp = ?NEW_VAL}]},
+    VlanVid = {[#ieee802_1q_tag{vid = ?INIT_VAL(12)}], {vlan_vid, ?NEW_VAL(16)}, [#ieee802_1q_tag{vid = ?NEW_VAL(12)}]},
+    VlanPcp = {[#ieee802_1q_tag{pcp = 1}], {vlan_pcp, <<2:3>>}, [#ieee802_1q_tag{pcp = 2}]},
     set_field([VlanVid, VlanPcp]).
 
 arp() ->
-    ArpOp = {[#arp{op = ?INIT_VAL}], {arp_op, ?NEW_VAL}, [#arp{op = ?NEW_VAL}]},
-    ArpSpa = {[#arp{sip = ?INIT_VAL}], {arp_spa, ?NEW_VAL}, [#arp{sip = ?NEW_VAL}]},
-    ArpTpa = {[#arp{tip = ?INIT_VAL}], {arp_tpa, ?NEW_VAL}, [#arp{tip = ?NEW_VAL}]},
-    ArpSha = {[#arp{sha = ?INIT_VAL}], {arp_sha, ?NEW_VAL}, [#arp{sha = ?NEW_VAL}]},
-    ArpTha = {[#arp{tha = ?INIT_VAL}], {arp_tha, ?NEW_VAL}, [#arp{tha = ?NEW_VAL}]},
+    ArpOp = {[#arp{op = ?INIT_VAL}], {arp_op, ?NEW_VAL(16)}, [#arp{op = ?NEW_VAL}]},
+    ArpSpa = {[#arp{sip = ?INIT_VAL(32)}], {arp_spa, ?NEW_VAL(32)}, [#arp{sip = ?NEW_VAL(32)}]},
+    ArpTpa = {[#arp{tip = ?INIT_VAL(32)}], {arp_tpa, ?NEW_VAL(32)}, [#arp{tip = ?NEW_VAL(32)}]},
+    ArpSha = {[#arp{sha = ?INIT_VAL(48)}], {arp_sha, ?NEW_VAL(48)}, [#arp{sha = ?NEW_VAL(48)}]},
+    ArpTha = {[#arp{tha = ?INIT_VAL(48)}], {arp_tha, ?NEW_VAL(48)}, [#arp{tha = ?NEW_VAL(48)}]},
     set_field([ArpOp, ArpSpa, ArpTpa, ArpSha, ArpTha]).
 
 sctp() ->
-    SctpSrc = {[#sctp{sport = ?INIT_VAL}], {sctp_src, ?NEW_VAL}, [#sctp{sport = ?NEW_VAL}]},
-    SctpDst = {[#sctp{dport = ?INIT_VAL}], {sctp_dst, ?NEW_VAL}, [#sctp{dport = ?NEW_VAL}]},
+    SctpSrc = {[#sctp{sport = ?INIT_VAL}], {sctp_src, ?NEW_VAL(16)}, [#sctp{sport = ?NEW_VAL}]},
+    SctpDst = {[#sctp{dport = ?INIT_VAL}], {sctp_dst, ?NEW_VAL(16)}, [#sctp{dport = ?NEW_VAL}]},
     set_field([SctpSrc, SctpDst]).
 
 icmp_v4() ->
-    Icmp4Type = {[#icmp{type = ?INIT_VAL}], {icmpv4_type, ?NEW_VAL}, [#icmp{type = ?NEW_VAL}]},
-    Icmp4Code = {[#icmp{code = ?INIT_VAL}], {icmpv4_code, ?NEW_VAL}, [#icmp{code = ?NEW_VAL}]},
+    %% The default value for #icmp.un is a binary, but the encoding
+    %% function only accepts integers.
+    Icmp = #icmp{un = 0},
+    Icmp4Type = {[Icmp#icmp{type = ?INIT_VAL}], {icmpv4_type, ?NEW_VAL(8)}, [Icmp#icmp{type = ?NEW_VAL}]},
+    Icmp4Code = {[#icmp{code = ?INIT_VAL}], {icmpv4_code, ?NEW_VAL(8)}, [#icmp{code = ?NEW_VAL}]},
     set_field([Icmp4Type, Icmp4Code]).
 
 icmp_v6() ->
-    Icmp6Type = {[#icmpv6{type = ?INIT_VAL}], {icmpv6_type, ?NEW_VAL}, [#icmpv6{type = ?NEW_VAL}]},
-    Icmp6Code = {[#icmpv6{code = ?INIT_VAL}], {icmpv6_code, ?NEW_VAL}, [#icmpv6{code = ?NEW_VAL}]},
+    Icmp6Type = {[#icmpv6{type = ?INIT_VAL}], {icmpv6_type, ?NEW_VAL(8)}, [#icmpv6{type = ?NEW_VAL}]},
+    Icmp6Code = {[#icmpv6{code = ?INIT_VAL}], {icmpv6_code, ?NEW_VAL(8)}, [#icmpv6{code = ?NEW_VAL}]},
     set_field([Icmp6Type, Icmp6Code]).
 
 tcp() ->
-    TcpSrc = {[#tcp{sport = ?INIT_VAL}], {tcp_src, ?NEW_VAL}, [#tcp{sport = ?NEW_VAL}]},
-    TcpDst = {[#tcp{dport = ?INIT_VAL}], {tcp_dst, ?NEW_VAL}, [#tcp{dport = ?NEW_VAL}]},
+    TcpSrc = {[#tcp{sport = ?INIT_VAL}], {tcp_src, ?NEW_VAL(16)}, [#tcp{sport = ?NEW_VAL}]},
+    TcpDst = {[#tcp{dport = ?INIT_VAL}], {tcp_dst, ?NEW_VAL(16)}, [#tcp{dport = ?NEW_VAL}]},
     set_field([TcpSrc, TcpDst]).
 
 udp() ->
-    UdpSrc = {[#udp{sport = ?INIT_VAL}], {udp_src, ?NEW_VAL}, [#udp{sport = ?NEW_VAL}]},
-    UdpDst = {[#udp{dport = ?INIT_VAL}], {udp_dst, ?NEW_VAL}, [#udp{dport = ?NEW_VAL}]},
+    UdpSrc = {[#udp{sport = ?INIT_VAL}], {udp_src, ?NEW_VAL(16)}, [#udp{sport = ?NEW_VAL}]},
+    UdpDst = {[#udp{dport = ?INIT_VAL}], {udp_dst, ?NEW_VAL(16)}, [#udp{dport = ?NEW_VAL}]},
     set_field([UdpSrc, UdpDst]).
 
 mpls() ->
-    MplsLabel = {[#mpls_tag{stack = [#mpls_stack_entry{label = ?INIT_VAL},
-                                     #mpls_stack_entry{label = ?INIT_VAL}]}],
-                 {mpls_label, ?NEW_VAL},
-                 [#mpls_tag{stack = [#mpls_stack_entry{label = ?NEW_VAL},
-                                     #mpls_stack_entry{label = ?INIT_VAL}]}]},
+    MplsLabel = {[#mpls_tag{stack = [#mpls_stack_entry{label = ?INIT_VAL(20)},
+                                     #mpls_stack_entry{label = ?INIT_VAL(20)}]}],
+                 {mpls_label, ?NEW_VAL(20)},
+                 [#mpls_tag{stack = [#mpls_stack_entry{label = ?NEW_VAL(20)},
+                                     #mpls_stack_entry{label = ?INIT_VAL(20)}]}]},
     MplsTc = {[#mpls_tag{stack = [#mpls_stack_entry{qos = 0, pri = 0, ecn = 0},
                                   #mpls_stack_entry{qos = 0, pri = 0, ecn = 0}
                                  ]}],
@@ -174,32 +180,35 @@ mpls() ->
     set_field([MplsLabel, MplsTc]).
 
 ip_v4() ->
-    Ip4Proto = {[#ipv4{p = ?INIT_VAL}], {ip_proto, ?NEW_VAL}, [#ipv4{p = ?NEW_VAL}]},
-    Ip4Dscp = {[#ipv4{dscp = ?INIT_VAL}], {ip_dscp, ?NEW_VAL}, [#ipv4{dscp = ?NEW_VAL}]},
-    Ip4Ecn = {[#ipv4{ecn = ?INIT_VAL}], {ip_ecn, ?NEW_VAL}, [#ipv4{ecn = ?NEW_VAL}]},
-    Ip4Src = {[#ipv4{saddr = ?INIT_VAL}], {ipv4_src, ?NEW_VAL}, [#ipv4{saddr = ?NEW_VAL}]},
-    Ip4Dst = {[#ipv4{daddr = ?INIT_VAL}], {ipv4_dst, ?NEW_VAL}, [#ipv4{daddr = ?NEW_VAL}]},
+    Ip4Proto = {[#ipv4{p = ?INIT_VAL}], {ip_proto, ?NEW_VAL(8)}, [#ipv4{p = ?NEW_VAL}]},
+    Ip4Dscp = {[#ipv4{dscp = 1}], {ip_dscp, <<2:6>>}, [#ipv4{dscp = 2}]},
+    Ip4Ecn = {[#ipv4{ecn = 1}], {ip_ecn, <<2:2>>}, [#ipv4{ecn = 2}]},
+    Ip4Src = {[#ipv4{saddr = ?INIT_VAL(32)}], {ipv4_src, ?NEW_VAL(32)}, [#ipv4{saddr = ?NEW_VAL(32)}]},
+    Ip4Dst = {[#ipv4{daddr = ?INIT_VAL(32)}], {ipv4_dst, ?NEW_VAL(32)}, [#ipv4{daddr = ?NEW_VAL(32)}]},
     set_field([Ip4Proto, Ip4Dscp, Ip4Ecn, Ip4Src, Ip4Dst]).
 
 ip_v6() ->
-    Ip6Proto = {[#ipv6{next = ?INIT_VAL}], {ip_proto, ?NEW_VAL}, [#ipv6{next = ?NEW_VAL}]},
-    Ip6Dscp = {[#ipv6{class = <<0:6, 0:2>>}], {ip_dscp, <<1:6>>}, [#ipv6{class = <<1:6, 0:2>>}]},
-    Ip6Ecn = {[#ipv6{class = <<0:6, 0:2>>}], {ip_ecn, <<1:2>>}, [#ipv6{class = <<0:6, 1:2>>}]},
-    Ip6Src = {[#ipv6{saddr = ?INIT_VAL}], {ipv6_src, ?NEW_VAL}, [#ipv6{saddr = ?NEW_VAL}]},
-    Ip6Dst = {[#ipv6{daddr = ?INIT_VAL}], {ipv6_dst, ?NEW_VAL}, [#ipv6{daddr = ?NEW_VAL}]},
-    Ip6Flabel = {[#ipv6{flow = ?INIT_VAL}], {ipv6_flabel, ?NEW_VAL}, [#ipv6{flow = ?NEW_VAL}]},
-    Ip6NdTarget1 = {[#ndp_ns{tgt_addr = ?INIT_VAL}, #ndp_na{src_addr = ?INIT_VAL}],
-                    {ipv6_nd_target, ?NEW_VAL},
-                    [#ndp_ns{tgt_addr = ?NEW_VAL}, #ndp_na{src_addr = ?INIT_VAL}]},
-    Ip6NdTarget2 = {[#ndp_na{src_addr = ?INIT_VAL}, #ndp_ns{tgt_addr = ?INIT_VAL}],
-                    {ipv6_nd_target, ?NEW_VAL},
-                    [#ndp_na{src_addr = ?NEW_VAL}, #ndp_ns{tgt_addr = ?INIT_VAL}]},
-    Ip6NdSll1 = {[#ndp_ns{sll = ?INIT_VAL}, #ndp_na{tll = ?INIT_VAL}],
-                 {ipv6_nd_sll, ?NEW_VAL},
-                 [#ndp_ns{sll = ?NEW_VAL}, #ndp_na{tll = ?INIT_VAL}]},
-    Ip6NdSll2 = {[#ndp_na{tll = ?INIT_VAL}, #ndp_ns{sll = ?INIT_VAL}],
-                 {ipv6_nd_sll, ?NEW_VAL},
-                 [#ndp_na{tll = ?NEW_VAL}, #ndp_ns{sll = ?INIT_VAL}]},
+    %% The #ipv6 record has no default values for the saddr and daddr
+    %% fields.
+    Ipv6 = #ipv6{saddr = <<0:128>>, daddr = <<0:128>>},
+    Ip6Proto = {[Ipv6#ipv6{next = ?INIT_VAL}], {ip_proto, ?NEW_VAL(8)}, [Ipv6#ipv6{next = ?NEW_VAL}]},
+    Ip6Dscp = {[Ipv6#ipv6{class = 0}], {ip_dscp, <<1:6>>}, [Ipv6#ipv6{class = 1 bsl 2}]},
+    Ip6Ecn = {[Ipv6#ipv6{class = 0}], {ip_ecn, <<1:2>>}, [Ipv6#ipv6{class = 1}]},
+    Ip6Src = {[Ipv6#ipv6{saddr = ?INIT_VAL(128)}], {ipv6_src, ?NEW_VAL(128)}, [Ipv6#ipv6{saddr = ?NEW_VAL(128)}]},
+    Ip6Dst = {[Ipv6#ipv6{daddr = ?INIT_VAL(128)}], {ipv6_dst, ?NEW_VAL(128)}, [Ipv6#ipv6{daddr = ?NEW_VAL(128)}]},
+    Ip6Flabel = {[Ipv6#ipv6{flow = ?INIT_VAL}], {ipv6_flabel, ?NEW_VAL(20)}, [Ipv6#ipv6{flow = ?NEW_VAL}]},
+    Ip6NdTarget1 = {[#ndp_ns{tgt_addr = ?INIT_VAL(128)}, #ndp_na{src_addr = ?INIT_VAL(128)}],
+                    {ipv6_nd_target, ?NEW_VAL(128)},
+                    [#ndp_ns{tgt_addr = ?NEW_VAL(128)}, #ndp_na{src_addr = ?INIT_VAL(128)}]},
+    Ip6NdTarget2 = {[#ndp_na{src_addr = ?INIT_VAL(128)}, #ndp_ns{tgt_addr = ?INIT_VAL(128)}],
+                    {ipv6_nd_target, ?NEW_VAL(128)},
+                    [#ndp_na{src_addr = ?NEW_VAL(128)}, #ndp_ns{tgt_addr = ?INIT_VAL(128)}]},
+    Ip6NdSll1 = {[#ndp_ns{sll = ?INIT_VAL(16)}, #ndp_na{tll = ?INIT_VAL(16)}],
+                 {ipv6_nd_sll, ?NEW_VAL(16)},
+                 [#ndp_ns{sll = ?NEW_VAL(16)}, #ndp_na{tll = ?INIT_VAL(16)}]},
+    Ip6NdSll2 = {[#ndp_na{tll = ?INIT_VAL(16)}, #ndp_ns{sll = ?INIT_VAL(16)}],
+                 {ipv6_nd_sll, ?NEW_VAL(16)},
+                 [#ndp_na{tll = ?NEW_VAL(16)}, #ndp_ns{sll = ?INIT_VAL(16)}]},
     set_field([Ip6Proto, Ip6Dscp, Ip6Ecn, Ip6Src, Ip6Dst, Ip6Flabel,
                Ip6NdTarget1, Ip6NdTarget2, Ip6NdSll1, Ip6NdSll2]).
 
@@ -215,6 +224,10 @@ set_field(TestData) ->
     [{"set field " ++ atom_to_list(Name),
       ?_test(
          begin
+             %% only binaries are allowed in #ofp_field.value
+             case Value of
+                 _ when is_bitstring(Value) -> ok
+             end,
              Field = #ofp_field{name = Name, value = Value},
              Packet2 = linc_us4_packet:set_field(Field, Packet),
              ?assertEqual(NewPacket, Packet2)

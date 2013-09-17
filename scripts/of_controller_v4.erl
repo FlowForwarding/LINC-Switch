@@ -58,7 +58,8 @@
          flow_mod_issue91/0,
          flow_mod_output_to_port/3,
          async_config/3,
-         role_request/2
+         role_request/2,
+         flow_mod_issue153/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -205,6 +206,9 @@ scenario(port_desc_request_random_padding) ->
 scenario(ipv6_change_dst) ->
     [flow_mod_delete_all_flows,
      flow_mod_issue91];
+scenario(set_ip_ecn) ->
+    [flow_mod_delete_all_flows,
+     flow_mod_issue153];
 
 %% The two following scenarios are motivated by issues #97 and #124
 %% (https://github.com/FlowForwarding/LINC-Switch/issues/97 and
@@ -829,6 +833,39 @@ flow_mod_issue91() ->
                match = Match,
                instructions = [Instruction]
               }).
+
+%% Flow mod to test behaviour reported in:
+%% https://github.com/FlowForwarding/LINC-Switch/issues/153
+%%
+%% This should set the ECN field for any IPv4 packet to 2 (binary 10).
+flow_mod_issue153() ->
+    MatchField = #ofp_field{class = openflow_basic,
+                            has_mask = false,
+                            name = eth_type,
+                            %% IPv4
+                            value= <<16#0800:16>>},
+    SetField = #ofp_field{class = openflow_basic,
+                          has_mask = false,
+                          name = ip_ecn,
+                          value = <<2:2>>},
+    Action1 = #ofp_action_set_field{field = SetField},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1,
+                                                            Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = #ofp_match{fields = [MatchField]},
+               instructions = [Instruction]}).
 
 %%% Helpers --------------------------------------------------------------------
 

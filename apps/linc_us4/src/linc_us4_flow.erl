@@ -557,7 +557,8 @@ validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
 validate_match(Fields) ->
     validate_match(Fields, []).
 
-validate_match([#ofp_field{class=Class,name=Name}=Field|Fields], Previous) ->
+validate_match([#ofp_field{class = Class, name = Name} = Field | Fields],
+               Previous) ->
     case is_supported_field(Class,Name) of
         false ->
             {error,{bad_match,bad_field}};
@@ -574,7 +575,13 @@ validate_match([#ofp_field{class=Class,name=Name}=Field|Fields], Previous) ->
                                 false ->
                                     {error,{bad_match,bad_value}};
                                 true ->
-                                    validate_match(Fields,[Field|Previous])
+                                    case validate_mask(Field) of
+                                        false ->
+                                            {error, {bad_match, bad_wildcards}};
+                                        true ->
+                                            validate_match(
+                                              Fields,[Field|Previous])
+                                    end
                             end
                     end
             end
@@ -867,6 +874,26 @@ validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
 %% TODO
 validate_value(#ofp_field{name=_Name,value=_Value}) ->
     true.
+
+%% @private Check that the mask is correct for the given value
+validate_mask(#ofp_field{has_mask = true, value = Value, mask = Mask}) ->
+    try validate_mask(Value, Mask) of
+        _ -> true
+    catch
+        throw:bad_mask ->
+            false
+    end;
+validate_mask(#ofp_field{has_mask = false}) ->
+    true.
+
+validate_mask(<<0:1, RestValue/bitstring>>, <<_:1, RestMask/bitstring>>) ->
+    validate_mask(RestValue, RestMask);
+validate_mask(<<1:1, RestValue/bitstring>>, <<1:1, RestMask/bitstring>>) ->
+    validate_mask(RestValue, RestMask);
+validate_mask(<<>>, <<>>) ->
+    true;
+validate_mask(_, _) ->
+    throw(bad_mask).
 
 %% Replace a flow with a new one, possibly keeping the counters
 %% from the old one. This is used when adding a flow with exactly

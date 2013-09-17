@@ -292,6 +292,26 @@ scenario(port_1_to_controller_12_bytes) ->
      flow_mod_output_to_port(1, controller, 12),
      async_config({[action], []}, {[], []}, {[], []})];
 
+%% Scenario motivated by issue #143
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/143). It works
+%% as follows
+%% 1. Request slave role.
+%% 2. Request master role with greater generation id.
+%% 3. Request equal role whit random generation id.
+%% 4. Request nochange  with random generation id (only check the current role).
+%% 5. Request master role with smaller generation id.
+%% After each of the two first requests the controller should return
+%% a generation id that it got in the request. After the two subsequent request
+%% the swith should respond with the generation id that id got in the second
+%% request. Finally, it should return an error after the last request.
+scenario(change_roles) ->
+    GenId = generation_id(),
+    [role_request(slave, GenId),
+     role_request(master, GenId + 1),
+     role_request(equal, generation_id()),
+     role_request(nochange, generation_id()),
+     role_request(master, GenId - 10)];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 

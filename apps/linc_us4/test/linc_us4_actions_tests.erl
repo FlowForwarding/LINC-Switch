@@ -33,6 +33,8 @@
 -define(MOCKED, [port, group]).
 -define(INIT_VAL, 100).
 -define(NEW_VAL, 200).
+-define(INIT_VAL(Bits), <<100:Bits>>).
+-define(NEW_VAL(Bits), <<200:Bits>>).
 -define(NO_SIDE_EFFECTS, []).
 
 %% Tests -----------------------------------------------------------------------
@@ -148,9 +150,9 @@ action_experimenter() ->
     check_action(Action, Packet, NewPacket).
 
 action_set_field() ->
-    EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL}, [#ether{type = ?NEW_VAL}]},
-    EthDst = {[#ether{dhost = ?INIT_VAL}], {eth_dst, ?NEW_VAL}, [#ether{dhost = ?NEW_VAL}]},
-    EthSrc = {[#ether{shost = ?INIT_VAL}], {eth_src, ?NEW_VAL}, [#ether{shost = ?NEW_VAL}]},
+    EthType = {[#ether{type = ?INIT_VAL}], {eth_type, ?NEW_VAL(16)}, [#ether{type = ?NEW_VAL}]},
+    EthDst = {[#ether{dhost = ?INIT_VAL(48)}], {eth_dst, ?NEW_VAL(48)}, [#ether{dhost = ?NEW_VAL(48)}]},
+    EthSrc = {[#ether{shost = ?INIT_VAL(48)}], {eth_src, ?NEW_VAL(48)}, [#ether{shost = ?NEW_VAL(48)}]},
     [begin
          Field = #ofp_field{name = Name, value = Value},
          Action = #ofp_action_set_field{field = Field},

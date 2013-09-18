@@ -553,39 +553,30 @@ validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
 %% - All prerequisite fields are present and with an apropiate value at an
 %%   earlier position in the list of fields
 %% - The values are within the allowed domains
--spec validate_match(Match::[ofp_field()]) -> ok | {error,{Type :: atom(), Code :: atom()}}.
+%% - There's no 0 bit in a mask for the corresponding bit in a value set to 1
+-spec validate_match(Match::[ofp_field()]) ->
+                            ok | {error,{Type :: atom(), Code :: atom()}}.
 validate_match(Fields) ->
     validate_match(Fields, []).
 
 validate_match([#ofp_field{class = Class, name = Name} = Field | Fields],
                Previous) ->
-    case is_supported_field(Class,Name) of
-        false ->
-            {error,{bad_match,bad_field}};
-        true ->
-            case check_duplicate_fields(Class, Name, Previous) of
-                true ->
-                    {error,{bad_match,dup_field}};
-                false ->
-                    case check_prerequisites(Field,Previous) of
-                        false ->
-                            {error,{bad_match,bad_prereq}};
-                        true ->
-                            case validate_value(Field) of
-                                false ->
-                                    {error,{bad_match,bad_value}};
-                                true ->
-                                    case validate_mask(Field) of
-                                        false ->
-                                            {error, {bad_match, bad_wildcards}};
-                                        true ->
-                                            validate_match(
-                                              Fields,[Field|Previous])
-                                    end
-                            end
-                    end
-            end
+    Validators
+        = [{bad_field, fun is_supported_field/2, [Class, Name]},
+           {dup_field, fun is_not_duplicated_field/3, [Class, Name, Previous]},
+           {bad_prereq, fun are_prerequisites_met/2, [Field, Previous]},
+           {bad_value, fun is_value_valid/1, [Field]},
+           {bad_wildcards, fun is_mask_valid/1, [Field]}],
+
+    case lists:dropwhile(fun({_, CheckFun, Args}) ->
+                                 erlang:apply(CheckFun, Args)
+                         end, Validators) of
+        [] ->
+            validate_match(Fields, [Field | Previous]);
+        [{ErrorCode, _FaildedCheck, _} | _] ->
+            {error, {bad_match, ErrorCode}}
     end;
+
 validate_match([],_Previous) ->
     ok.
 
@@ -598,11 +589,11 @@ is_supported_field(_Class, _Name) ->
     false.
 
 %% Check that the field is not duplicated
-check_duplicate_fields(Class, Name, Previous) ->
-    [x] == [x|| #ofp_field{class=C,name=N} <- Previous, C==Class, N==Name].
+is_not_duplicated_field(Class, Name, Previous) ->
+    not([x] == [x|| #ofp_field{class=C,name=N} <- Previous, C==Class, N==Name]).
 
 %% Check that all prerequisite fields are present and have apropiate values
-check_prerequisites(#ofp_field{class=Class,name=Name},Previous) ->
+are_prerequisites_met(#ofp_field{class=Class,name=Name},Previous) ->
     case prerequisite_for(Class, Name) of
         [] ->
             true;
@@ -861,7 +852,7 @@ validate_action(_SwitchId, #ofp_action_push_mpls{}, _Match) ->
 validate_action(_SwitchId, #ofp_action_pop_mpls{}, _Match) ->
     ok;
 validate_action(_SwitchId, #ofp_action_set_field{field=Field}, Match) ->
-    case check_prerequisites(Field,Match) of
+    case are_prerequisites_met(Field,Match) of
         true ->
             ok;
         false ->
@@ -872,27 +863,27 @@ validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
 
 %% Check that field value is in the allowed domain
 %% TODO
-validate_value(#ofp_field{name=_Name,value=_Value}) ->
+is_value_valid(#ofp_field{name=_Name,value=_Value}) ->
     true.
 
 %% @private Check that the mask is correct for the given value
-validate_mask(#ofp_field{has_mask = true, value = Value, mask = Mask}) ->
-    try validate_mask(Value, Mask) of
+is_mask_valid(#ofp_field{has_mask = true, value = Value, mask = Mask}) ->
+    try is_mask_valid(Value, Mask) of
         _ -> true
     catch
         throw:bad_mask ->
             false
     end;
-validate_mask(#ofp_field{has_mask = false}) ->
+is_mask_valid(#ofp_field{has_mask = false}) ->
     true.
 
-validate_mask(<<0:1, RestValue/bitstring>>, <<_:1, RestMask/bitstring>>) ->
-    validate_mask(RestValue, RestMask);
-validate_mask(<<1:1, RestValue/bitstring>>, <<1:1, RestMask/bitstring>>) ->
-    validate_mask(RestValue, RestMask);
-validate_mask(<<>>, <<>>) ->
+is_mask_valid(<<0:1, RestValue/bitstring>>, <<_:1, RestMask/bitstring>>) ->
+    is_mask_valid(RestValue, RestMask);
+is_mask_valid(<<1:1, RestValue/bitstring>>, <<1:1, RestMask/bitstring>>) ->
+    is_mask_valid(RestValue, RestMask);
+is_mask_valid(<<>>, <<>>) ->
     true;
-validate_mask(_, _) ->
+is_mask_valid(_, _) ->
     throw(bad_mask).
 
 %% Replace a flow with a new one, possibly keeping the counters

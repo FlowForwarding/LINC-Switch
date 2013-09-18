@@ -312,6 +312,17 @@ scenario(change_roles) ->
      role_request(nochange, generation_id()),
      role_request(master, GenId - 10)];
 
+%% Scenario motivated by issue #142
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/142). It sends a flow
+%% modification message that tries to add a new flow entry to the switch but has
+%% malformed mask in the match. The switch is expected to return an
+%% error bad_wildcards.
+scenario(bad_match_mask) ->
+    [flow_add([],
+              [{eth_type, <<16#800:16>>},
+               {ipv4_src, <<10,0,0,7>>, <<10,0,0,6>>}],
+              [{write_actions,[{output,15,no_buffer}]}])];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 
@@ -770,6 +781,9 @@ flow_mod_output_to_port(InPort, OutPort, MaxLen) ->
                match = Match,
                instructions = [Instruction]
               }).
+
+flow_add(Opts, Matches, Instructions) ->
+    message(ofp_v4_utils:flow_add(Opts, Matches, Instructions)).
 
 %% Creates async config message that sets up filtering on an ofp channel.
 -spec async_config({[ofp_packet_in_reason()], [ofp_packet_in_reason()]},

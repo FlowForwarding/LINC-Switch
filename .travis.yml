@@ -6,3 +6,7 @@ otp_release:
 
 before_script:
   - sudo apt-get install libpcap-dev
+
+# Use "make test" instead of default "rebar eunit", to exclude
+# linc_us3 tests.
+script: "make test"

@@ -206,7 +206,7 @@ scenario(port_desc_request_random_padding) ->
 scenario(ipv6_change_dst) ->
     [flow_mod_delete_all_flows,
      flow_mod_issue91];
-scenario(set_ip_ecn) ->
+scenario(set_ip_ecn_dscp) ->
     [flow_mod_delete_all_flows,
      flow_mod_issue153];
 
@@ -837,21 +837,28 @@ flow_mod_issue91() ->
 %% Flow mod to test behaviour reported in:
 %% https://github.com/FlowForwarding/LINC-Switch/issues/153
 %%
-%% This should set the ECN field for any IPv4 packet to 2 (binary 10).
+%% This should set the ECN field for any IPv4 packet to 2 (binary 10),
+%% and the DSCP field to 10 (binary 001010).
 flow_mod_issue153() ->
     MatchField = #ofp_field{class = openflow_basic,
                             has_mask = false,
                             name = eth_type,
                             %% IPv4
                             value= <<16#0800:16>>},
-    SetField = #ofp_field{class = openflow_basic,
-                          has_mask = false,
-                          name = ip_ecn,
-                          value = <<2:2>>},
-    Action1 = #ofp_action_set_field{field = SetField},
-    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    SetField1 = #ofp_field{class = openflow_basic,
+                           has_mask = false,
+                           name = ip_ecn,
+                           value = <<2:2>>},
+    SetField2 = #ofp_field{class = openflow_basic,
+                           has_mask = false,
+                           name = ip_dscp,
+                           value = <<10:6>>},
+    Action1 = #ofp_action_set_field{field = SetField1},
+    Action2 = #ofp_action_set_field{field = SetField2},
+    Action3 = #ofp_action_output{port = 2, max_len = no_buffer},
     Instruction = #ofp_instruction_apply_actions{actions = [Action1,
-                                                            Action2]},
+                                                            Action2,
+                                                            Action3]},
     message(#ofp_flow_mod{
                cookie = <<0:64>>,
                cookie_mask = <<0:64>>,

@@ -69,6 +69,8 @@ flow_mod_test_() ->
        ,{"Delete flow, all tables", fun delete_all_tables/0}
        ,{"Delete where group", fun delete_where_group/0}
        ,{"Delete where meter", fun delete_where_meter/0}
+       ,{"Add flow with an incompatible value/mask pair in the match",
+         fun incompatible_value_mask_pair_in_match/0}
       ]}}.
 
 bad_table_id() ->
@@ -1026,6 +1028,19 @@ delete_where_meter() ->
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
                  linc_us4_flow:get_flow_table(?SWITCH_ID, 1)).
+
+incompatible_value_mask_pair_in_match() ->
+    FlowModAdd = ofp_v4_utils:flow_add(
+                   [],
+                   %% In the last octet in the address to be matched there's
+                   %% a binary value of 00000111 while in the mask 00000110.
+                   %% This is an error as all bits set to 1 in a value demand
+                   %% a corresponding bit in the mask set to 1.
+                   [{eth_type, <<16#800:16>>},
+                    {ipv4_src, <<10,0,0,7>>, <<10,0,0,6>>}],
+                   [{write_actions,[{output,15,no_buffer}]}]),
+    ?assertEqual({error, {bad_match, bad_wildcards}},
+                 linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)).
 
 statistics_test_() ->
     {setup, fun setup/0, fun teardown/1,

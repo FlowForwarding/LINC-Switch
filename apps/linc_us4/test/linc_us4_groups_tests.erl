@@ -82,8 +82,11 @@ add_group() ->
 
     %% Sleep 1 msec and assert that group stats time is advanced by atleast 1000 microsec
     timer:sleep(1),
+    G3Stats = linc_us4_groups:get_stats(?SWITCH_ID,
+                                        #ofp_group_stats_request{ group_id = 1 }),
     G2StatsTime = stats_get(G2Stats, 1, time),
-    ?assert(G1StatsTime + 1000 =< G2StatsTime),
+    G3StatsTime = stats_get(G3Stats, 1, time),
+    ?assertMatch(_ when G2StatsTime + 1000 =< G3StatsTime, {G2StatsTime, G3StatsTime}),
 
     ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
 
@@ -275,7 +278,7 @@ stats_get(#ofp_group_stats_reply{ body = Stats }, GroupId, Key) ->
                     %% ensure nanosec is in range 0..(1 billion - 1)
                     ?assert(NS >= 0),
                     ?assert(NS =< 999999999),
-                    S * 10000000 + NS / 1000
+                    S * 1000000 + NS / 1000
             end
     end.
 

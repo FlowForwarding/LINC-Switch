@@ -393,10 +393,7 @@ apply_list(#linc_pkt{packet = P} = Pkt,
                    P, InsertAfter,
                    fun(T) -> 
                            NewEntry = #mpls_stack_entry{ttl = SetTTL},
-                           NewTag = #mpls_tag{
-                             stack = [NewEntry],
-                             ether_type = EtherType
-                            },
+                           NewTag = #mpls_tag{stack = [NewEntry]},
                            %% found ether or vlan element, return it plus
                            %% MPLS tag for insertion
                            [T, NewTag]
@@ -408,10 +405,7 @@ apply_list(#linc_pkt{packet = P} = Pkt,
                    fun(T) -> 
                            %% base the newly inserted entry on a previous one
                            NewEntry = hd(T#mpls_tag.stack),
-                           T#mpls_tag{
-                             stack = [NewEntry | T#mpls_tag.stack],
-                             ether_type = EtherType
-                            }
+                           T#mpls_tag{stack = [NewEntry | T#mpls_tag.stack]}
                    end)
     end,
     apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);

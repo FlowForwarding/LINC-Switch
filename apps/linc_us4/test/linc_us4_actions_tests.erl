@@ -273,24 +273,42 @@ action_push_tag_mpls() ->
     check_action(Action, Packet4, NewPacket4).
 
 action_pop_tag_mpls() ->
-    Action = #ofp_action_pop_mpls{},
+    IPv4EtherType = 16#0800,
+    MPLSEtherType = 16#8847,
+    VLANEtherType = 16#8100,
 
-    %% One MPLS label - delete whole header
-    Packet1 = [#ether{},
+    %% One MPLS label - delete whole header3
+    Action1 = #ofp_action_pop_mpls{ethertype = IPv4EtherType},
+    
+    Packet1 = [#ether{type = MPLSEtherType},
                #mpls_tag{stack = [#mpls_stack_entry{}]},
                #ipv4{}],
-    NewPacket1 = [#ether{}, #ipv4{}],
-    check_action(Action, Packet1, NewPacket1),
+    NewPacket1 = [#ether{type = IPv4EtherType}, #ipv4{}],
+    check_action(Action1, Packet1, NewPacket1),
 
     %% Two MPLS labels - delete only the outermost one
-    Packet2 = [#ether{},
+    Action2 = #ofp_action_pop_mpls{ethertype = MPLSEtherType},
+
+    Packet2 = [#ether{type = MPLSEtherType},
                #mpls_tag{stack = [#mpls_stack_entry{label = label1},
                                   #mpls_stack_entry{label = label2}]},
                #ipv4{}],
-    NewPacket2 = [#ether{},
+    NewPacket2 = [#ether{type = MPLSEtherType},
                   #mpls_tag{stack = [#mpls_stack_entry{label = label2}]},
                   #ipv4{}],
-    check_action(Action, Packet2, NewPacket2).
+    check_action(Action2, Packet2, NewPacket2),
+
+    %% One MPLS header after VLAN tag - delete whole MPLS header after VLAN tag
+    Action3 = #ofp_action_pop_mpls{ethertype = IPv4EtherType},
+
+    Packet3 = [#ether{type = VLANEtherType},
+               #ieee802_1q_tag{vid = <<100:12>>, ether_type = MPLSEtherType},
+               #mpls_tag{stack = [#mpls_stack_entry{label = label1}]},
+               #ipv4{}],
+    NewPacket3 = [#ether{type = VLANEtherType},
+                  #ieee802_1q_tag{vid = <<100:12>>, ether_type = IPv4EtherType},
+                  #ipv4{}],
+    check_action(Action3, Packet3, NewPacket3).
 
 action_set_mpls_ttl() ->
     Packet = [#mpls_tag{stack = [#mpls_stack_entry{ttl = ?INIT_VAL}]}],

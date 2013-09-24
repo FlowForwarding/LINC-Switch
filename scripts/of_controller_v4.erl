@@ -327,6 +327,23 @@ scenario(bad_match_mask) ->
                {ipv4_src, <<10,0,0,7>>, <<10,0,0,6>>}],
               [{write_actions,[{output,15,no_buffer}]}])];
 
+%% Scenario motivated by #144
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/144). It sends a flow
+%% mod that matches on packets incoming on port 1 with MPLS header labeled with
+%% value 18 and BoS bit set. The flow mod should make the switch pop the MPLS
+%% header, set EtherType of the MPLS payload to IPv4 and forward the packet
+%% through the port 2.
+%% To make this scenario complete send pcap file pcap.data/mpls.pcap on port 1
+%% and verify the output on the port 2.
+scenario(pop_mpls) ->
+    [flow_add([],
+              [{eth_type, <<16#8847:16>>},
+               {in_port, <<1:32>>},
+               {mpls_label, <<18:20>>},
+               {mpls_bos, <<1:1>>}],
+              [{apply_actions, [{pop_mpls, 16#0800}]},
+               {write_actions, [{output, 2, no_buffer}]}])];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 

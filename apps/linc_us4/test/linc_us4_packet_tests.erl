@@ -124,8 +124,12 @@ ethernet() ->
     set_field([EthType, EthDst, EthSrc]).
 
 vlan() ->
-    VlanVid = {[#ieee802_1q_tag{vid = ?INIT_VAL(12)}], {vlan_vid, ?NEW_VAL(16)}, [#ieee802_1q_tag{vid = ?NEW_VAL(12)}]},
-    VlanPcp = {[#ieee802_1q_tag{pcp = 1}], {vlan_pcp, <<2:3>>}, [#ieee802_1q_tag{pcp = 2}]},
+    VlanVid = {[#ieee802_1q_tag{vid = <<(16#30A):12>>}],
+               %% The least significat bit of 16#01 indicates vlan presence bit
+               {vlan_vid, <<(16#01 bor 16#30B):13>>},
+               [#ieee802_1q_tag{vid = <<(16#30B):12>>}]},
+    VlanPcp = {[#ieee802_1q_tag{pcp = 1}], {vlan_pcp, <<2:3>>},
+               [#ieee802_1q_tag{pcp = 2}]},
     set_field([VlanVid, VlanPcp]).
 
 arp() ->

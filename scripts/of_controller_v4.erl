@@ -51,6 +51,8 @@
          meter_mod_add_meter_17/0,
          meter_mod_modify_meter_17/0,
          config_request_meter_17/0,
+         add_meter_19_with_burst_size/0,
+         get_stats_meter_19/0,
          flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0,
@@ -198,6 +200,36 @@ scenario(meter_17) ->
     [meter_mod_add_meter_17,
      meter_mod_modify_meter_17,
      config_request_meter_17];
+%% Test meter bands with configured burst size.  This scenario creates
+%% a meter band that allows 5 packets per second to pass, allowing an
+%% initial burst of 10 packets.  It then requests stats for the meter.
+%%
+%% To test, perform the following steps:
+%% 1. Run the scenario once and leave the controller running.
+%% 2. Run "tcpreplay -i tap0 --loop 20 --pps 5 ../pcap.data/ping.pcap".
+%% 3. Verify that all 20 packets made it through to tap1.
+%% 4. Run "tcpreplay -i tap0 --loop 20 --pps 6 ../pcap.data/ping.pcap".
+%% 5. Verify that only the first 10 packets made it through to tap1.
+%% 6. Run the scenario again and observe the debug output.
+%%
+%% Ignore this message:
+%% {ofp_message,4,error,3105434037,{ofp_error_msg,meter_mod_failed,meter_exists,<<>>}}
+%%
+%% Look at the meter stats and meter band stats:
+%% {ofp_message,4,multipart_reply,4062250353,
+%%    {ofp_meter_stats_reply,[],
+%%       [{ofp_meter_stats,19,0,40,3920,59,748000,
+%%          [{ofp_meter_band_stats,10,980}]}]}}
+%%
+%% The meter stats should show 40 packets received, and the meter band
+%% stats should show 10 packets dropped.
+scenario(meter_burst) ->
+    [add_meter_19_with_burst_size,
+     flow_add([],
+              [],
+              [{meter, 19},
+               {write_actions, [{output, controller, no_buffer}]}]),
+     get_stats_meter_19];
 scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
      flow_stats_request];
@@ -713,6 +745,16 @@ config_request_meter_17() ->
     message(#ofp_meter_config_request{
                flags = [],
                meter_id = 17}).
+
+add_meter_19_with_burst_size() ->
+    message(#ofp_meter_mod{
+               command = add,
+               flags = [pktps, burst, stats],
+               meter_id = 19,
+               bands = [#ofp_meter_band_drop{rate = 5, burst_size = 10}]}).
+
+get_stats_meter_19() ->
+    message(#ofp_meter_stats_request{meter_id = 19}).
 
 %% Flow mod with flags set to check if they are correctly encoded/decoded.
 flow_mod_with_flags() ->

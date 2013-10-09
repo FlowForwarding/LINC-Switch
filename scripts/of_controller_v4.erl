@@ -123,15 +123,15 @@ init(Port, Scenario) ->
                        Opts = [binary, {packet, raw},
                                {active, once}, {reuseaddr, true}],
                        {ok, LSocket} = gen_tcp:listen(Port, Opts),
-                       accept(Pid, LSocket)
+                       accept(Pid, LSocket, Scenario)
                end),
     loop([], Scenario).
 
-accept(Parent, LSocket) ->
+accept(Parent, LSocket, Scenario) ->
     {ok, Socket} = gen_tcp:accept(LSocket),
     Pid = spawn_link(fun() ->
-                             {ok, EncodedHello} = of_protocol:encode(hello()),
-                             gen_tcp:send(Socket, EncodedHello),
+                             gen_tcp:send(Socket,
+                                          encoded_hello_message(Scenario)),
                              {ok, Parser} = ofp_parser:new(4),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
@@ -140,7 +140,7 @@ accept(Parent, LSocket) ->
                      end),
     ok = gen_tcp:controlling_process(Socket, Pid),
     Parent ! {accept, Socket, Pid},
-    accept(Parent, LSocket).
+    accept(Parent, LSocket, Scenario).
 
 scenario(all_messages) ->
     [flow_mod_table_miss,
@@ -330,6 +330,10 @@ scenario(bad_match_mask) ->
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 
+%% This scenario is empty as hello message is malformed and sent just after
+%% the connection is established.
+scenario(hello_with_bad_version) ->
+    [];
 scenario(_Unknown) ->
     lager:debug("Unknown controller's scenario. Running `all_messages` one."),
     scenario(all_messages).
@@ -958,3 +962,15 @@ do_send(Socket, Message) when is_tuple(Message) ->
 generation_id() ->
     {Mega, Sec, Micro} = erlang:now(),
     (Mega * 1000000 + Sec) * 1000000 + Micro.
+
+encoded_hello_message(Scenario) ->
+    {ok, EncodedHello} = of_protocol:encode(hello()),
+    case Scenario of
+        hello_with_bad_version ->
+            malform_version_in_hello(EncodedHello);
+        _ ->
+            EncodedHello
+    end.
+
+malform_version_in_hello(<<_:8, Rest/binary>>) ->
+    <<(16#5):8, Rest/binary>>.

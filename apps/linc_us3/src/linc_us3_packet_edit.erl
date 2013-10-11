@@ -163,7 +163,8 @@ set_field(#ofp_field{ name = eth_dst, value = Value }, Pkt) ->
 set_field(#ofp_field{ name = eth_src, value = Value }, Pkt) ->
     find_and_edit(Pkt, ether, fun(H) -> H#ether{shost = Value} end);
 
-set_field(#ofp_field{ name = vlan_vid, value = <<_:4, Value:12/bits>> }, Pkt) ->
+set_field(#ofp_field{ name = vlan_vid,
+                      value = <<_VLANPresence:1, Value:12/bits>> }, Pkt) ->
     find_and_edit(Pkt, ieee802_1q_tag, fun(H) ->
                                                H#ieee802_1q_tag{vid = Value}
                                        end);
@@ -191,7 +192,7 @@ set_field(#ofp_field{ name = sctp_dst, value = <<Value:16>> }, Pkt) ->
 set_field(#ofp_field{ name = mpls_label, value = Value }, Pkt) ->
     find_and_edit(Pkt, mpls_tag,
                   fun(H) ->
-                          [S1 | S] = H#mpls_tag.stack, 
+                          [S1 | S] = H#mpls_tag.stack,
                           S1b = S1#mpls_stack_entry{label = Value},
                           H#mpls_tag{stack = [S1b | S]}
                   end);

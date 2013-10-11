@@ -124,8 +124,12 @@ ethernet() ->
     set_field([EthType, EthDst, EthSrc]).
 
 vlan() ->
-    VlanVid = {[#ieee802_1q_tag{vid = ?INIT_VAL(12)}], {vlan_vid, ?NEW_VAL(16)}, [#ieee802_1q_tag{vid = ?NEW_VAL(12)}]},
-    VlanPcp = {[#ieee802_1q_tag{pcp = 1}], {vlan_pcp, <<0:5, 2:3>>}, [#ieee802_1q_tag{pcp = 2}]},
+    VlanVid = {[#ieee802_1q_tag{vid = <<(16#30A):12>>}],
+               %% The least significat bit of 16#01 indicates vlan presence bit
+               {vlan_vid, <<(16#01 bor 16#30B):13>>},
+               [#ieee802_1q_tag{vid = <<(16#30B):12>>}]},
+    VlanPcp = {[#ieee802_1q_tag{pcp = 1}], {vlan_pcp, <<2:3>>},
+               [#ieee802_1q_tag{pcp = 2}]},
     set_field([VlanVid, VlanPcp]).
 
 arp() ->
@@ -181,8 +185,8 @@ mpls() ->
 
 ip_v4() ->
     Ip4Proto = {[#ipv4{p = ?INIT_VAL}], {ip_proto, ?NEW_VAL(8)}, [#ipv4{p = ?NEW_VAL}]},
-    Ip4Dscp = {[#ipv4{dscp = 1}], {ip_dscp, <<0:2, 2:6>>}, [#ipv4{dscp = 2}]},
-    Ip4Ecn = {[#ipv4{ecn = 1}], {ip_ecn, <<0:6, 2:2>>}, [#ipv4{ecn = 2}]},
+    Ip4Dscp = {[#ipv4{dscp = 1}], {ip_dscp, <<2:6>>}, [#ipv4{dscp = 2}]},
+    Ip4Ecn = {[#ipv4{ecn = 1}], {ip_ecn, <<2:2>>}, [#ipv4{ecn = 2}]},
     Ip4Src = {[#ipv4{saddr = ?INIT_VAL(32)}], {ipv4_src, ?NEW_VAL(32)}, [#ipv4{saddr = ?NEW_VAL(32)}]},
     Ip4Dst = {[#ipv4{daddr = ?INIT_VAL(32)}], {ipv4_dst, ?NEW_VAL(32)}, [#ipv4{daddr = ?NEW_VAL(32)}]},
     set_field([Ip4Proto, Ip4Dscp, Ip4Ecn, Ip4Src, Ip4Dst]).
@@ -192,8 +196,8 @@ ip_v6() ->
     %% fields.
     Ipv6 = #ipv6{saddr = <<0:128>>, daddr = <<0:128>>},
     Ip6Proto = {[Ipv6#ipv6{next = ?INIT_VAL}], {ip_proto, ?NEW_VAL(8)}, [Ipv6#ipv6{next = ?NEW_VAL}]},
-    Ip6Dscp = {[Ipv6#ipv6{class = 0}], {ip_dscp, <<0:2, 1:6>>}, [Ipv6#ipv6{class = 1 bsl 2}]},
-    Ip6Ecn = {[Ipv6#ipv6{class = 0}], {ip_ecn, <<0:6, 1:2>>}, [Ipv6#ipv6{class = 1}]},
+    Ip6Dscp = {[Ipv6#ipv6{class = 0}], {ip_dscp, <<1:6>>}, [Ipv6#ipv6{class = 1 bsl 2}]},
+    Ip6Ecn = {[Ipv6#ipv6{class = 0}], {ip_ecn, <<1:2>>}, [Ipv6#ipv6{class = 1}]},
     Ip6Src = {[Ipv6#ipv6{saddr = ?INIT_VAL(128)}], {ipv6_src, ?NEW_VAL(128)}, [Ipv6#ipv6{saddr = ?NEW_VAL(128)}]},
     Ip6Dst = {[Ipv6#ipv6{daddr = ?INIT_VAL(128)}], {ipv6_dst, ?NEW_VAL(128)}, [Ipv6#ipv6{daddr = ?NEW_VAL(128)}]},
     Ip6Flabel = {[Ipv6#ipv6{flow = ?INIT_VAL}], {ipv6_flabel, ?NEW_VAL(20)}, [Ipv6#ipv6{flow = ?NEW_VAL}]},

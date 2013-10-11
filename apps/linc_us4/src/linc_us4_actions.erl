@@ -96,7 +96,7 @@ apply_list(Pkt,
            [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
            SideEffects) ->
     linc_us4_port:send(Pkt#linc_pkt{packet_in_reason = action, 
-                                   packet_in_bytes = MaxLen}, controller),
+                                    packet_in_bytes = MaxLen}, controller),
     apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
 apply_list(Pkt, [#ofp_action_output{port = Port} | Rest], SideEffects) ->
     linc_us4_port:send(Pkt, Port),
@@ -222,9 +222,9 @@ apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_copy_ttl_out{} | Rest],
                    fun(T) ->
                            T#ipv4{ ttl = NextOutermostTTL }
                    end)
-             end,
+         end,
     apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
-    
+
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Copy the TTL from outermost to next-to-outermost header with TTL
@@ -393,10 +393,7 @@ apply_list(#linc_pkt{packet = P} = Pkt,
                    P, InsertAfter,
                    fun(T) -> 
                            NewEntry = #mpls_stack_entry{ttl = SetTTL},
-                           NewTag = #mpls_tag{
-                             stack = [NewEntry],
-                             ether_type = EtherType
-                            },
+                           NewTag = #mpls_tag{stack = [NewEntry]},
                            %% found ether or vlan element, return it plus
                            %% MPLS tag for insertion
                            [T, NewTag]
@@ -408,10 +405,7 @@ apply_list(#linc_pkt{packet = P} = Pkt,
                    fun(T) -> 
                            %% base the newly inserted entry on a previous one
                            NewEntry = hd(T#mpls_tag.stack),
-                           T#mpls_tag{
-                             stack = [NewEntry | T#mpls_tag.stack],
-                             ether_type = EtherType
-                            }
+                           T#mpls_tag{stack = [NewEntry | T#mpls_tag.stack]}
                    end)
     end,
     apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
@@ -419,22 +413,44 @@ apply_list(#linc_pkt{packet = P} = Pkt,
 %%------------------------------------------------------------------------------
 %% Optional action
 %% Pops an outermost MPLS tag or MPLS shim header. Deletes MPLS header if stack
-%% inside it is empty. Nothing happens if no MPLS header found.
-apply_list(#linc_pkt{packet = P} = Pkt, [#ofp_action_pop_mpls{} | Rest],
-           SideEffects) ->
-    P2 = linc_us4_packet:find_and_edit(
-           P, mpls_tag,
-           fun(T) ->
-                   Stk = T#mpls_tag.stack,
-                   %% based on how many elements were in stack, either pop a
-                   %% top most element or delete the whole tag (for empty)
-                   case Stk of
-                       [_OnlyOneElement] ->
-                           'delete';
-                       [_|RestOfStack] ->
-                           T#mpls_tag{ stack = RestOfStack }
-                   end
-           end),
+%% inside it is empty. If any of these actions happens it also sets EtherType
+%% for the MPLS payload. Nothing happens if no MPLS header found.
+%% TODO: Add support for IEEE 802.1ad
+apply_list(#linc_pkt{packet = P} = Pkt,
+           [#ofp_action_pop_mpls{ethertype = EtherType} | Rest], SideEffects) ->
+    PopMPLSHeader = fun(T) ->
+                            Stk = T#mpls_tag.stack,
+                            %% based on how many elements were in stack,
+                            %% either pop a top most element or delete
+                            %% the whole tag (for empty)
+                            case Stk of
+                                [_OnlyOneElement] ->
+                                    'delete';
+                                [_|RestOfStack] ->
+                                    T#mpls_tag{stack = RestOfStack}
+                            end
+                    end,
+    ModifyEtherType = fun(T) ->
+                              case T of
+                                  #ether{} ->
+                                      T#ether{type = EtherType};
+                                  #ieee802_1q_tag{} ->
+                                      T#ieee802_1q_tag{ether_type = EtherType}
+                              end
+                      end,
+    P2 = case linc_us4_packet:find_and_edit(P, mpls_tag, PopMPLSHeader) of
+             Unmodified when Unmodified =:= P ->
+                 Unmodified;
+             Modified ->
+                 BeforeMPLSTag = case linc_us4_packet:find(P, ieee802_1q_tag) of
+                                     not_found ->
+                                         ether;
+                                     _ ->
+                                         ieee802_1q_tag
+                                 end,
+                 linc_us4_packet:find_and_edit(Modified, BeforeMPLSTag,
+                                               ModifyEtherType)
+         end,
     apply_list(Pkt#linc_pkt{packet = P2}, Rest, SideEffects);
 
 %%------------------------------------------------------------------------------

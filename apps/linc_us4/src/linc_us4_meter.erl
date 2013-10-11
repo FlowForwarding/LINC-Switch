@@ -58,6 +58,7 @@
 -record(linc_meter_band, {
           type :: drop | dscp_remark | experimenter,
           rate :: integer(),
+          burst_size :: integer(),
           prec_level :: integer() | undefined,
           experimenter :: integer() | undefined,
           pkt_count = 0 :: integer(),
@@ -67,7 +68,8 @@
 -record(linc_meter, {
           id :: integer(),
           ets :: integer(),
-          rate_value :: kbps | pktps | {burst, kbps | pktps},
+          rate_value :: kbps | pktps,
+          burst :: boolean(),
           stats = true :: boolean(),
           bands = [] :: [#linc_meter_band{}],
           burst_history = [] :: [{erlang:timestamp(), integer()}],
@@ -227,28 +229,49 @@ init([SwitchId, #ofp_meter_mod{meter_id = Id} = MeterMod]) ->
     end.
 
 handle_call({apply, Pkt}, _From, #linc_meter{rate_value = Value,
+                                             burst = UseBurstSize,
                                              burst_history = Bursts,
                                              pkt_count = Pkts,
                                              byte_count = Bytes,
-                                             install_ts = Then,
                                              bands = Bands} = State) ->
     PktBytes = Pkt#linc_pkt.size,
     NewPkts = Pkts + 1,
     NewBytes = Bytes + PktBytes,
     Now = now(),
-    Seconds = timer:now_diff(Now, Then) div 1000000 + 1,
-    {NewBursts, {BBytes, BPkts}} = get_burst([{Now, PktBytes} | Bursts]),
-    Rate = case Value of
-               kbps ->
-                   ((NewBytes * 8) div 1000) / Seconds;
-               pktps ->
-                   NewPkts / Seconds;
-               {burst, kbps} ->
-                   (BBytes * 8) / ?BURST_TIME;
-               {burst, pktps} ->
-                   BPkts * 1000 / ?BURST_TIME
-           end,
-    {Reply, NewBands} = apply_band(Rate, Pkt, Bands),
+
+    BurstPeriod =
+        case Bands of
+            _ when not UseBurstSize ->
+                0;
+            [] ->
+                0;
+            [_|_] ->
+                lists:max(lists:map(fun(#linc_meter_band{
+                                           rate = Rate,
+                                           burst_size = BurstSize}) ->
+                                            BurstSize * 1000000 / Rate
+                                    end, Bands))
+        end,
+    %% Keep history for 1 second, to calculate the current rate, or
+    %% for the time needed to accomodate the burst size if that is
+    %% longer.
+    KeepHistoryFor = max(1000000, BurstPeriod),
+    NewBursts = [{Now, PktBytes}] ++
+        %% The history list is sorted by decreasing timestamps, so we
+        %% can just chop off the tail.
+        lists:takewhile(fun({Ts, _}) -> timer:now_diff(Now, Ts) < KeepHistoryFor end,
+                        Bursts),
+
+    %% Check packets during the last second, to determine current rate.
+    Rate = sum_traffic(Value, Now, 1000000, NewBursts),
+
+    {Reply, NewBands} = apply_band(Value, Now, Rate, Pkt, Bands,
+                                   case UseBurstSize of
+                                       true ->
+                                           NewBursts;
+                                       false ->
+                                           no_burst_size
+                                   end),
     {reply, Reply, State#linc_meter{burst_history = NewBursts,
                                     pkt_count = NewPkts,
                                     byte_count = NewBytes,
@@ -275,8 +298,34 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%------------------------------------------------------------------------------
 
-apply_band(Rate, Pkt, Bands) ->
-    case find_the_right_band(Rate, Bands) of
+sum_traffic(kbps, Now, KeepInterval, Bursts) ->
+    Bytes = sum_bytes(Now, KeepInterval, Bursts, 0),
+    Bytes * 8 div 1000;
+sum_traffic(pktps, Now, KeepInterval, Bursts) ->
+    sum_packets(Now, KeepInterval, Bursts, 0).
+
+sum_bytes(_, _, [], Bytes) ->
+    Bytes;
+sum_bytes(Now, KeepInterval, [{Ts, PacketBytes} | Tail], Bytes) ->
+    case timer:now_diff(Now, Ts) of
+        Elapsed when Elapsed < KeepInterval ->
+            sum_bytes(Now, KeepInterval, Tail, Bytes + PacketBytes);
+        _ ->
+            Bytes
+    end.
+
+sum_packets(_, _, [], Packets) ->
+    Packets;
+sum_packets(Now, KeepInterval, [{Ts, _} | Tail], Packets) ->
+    case timer:now_diff(Now, Ts) of
+        Elapsed when Elapsed < KeepInterval ->
+            sum_packets(Now, KeepInterval, Tail, Packets + 1);
+        _ ->
+            Packets
+    end.
+
+apply_band(Unit, Now, Rate, Pkt, Bands, Bursts) ->
+    case find_the_right_band(Unit, Now, Rate, Bands, Bursts) of
         false ->
             {{continue, Pkt}, Bands};
         N ->
@@ -297,15 +346,33 @@ apply_band(Rate, Pkt, Bands) ->
             {R, update_band(N, Bands, Pkt#linc_pkt.size)}
     end.
 
-find_the_right_band(Rate, Bands) ->
-    F = fun(Band, {HRate, HighN, N}) ->
-                BRate = Band#linc_meter_band.rate,
-                case Rate > BRate andalso BRate > HRate of
-                    true ->
+find_the_right_band(Unit, Now, Rate, Bands, Bursts) ->
+    F = fun(#linc_meter_band{rate = BRate, burst_size = BurstSize},
+            {HRate, HighN, N}) when Rate > BRate, BRate > HRate ->
+                %% The current rate is higher than the rate of
+                %% this band.  Are we in a "burst" that should
+                %% be allowed for now?
+                if Bursts =:= no_burst_size ->
+                        %% Burst flag disabled.
                         {BRate, N, N + 1};
-                    false ->
-                        {HRate, HighN, N + 1}
-                end
+                   is_list(Bursts) ->
+                        BurstPeriod = BurstSize * 1000000 / BRate,
+                        BurstPeriodTraffic = sum_traffic(Unit, Now, BurstPeriod, Bursts),
+                        if BurstPeriodTraffic =< BurstSize ->
+                                %% The burst is smaller than the
+                                %% allowed burst size: allow it.
+                                {HRate, HighN, N + 1};
+                           BurstPeriodTraffic > BurstSize ->
+                                %% The burst exceeds the allowed burst
+                                %% size: apply the meter band.
+                                {BRate, N, N + 1}
+                        end
+                end;
+           (#linc_meter_band{}, {HRate, HighN, N}) ->
+                %% The configured rate of the meter band is either
+                %% higher than the current traffic rate, or lower than
+                %% another meter band that we've already chosen.
+                {HRate, HighN, N + 1}
         end,
     case lists:foldl(F, {-1, 0, 1}, Bands) of
         {-1, 0, _} ->
@@ -322,30 +389,17 @@ update_band(1, [Band | Bands], NewBytes) ->
 update_band(N, [Band | Bands], Bytes) ->
     [Band | update_band(N - 1, Bands, Bytes)].
 
-get_burst([{Now, PktBytes} | Bursts]) ->
-    get_burst(Now, Bursts, [{Now, PktBytes}], {PktBytes, 1}).
-
-get_burst(_, [], Bursts, Stats) ->
-    {lists:reverse(Bursts), Stats};
-get_burst(Now, [{Ts, AddBytes} | Rest], Bursts, {Bytes, Pkts}) ->
-    case timer:now_diff(Now, Ts) div 1000 < ?BURST_TIME of
-        true ->
-            get_burst(Now, Rest, [{Ts, AddBytes} | Bursts],
-                      {Bytes + AddBytes, Pkts + 1});
-        false ->
-            get_burst(Now, [], Bursts, {Bytes, Pkts})
-    end.
-
 import_meter(#ofp_meter_mod{meter_id = Id,
                             flags = Flags,
                             bands = Bands}) ->
     case import_flags(Flags) of
-        {true, {Value, Stats}} ->
-            NewBands = [import_band(Value, Band) || Band <- Bands],
+        {true, {Value, Burst, Stats}} ->
+            NewBands = lists:map(fun import_band/1, Bands),
             case lists:any(fun(X) -> X == error end, NewBands) of
                 false ->
                     NewMeter = #linc_meter{id = Id,
                                            rate_value = Value,
+                                           burst = Burst,
                                            stats = Stats,
                                            bands = NewBands},
                     {ok, NewMeter};
@@ -356,6 +410,9 @@ import_meter(#ofp_meter_mod{meter_id = Id,
             {error, bad_flags}
     end.
 
+-spec import_flags([atom()]) ->
+                          {'true', {'pktps' | 'kbps', Burst::boolean(), Stats::boolean()}} |
+                          'false'.
 import_flags(Flags) ->
     SortFlags = lists:usort(Flags),
     case ordsets:is_subset(SortFlags, ?SUPPORTED_FLAGS)
@@ -367,64 +424,48 @@ import_flags(Flags) ->
                         false ->
                             kbps
                     end,
-            Value2 = case lists:member(burst, Flags) of
-                         true ->
-                             {burst, Value};
-                         false ->
-                             Value
-                     end,
-            {true, {Value2, lists:member(stats, Flags)}};
+            Burst = lists:member(burst, Flags),
+            Stats = lists:member(stats, Flags),
+            {true, {Value, Burst, Stats}};
         false ->
             false
     end.
 
-import_band(Value, #ofp_meter_band_drop{rate = Rate,
-                                        burst_size = Burst}) ->
+import_band(#ofp_meter_band_drop{rate = Rate,
+                                 burst_size = Burst}) ->
     case lists:member(drop, ?SUPPORTED_BANDS) of
         true ->
             #linc_meter_band{type = drop,
-                             rate = case Value of
-                                        {burst, _} ->
-                                            Burst;
-                                        _Else ->
-                                            Rate
-                                    end};
+                             rate = Rate,
+                             burst_size = Burst};
         false ->
             error
     end;
-import_band(Value, #ofp_meter_band_dscp_remark{rate = Rate,
-                                               burst_size = Burst,
-                                               prec_level = Prec}) ->
+import_band(#ofp_meter_band_dscp_remark{rate = Rate,
+                                        burst_size = Burst,
+                                        prec_level = Prec}) ->
     case lists:member(dscp_remark, ?SUPPORTED_BANDS) of
         true ->
             #linc_meter_band{type = dscp_remark,
-                             rate = case Value of
-                                        {burst, _} ->
-                                            Burst;
-                                        _Else ->
-                                            Rate
-                                    end,
+                             rate = Rate,
+                             burst_size = Burst,
                              prec_level = Prec};
         false ->
             error
     end;
-import_band(Value, #ofp_meter_band_experimenter{rate = Rate,
-                                                burst_size = Burst,
-                                                experimenter = Exp}) ->
+import_band(#ofp_meter_band_experimenter{rate = Rate,
+                                         burst_size = Burst,
+                                         experimenter = Exp}) ->
     case lists:member(experimenter, ?SUPPORTED_BANDS) of
         true ->
             #linc_meter_band{type = experimenter,
-                             rate = case Value of
-                                        {burst, _} ->
-                                            Burst;
-                                        _Else ->
-                                            Rate
-                                    end,
+                             rate = Rate,
+                             burst_size = Burst,
                              experimenter = Exp};
         false ->
             error
     end;
-import_band(_, _) ->
+import_band(_) ->
     error.
 
 export_stats(#linc_meter{id = Id,
@@ -460,18 +501,19 @@ export_band_stats(false, _Band) ->
 
 export_meter(#linc_meter{id = Id,
                          rate_value = Value,
+                         burst = Burst,
                          stats = Stats,
                          bands = Bands}) ->
-    NewBands = [export_band(Value, Band) || Band <- Bands],
-    #ofp_meter_config{flags = export_flags(Value, Stats),
+    NewBands = lists:map(fun export_band/1, Bands),
+    #ofp_meter_config{flags = export_flags(Value, Burst, Stats),
                       meter_id = Id,
                       bands = NewBands}.
 
-export_band(Value, #linc_meter_band{type = Type,
-                                    rate = MyRate,
-                                    prec_level = Prec,
-                                    experimenter = Exp}) ->
-    {Rate, Burst} = export_values(Value, MyRate),
+export_band(#linc_meter_band{type = Type,
+                             rate = Rate,
+                             burst_size = Burst,
+                             prec_level = Prec,
+                             experimenter = Exp}) ->
     case Type of
         drop ->
             #ofp_meter_band_drop{type = Type,
@@ -489,19 +531,14 @@ export_band(Value, #linc_meter_band{type = Type,
                                          experimenter = Exp}
     end.
 
-export_flags({burst, Value}, true) ->
+export_flags(Value, true, true) ->
     [Value, burst, stats];
-export_flags({burst, Value}, false) ->
+export_flags(Value, true, false) ->
     [Value, burst];
-export_flags(Value, true) ->
+export_flags(Value, false, true) ->
     [Value, stats];
-export_flags(Value, false) ->
+export_flags(Value, false, false) ->
     [Value].
-
-export_values({burst, _}, Rate) ->
-    {-1, Rate};
-export_values(_Else, Rate) ->
-    {Rate, -1}.
 
 get_meter_pid(SwitchId, Id) ->
     TId = linc:lookup(SwitchId, linc_meter_ets),

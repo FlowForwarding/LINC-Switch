@@ -164,11 +164,12 @@ set_field(#ofp_field{ name = eth_dst, value = Value }, Pkt) ->
 set_field(#ofp_field{ name = eth_src, value = Value }, Pkt) ->
     find_and_edit(Pkt, ether, fun(H) -> H#ether{shost = Value} end);
 
-set_field(#ofp_field{ name = vlan_vid, value = <<_:4, Value:12/bits>>}, Pkt) ->
+set_field(#ofp_field{ name = vlan_vid,
+                      value = <<_VLANPresence:1, Value:12/bits>>}, Pkt) ->
     find_and_edit(Pkt, ieee802_1q_tag, fun(H) ->
                                                H#ieee802_1q_tag{vid = Value}
                                        end);
-set_field(#ofp_field{ name = vlan_pcp, value = <<_Padding:5, Value:3>> }, Pkt) ->
+set_field(#ofp_field{ name = vlan_pcp, value = <<Value:3>> }, Pkt) ->
     find_and_edit(Pkt, ieee802_1q_tag, fun(H) ->
                                                H#ieee802_1q_tag{pcp = Value}
                                        end);
@@ -216,7 +217,7 @@ set_field(#ofp_field{ name = ip_proto, value = <<Value:8>> }, Pkt) ->
         ipv6 ->
             find_and_edit(Pkt, ipv6, fun(H) -> H#ipv6{next = Value} end)
     end;
-set_field(#ofp_field{ name = ip_dscp, value = <<_Padding:2, Value:6>> }, Pkt) ->
+set_field(#ofp_field{ name = ip_dscp, value = <<Value:6>> }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
         not_found ->
             Pkt;
@@ -230,7 +231,7 @@ set_field(#ofp_field{ name = ip_dscp, value = <<_Padding:2, Value:6>> }, Pkt) ->
                                  H#ipv6{class = NewClass}
                          end)
     end;
-set_field(#ofp_field{ name = ip_ecn, value = <<_Padding:6, Value:2>> }, Pkt) ->
+set_field(#ofp_field{ name = ip_ecn, value = <<Value:2>> }, Pkt) ->
     case find_outermost_header(Pkt, [ipv4, ipv6]) of
         not_found ->
             Pkt;

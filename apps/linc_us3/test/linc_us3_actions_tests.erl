@@ -183,17 +183,15 @@ action_push_tag_mpls() ->
     %% Single MPLS tag without VLAN and IP headers 
     Packet1 = [#ether{}],
     NewPacket1 = [#ether{},
-                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}],
-                            ether_type = MPLS1}],
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}]}],
     check_action(Action, Packet1, NewPacket1),
 
     %% Multiple MPLS tags without VLAN and IP headers
     Packet2 = [#ether{},
-               #mpls_tag{stack = [#mpls_stack_entry{}], ether_type = MPLS1}],
+               #mpls_tag{stack = [#mpls_stack_entry{}]}],
     NewPacket2 = [#ether{},
                   #mpls_tag{stack = [#mpls_stack_entry{},
-                                     #mpls_stack_entry{}],
-                            ether_type = MPLS1}],
+                                     #mpls_stack_entry{}]}],
     check_action(Action, Packet2, NewPacket2),
 
     %% Single MPLS tag with VLAN but whithout IP headers.
@@ -203,8 +201,7 @@ action_push_tag_mpls() ->
                #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1}],
     NewPacket3 = [#ether{},
                   #ieee802_1q_tag{pcp = 100, vid = 100, ether_type = VLAN1},
-                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}],
-                            ether_type = MPLS1}],
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 0}]}],
     check_action(Action, Packet3, NewPacket3),
 
     %% Single MPLS with IP header.
@@ -212,19 +209,16 @@ action_push_tag_mpls() ->
     Packet4 = [#ether{},
                #ipv4{ttl = 500}],
     NewPacket4 = [#ether{},
-                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 500}],
-                            ether_type = MPLS1},
+                  #mpls_tag{stack = [#mpls_stack_entry{ttl = 500}]},
                   #ipv4{ttl = 500}],
     check_action(Action, Packet4, NewPacket4).
 
 action_pop_tag_mpls() ->
-    MPLS1 = 16#8847,
     Action = #ofp_action_pop_mpls{},
 
     %% One MPLS label - delete whole header
     Packet1 = [#ether{},
-               #mpls_tag{stack = [#mpls_stack_entry{}],
-                         ether_type = MPLS1},
+               #mpls_tag{stack = [#mpls_stack_entry{}]},
                #ipv4{}],
     NewPacket1 = [#ether{}, #ipv4{}],
     check_action(Action, Packet1, NewPacket1),
@@ -232,12 +226,10 @@ action_pop_tag_mpls() ->
     %% Two MPLS labels - delete only the outermost one
     Packet2 = [#ether{},
                #mpls_tag{stack = [#mpls_stack_entry{label = label1},
-                                  #mpls_stack_entry{label = label2}],
-                         ether_type = MPLS1},
+                                  #mpls_stack_entry{label = label2}]},
                #ipv4{}],
     NewPacket2 = [#ether{},
-                  #mpls_tag{stack = [#mpls_stack_entry{label = label2}],
-                            ether_type = MPLS1},
+                  #mpls_tag{stack = [#mpls_stack_entry{label = label2}]},
                   #ipv4{}],
     check_action(Action, Packet2, NewPacket2).
 

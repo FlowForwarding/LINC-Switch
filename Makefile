@@ -24,6 +24,9 @@ test: compile
 test_us3: compile
 	@./rebar skip_deps=true apps="linc,linc_us3" eunit
 
+test_us5: compile
+	@./rebar skip_deps=true apps="linc,linc_us5" eunit
+
 clean:
 	@./rebar clean
 

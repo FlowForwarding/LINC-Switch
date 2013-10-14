@@ -170,7 +170,7 @@ add_bad_band() ->
     ?assertNot(?MOD:is_valid(?ID, 1)).
 
 add_with_burst() ->
-    Bands = [#ofp_meter_band_drop{burst_size = 2}],
+    Bands = [#ofp_meter_band_drop{burst_size = 2, rate = 1}],
     MeterMod = #ofp_meter_mod{command = add,
                               flags = [kbps, burst, stats],
                               meter_id = 1,
@@ -182,7 +182,7 @@ add_with_burst() ->
     ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, all)).
 
 add_with_burst_pktps() ->
-    Bands = [#ofp_meter_band_drop{burst_size = 1}],
+    Bands = [#ofp_meter_band_drop{burst_size = 30, rate = 5}],
     MeterMod = #ofp_meter_mod{command = add,
                               flags = [pktps, burst, stats],
                               meter_id = 1,
@@ -354,13 +354,21 @@ apply_pktps() ->
 apply_burst_kbps() ->
     add_with_burst(),
 
+    %% Test sending a packet that should be allowed because it is
+    %% smaller than the burst size, even though it exceeds the rate
+    %% limit:
+    SmallPkt = #linc_pkt{size = 240},
+    ?assertMatch({continue, _}, ?MOD:apply(?ID, 1, SmallPkt)),
+
+    %% Now send a packet that exceeds both the burst size and the
+    %% configured rate.
     Pkt = #linc_pkt{size = 10000},
     ?assertEqual(drop, ?MOD:apply(?ID, 1, Pkt)),
 
     #ofp_meter_stats_reply{body = [Stats]} = ?MOD:get_stats(?ID, 1),
     [Drop] = Stats#ofp_meter_stats.band_stats,
-    ?assertEqual(1, Stats#ofp_meter_stats.packet_in_count),
-    ?assertEqual(10000, Stats#ofp_meter_stats.byte_in_count),
+    ?assertEqual(2, Stats#ofp_meter_stats.packet_in_count),
+    ?assertEqual(10240, Stats#ofp_meter_stats.byte_in_count),
     ?assertEqual(1, Drop#ofp_meter_band_stats.packet_band_count),
     ?assertEqual(10000, Drop#ofp_meter_band_stats.byte_band_count).
 
@@ -368,7 +376,7 @@ apply_burst_pktps() ->
     add_with_burst_pktps(),
 
     Pkt1 = #linc_pkt{size = 100},
-    [?assertEqual(continue, element(1, ?MOD:apply(?ID, 1, Pkt1)))
+    [?assertMatch({continue, _}, ?MOD:apply(?ID, 1, Pkt1))
      || _ <- lists:seq(1, 30)],
 
     Pkt31 = #linc_pkt{size = 200},

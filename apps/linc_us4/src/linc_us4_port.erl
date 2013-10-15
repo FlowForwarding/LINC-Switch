@@ -128,10 +128,17 @@ send(#linc_pkt{}, normal) ->
     %% Normal port represents traditional non-OpenFlow pipeline of the switch
     %% not supprted by LINC
     bad_port;
-send(#linc_pkt{}, flood) ->
+send(#linc_pkt{} = Pkt, flood) ->
     %% Flood port represents traditional non-OpenFlow pipeline of the switch
-    %% not supprted by LINC
-    bad_port;
+    %% and should not be supported by LINC. But we want LINC to cooperate with
+    %% NOX 1.3 controller [1] that uses this port, incorrectly assuming that
+    %% an OpenFlow switch supports it. It's important as NOX is shipped
+    %% with Mininet [3]. As soon as this bug is fixed [2]
+    %% this function call will return 'bad_port'.
+    %% [1]: https://github.com/CPqD/nox13oflib
+    %% [2]: https://github.com/CPqD/nox13oflib/issues/3
+    %% [3]: http://mininet.org/
+    send(Pkt, all);
 send(#linc_pkt{in_port = InPort, switch_id = SwitchId} = Pkt, all) ->
     [send(Pkt, PortNo) || PortNo <- get_all_port_no(SwitchId), PortNo /= InPort],
     ok;
@@ -525,10 +532,9 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Return list of all OFP port numbers present in the switch.
 -spec get_all_port_no(integer()) -> [integer()].
 get_all_port_no(SwitchId) ->
-    Ports = ets:tab2list(linc:lookup(SwitchId, linc_ports)),
-    lists:map(fun(#linc_port{port_no = PortNo}) ->
-                      PortNo
-              end, Ports).
+    ets:foldl(fun(#linc_port{port_no = PortNo}, Acc) ->
+                      [PortNo | Acc]
+              end, [], linc:lookup(SwitchId, linc_ports)).
 
 -spec add(linc_port_type(), integer(), [linc_port_config()]) -> pid() | error.
 add(physical, SwitchId, PortConfig) ->

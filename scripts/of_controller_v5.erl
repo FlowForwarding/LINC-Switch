@@ -134,7 +134,7 @@ accept(Parent, LSocket, Scenario) ->
     Pid = spawn_link(fun() ->
                              gen_tcp:send(Socket,
                                           encoded_hello_message(Scenario)),
-                             {ok, Parser} = ofp_parser:new(4),
+                             {ok, Parser} = ofp_parser:new(?VERSION),
                              inet:setopts(Socket, [{active, once}]),
                              handle(#cstate{parent = Parent,
                                             socket = Socket,

@@ -83,7 +83,7 @@
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start the switch.
--spec start(any()) -> {ok, Version :: 4, state()}.
+-spec start(any()) -> {ok, Version :: ?VERSION, state()}.
 start(BackendOpts) ->
     {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
     {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
@@ -93,7 +93,7 @@ start(BackendOpts) ->
     linc_us5_groups:initialize(SwitchId),
     FlowState = linc_us5_flow:initialize(SwitchId),
     linc_us5_port:initialize(SwitchId, Config),
-    {ok, 4, #state{flow_state = FlowState,
+    {ok, ?VERSION, #state{flow_state = FlowState,
                    buffer_state = BufferState,
                    switch_id = SwitchId,
                    datapath_mac = DatapathMac}}.

@@ -53,6 +53,7 @@
          config_request_meter_17/0,
          add_meter_19_with_burst_size/0,
          get_stats_meter_19/0,
+         delete_meter_19/0,
          flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0,
@@ -230,6 +231,25 @@ scenario(meter_burst) ->
               [{meter, 19},
                {write_actions, [{output, controller, no_buffer}]}]),
      get_stats_meter_19];
+%% When a flow entry refers to a meter, the flow entry must be deleted
+%% as a consequence of the meter being deleted.
+%%
+%% To verify, run this scenario and check that the first flow stats
+%% request returns information about the flow entry with the cookie
+%% "meterdel", and that the second doesn't.
+scenario(flow_removal_after_meter_removal) ->
+    %% The cookie must be exactly 8 bytes.
+    Cookie = <<"meterdel">>,
+    [add_meter_19_with_burst_size,
+     flow_add([{cookie, Cookie}],
+              [],
+              [{meter, 19},
+               {write_actions, [{output, controller, no_buffer}]}]),
+     %% Here the flow exists.
+     flow_stats_request_with_cookie(Cookie),
+     delete_meter_19,
+     %% Here it doesn't.
+     flow_stats_request_with_cookie(Cookie)];
 scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
      flow_stats_request];
@@ -559,6 +579,11 @@ desc_request() ->
 flow_stats_request() ->
     message(#ofp_flow_stats_request{table_id = all}).
 
+flow_stats_request_with_cookie(Cookie) ->
+    message(#ofp_flow_stats_request{table_id = all,
+                                    cookie = Cookie,
+                                    cookie_mask = <<-1:64>>}).
+
 aggregate_stats_request() ->
     message(#ofp_aggregate_stats_request{table_id = all}).
 
@@ -776,6 +801,11 @@ add_meter_19_with_burst_size() ->
 
 get_stats_meter_19() ->
     message(#ofp_meter_stats_request{meter_id = 19}).
+
+delete_meter_19() ->
+    message(#ofp_meter_mod{
+               command = delete,
+               meter_id = 19}).
 
 %% Flow mod with flags set to check if they are correctly encoded/decoded.
 flow_mod_with_flags() ->

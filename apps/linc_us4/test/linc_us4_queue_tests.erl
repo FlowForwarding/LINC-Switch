@@ -130,13 +130,20 @@ ports_with_queues() ->
 setup() ->
     mock(?MOCKED),
     linc:create(?SWITCH_ID),
-    {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
+    {ok, Pid} = linc_us4_sup:start_link(?SWITCH_ID),
     Config = ports_with_queues(),
     application:load(linc),
     application:set_env(linc, logical_switches, Config),
-    linc_us4_port:initialize(?SWITCH_ID, Config).
+    linc_us4_port:initialize(?SWITCH_ID, Config),
+    Pid.
 
-teardown(_) ->
+teardown(Pid) ->
     linc_us4_port:terminate(?SWITCH_ID),
     linc:delete(?SWITCH_ID),
+
+    unlink(Pid),
+    Ref = monitor(process, Pid),
+    exit(Pid, shutdown),
+    receive {'DOWN', Ref, _, _, _} -> ok end,
+
     unmock(?MOCKED).

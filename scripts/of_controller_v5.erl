@@ -34,6 +34,7 @@
          features_request/0,
          remove_all_flows/0,
          group_mod/0,
+         group_delete/0,
          port_mod/0,
          port_desc_request/0,
          set_config/0,
@@ -248,6 +249,24 @@ scenario(flow_removal_after_meter_removal) ->
      %% Here the flow exists.
      flow_stats_request_with_cookie(Cookie),
      delete_meter_19,
+     %% Here it doesn't.
+     flow_stats_request_with_cookie(Cookie)];
+%% When a flow entry refers to a group, the flow entry must be deleted
+%% as a consequence of the group being deleted.
+%%
+%% To verify, run this scenario and check that the first flow stats
+%% request returns information about the flow entry with the cookie
+%% "groupdel", and that the second doesn't.
+scenario(flow_removal_after_group_removal) ->
+    %% The cookie must be exactly 8 bytes.
+    Cookie = <<"groupdel">>,
+    [group_mod,
+     flow_add([{cookie, Cookie}],
+              [],
+              [{write_actions, [{group, 1}]}]),
+     %% Here the flow exists.
+     flow_stats_request_with_cookie(Cookie),
+     group_delete,
      %% Here it doesn't.
      flow_stats_request_with_cookie(Cookie)];
 scenario(flow_mod_with_flags) ->
@@ -621,6 +640,12 @@ group_mod() ->
                              watch_port = 1,
                              watch_group = 1,
                              actions = [#ofp_action_output{port = 2}]}]}).
+
+group_delete() ->
+    message(#ofp_group_mod{
+               command  = delete,
+               type = all,
+               group_id = 1}).
 
 port_mod() ->
     message(#ofp_port_mod{port_no = 1,

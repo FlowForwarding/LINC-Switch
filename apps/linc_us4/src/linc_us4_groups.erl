@@ -33,6 +33,7 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
+-include_lib("stdlib/include/ms_transform.hrl").
 -include("linc_us4.hrl").
 
 -type linc_bucket_id() :: {integer(), binary()}.
@@ -219,7 +220,8 @@ get_stats(SwitchId, #ofp_group_stats_request{group_id = GroupId}) ->
     %% Special groupid 'all' requests all groups stats
     IdList = case GroupId of
                  all ->
-                     [];
+                     Pattern = ets:fun2ms(fun(#linc_group{id = Id}) -> Id end),
+                     ets:select(linc:lookup(SwitchId, group_table), Pattern);
                  Id ->
                      [Id]
              end,

@@ -209,12 +209,20 @@ stats_and_features() ->
     D2 = linc_us4_groups:get_features(#ofp_group_features_request{}),
     ?assertMatch(#ofp_group_features_reply{}, D2),
 
+    S1 = linc_us4_groups:get_stats(?SWITCH_ID,
+                                   #ofp_group_stats_request{ group_id = 1 }),
+    ?assertMatch(#ofp_group_stats_reply{body = [_]}, S1),
+
     %% try stats for nonexisting group
-    linc_us4_groups:get_stats(?SWITCH_ID,
-                              #ofp_group_stats_request{ group_id = 332211 }),
+    S2 = linc_us4_groups:get_stats(?SWITCH_ID,
+                                   #ofp_group_stats_request{
+                                       group_id = 332211 }),
+    ?assertMatch(#ofp_group_stats_reply{body = []}, S2),
+
     %% try stats for ALL groups
-    linc_us4_groups:get_stats(?SWITCH_ID,
-                              #ofp_group_stats_request{ group_id = all }).
+    S3 = linc_us4_groups:get_stats(?SWITCH_ID,
+                                   #ofp_group_stats_request{ group_id = all }),
+    ?assertMatch(#ofp_group_stats_reply{body = [_]}, S3).
 
 %%--------------------------------------------------------------------
 is_valid() ->

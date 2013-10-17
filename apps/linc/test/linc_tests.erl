@@ -36,7 +36,7 @@ logic() ->
     Backend = linc_backend,
     application:load(linc),
     %% application:set_env(linc, backend, Backend),
-    Config = [{switch, 0,
+    Config = [{switch, SwitchId = 0,
                [{backend, Backend},
                 {controllers, []},
                 {controllers_listener, disabled},
@@ -58,6 +58,7 @@ logic() ->
     meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
     meck:expect(Backend, stop, fun(_) -> ok end),
     ?assertEqual(ok, application:start(linc)),
+    assert_linc_logic_is_running(SwitchId, 10),
     ?assertEqual(ok, application:stop(linc)),
     meck:unload(Backend),
     meck:unload(inet).
@@ -83,3 +84,12 @@ teardown(_) ->
     ok = application:stop(lager),
     ok = application:stop(public_key),
     ok = application:stop(ssh).
+
+%% Helper functions ------------------------------------------------------------
+
+assert_linc_logic_is_running(SwitchId, Retries) ->
+    lists:takewhile(fun(_) ->
+                          timer:sleep(300),
+                          not is_pid(linc:lookup(SwitchId, linc_logic))
+                  end, [ _TryNo || _TryNo <- lists:seq(1, Retries)]),
+    ?assert(erlang:is_process_alive(linc:lookup(SwitchId, linc_logic))).

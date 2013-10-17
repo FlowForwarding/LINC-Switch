@@ -306,14 +306,10 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     BackendOpts3 = lists:keystore(config, 1, BackendOpts2,
                                   {config, Config}),
     {ok, Version, BackendState2} = BackendMod:start(BackendOpts3),
-    ChannelSupPid = start_ofp_channels_sup(SwitchId),
-    Controllers = linc:controllers_for_switch(SwitchId, Config),
+    start_and_register_ofp_channels_sup(SwitchId),
     Opts = [{controlling_process, self()}, {version, Version}],
-    open_ofp_channels(ChannelSupPid, Controllers, Opts),
-    %% TODO: Retrieve listen address and port from the config file
-    Address = {127,0,0,1},
-    Port = 6653,
-    listen_for_controllers(ChannelSupPid, Address, Port, Opts, SwitchId),
+    open_ofp_channels(Opts, State),
+    start_and_register_controllers_listener(Opts, State),
     {noreply, State#state{version = Version,
                           backend_state = BackendState2,
                           datapath_id = DatapathId}};
@@ -354,36 +350,57 @@ code_change(_OldVersion, State, _Extra) ->
 %%% Helpers
 %%%-----------------------------------------------------------------------------
 
-start_ofp_channels_sup(SwitchId) ->
+start_and_register_ofp_channels_sup(SwitchId) ->
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
                   permanent, 5000, supervisor, [ofp_channel_sup]},
     {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
                                                              linc_sup),
                                                  ChannelSup),
-    linc:register(SwitchId, channel_sup, ChannelSupPid),
-    ChannelSupPid.
+    linc:register(SwitchId, channel_sup, ChannelSupPid).
 
-open_ofp_channels(ChannelSupPid, Controllers, Opts) ->
-    Ctrls = [case Ctrl of
-                 {Id, Host, Port, Protocol} ->
-                     {Id, Host, Port, Protocol, Opts};
-                 {Id, Host, Port, Protocol, SysOpts} ->
-                     {Id, Host, Port, Protocol, Opts ++ SysOpts}
-             end || Ctrl <- Controllers],
+open_ofp_channels(Opts, #state{switch_id = SwitchId, config = Config}) ->
+    CtrlsConfig = controllers_config(Opts, linc:controllers_for_switch(SwitchId,
+                                                                       Config)),
+    ChannelSupPid = linc:lookup(SwitchId, channel_sup),
     [ofp_channel:open(
        ChannelSupPid, Id, {remote_peer, Host, Port, Protocol}, Opt)
-     || {Id, Host, Port, Protocol, Opt} <- Ctrls].
+     || {Id, Host, Port, Protocol, Opt} <- CtrlsConfig].
 
-listen_for_controllers(ChannelSupPid, Address, Port, Opts, SwitchId) ->
+controllers_config(Opts, Controllers) ->
+    [case Ctrl of
+         {Id, Host, Port, Protocol} ->
+             {Id, Host, Port, Protocol, Opts};
+         {Id, Host, Port, Protocol, SysOpts} ->
+             {Id, Host, Port, Protocol, Opts ++ SysOpts}
+     end || Ctrl <- Controllers].
+
+start_and_register_controllers_listener(Opts, #state{switch_id = SwitchId,
+                                                     config = Config}) ->
+    case linc:controllers_listener_for_switch(SwitchId, Config) of
+        disabled ->
+            ok;
+        ConnListenerConfig ->
+            CtrlsListenerArgs = controllers_listener_args(SwitchId,
+                                                          ConnListenerConfig,
+                                                          Opts),
+            ConnListenerSupPid = start_controllers_listener(
+                                   CtrlsListenerArgs,
+                                   linc:lookup(SwitchId, linc_sup)),
+            linc:register(SwitchId, conn_listener_sup, ConnListenerSupPid)
+    end.
+
+controllers_listener_args(SwitchId, {Address, Port, tcp}, Opts) ->
+    {ok, ParsedAddress} = inet_parse:address(Address),
+    [ParsedAddress, Port, linc:lookup(SwitchId, channel_sup), Opts].
+
+start_controllers_listener(ConnListenerArgs, LincSupPid) ->
     ConnListenerSupSpec =
         {ofp_conn_listener_sup, {ofp_conn_listener_sup, start_link,
-                                 [Address, Port, ChannelSupPid, Opts]},
+                                 ConnListenerArgs},
          permanent, infinity, supervisor, [ofp_conn_listener_sup]},
-    {ok, ConnListenerSupPid} = supervisor:start_child(linc:lookup(SwitchId,
-                                                                  linc_sup),
+    {ok, ConnListenerSupPid} = supervisor:start_child(LincSupPid,
                                                       ConnListenerSupSpec),
-    linc:register(SwitchId, conn_listener_sup, ConnListenerSupPid).
-
+    ConnListenerSupPid.
 
 get_datapath_mac() ->
     {ok, Ifs} = inet:getifaddrs(),

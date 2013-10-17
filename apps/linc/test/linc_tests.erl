@@ -39,6 +39,7 @@ logic() ->
     Config = [{switch, 0,
                [{backend, Backend},
                 {controllers, []},
+                {controllers_listener, disabled},
                 {ports, []},
                 {queues_status, disabled},
                 {queues, []}]}],
@@ -82,4 +83,3 @@ teardown(_) ->
     ok = application:stop(lager),
     ok = application:stop(public_key),
     ok = application:stop(ssh).
-

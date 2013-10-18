@@ -61,7 +61,8 @@
          flow_mod_output_to_port/3,
          async_config/3,
          role_request/2,
-         flow_mod_issue153/0
+         flow_mod_issue153/0,
+         table_features_keep_table_0/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -406,6 +407,23 @@ scenario(pop_mpls) ->
               [{apply_actions, [{pop_mpls, 16#0800}]},
                {write_actions, [{output, 2, no_buffer}]}])];
 
+%% Scenario motivated by #146
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/146). We
+%% create a flow entry in flow table 1, ask for flow table 1 to be
+%% deleted, and then verify that the flow entry has been deleted.
+%%
+%% In the first flow stats response, the flow entry should be listed,
+%% but in the second response, it should be gone.
+scenario(table_features_delete_flow_entries) ->
+    Cookie = <<"flow_del">>,
+    [flow_add([{table_id, 1},
+               {cookie, Cookie}],
+              [],
+              [{write_actions, [{output, controller, no_buffer}]}]),
+     flow_stats_request_with_cookie(Cookie),
+     table_features_keep_table_0,
+     flow_stats_request_with_cookie(Cookie)];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 
@@ -595,6 +613,11 @@ desc_request() ->
 
 flow_stats_request() ->
     message(#ofp_flow_stats_request{table_id = all}).
+
+flow_stats_request_with_cookie(Cookie) ->
+    message(#ofp_flow_stats_request{table_id = all,
+                                    cookie = Cookie,
+                                    cookie_mask = <<-1:64>>}).
 
 aggregate_stats_request() ->
     message(#ofp_aggregate_stats_request{table_id = all}).
@@ -987,6 +1010,24 @@ flow_mod_issue153() ->
                flags = [],
                match = #ofp_match{fields = [MatchField]},
                instructions = [Instruction]}).
+
+table_features_keep_table_0() ->
+    message(#ofp_table_features_request{
+               body = [#ofp_table_features{
+                          table_id = 0,
+                          name = <<"flow table 0">>,
+                          metadata_match = <<0:64>>,
+                          metadata_write = <<0:64>>,
+                          max_entries = 10,
+                          properties = [#ofp_table_feature_prop_instructions{}
+                                       , #ofp_table_feature_prop_next_tables{}
+                                       , #ofp_table_feature_prop_write_actions{}
+                                       , #ofp_table_feature_prop_apply_actions{}
+                                       , #ofp_table_feature_prop_match{}
+                                       , #ofp_table_feature_prop_wildcards{}
+                                       , #ofp_table_feature_prop_write_setfield{}
+                                       , #ofp_table_feature_prop_apply_setfield{}
+                                       ]}]}).
 
 %%% Helpers --------------------------------------------------------------------
 

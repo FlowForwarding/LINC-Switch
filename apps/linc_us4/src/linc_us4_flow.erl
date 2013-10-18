@@ -27,6 +27,7 @@
          get_flow_table/2,
          delete_where_group/2,
          delete_where_meter/2,
+         clear_table_flows/2,
          get_stats/2,
          get_aggregate_stats/2,
          get_table_stats/2,
@@ -247,6 +248,15 @@ delete_where_meter(SwitchId, MeterId) ->
     [delete_where_meter(SwitchId, MeterId, TableId)
      || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
+
+%% @doc Delete all flow entries in the given flow table.
+%%
+%% `ofp_flow_removed' events are not sent.
+-spec clear_table_flows(integer(), 0..?OFPTT_MAX) -> ok.
+clear_table_flows(SwitchId, TableId) ->
+    ets:foldl(fun(#flow_entry{} = FlowEntry, _Acc) ->
+                      delete_flow(SwitchId, TableId, FlowEntry, no_event)
+              end, ok, flow_table_ets(SwitchId, TableId)).
 
 %% @doc Get flow statistics.
 -spec get_stats(integer(), #ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.

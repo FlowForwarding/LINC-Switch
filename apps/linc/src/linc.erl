@@ -29,7 +29,8 @@
          delete/1,
          register/3,
          lookup/2,
-         controllers_for_switch/2]).
+         controllers_for_switch/2,
+         controllers_listener_for_switch/2]).
 
 -include("linc_logger.hrl").
 
@@ -78,6 +79,13 @@ controllers_for_switch(SwitchId, Config) ->
     {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
     {controllers, Controllers} = lists:keyfind(controllers, 1, Opts),
     Controllers.
+
+-spec controllers_listener_for_switch(integer(), term()) -> tuple() | disabled.
+controllers_listener_for_switch(SwitchId, Config) ->
+    {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
+    {controllers_listener, ControllersListener}  =
+        lists:keyfind(controllers_listener, 1, Opts),
+    ControllersListener.
 
 %%------------------------------------------------------------------------------
 %% Local helpers

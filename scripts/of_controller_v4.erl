@@ -82,17 +82,29 @@
 start() ->
     start_scenario(6633, all_messages).
 
-start(Port) ->
-    start_scenario(Port, all_messages).
+start(PortOrRemotePeer) ->
+    start_scenario(PortOrRemotePeer, all_messages).
 
 start_scenario(Scenario) ->
     start_scenario(6633, Scenario).
 
-start_scenario(Port, Scenario) ->
+start_scenario(PortOrRemotePeer, Scenario) ->
     lager:start(),
-    {ok, spawn(fun() ->
-                       init(Port, Scenario)
-               end)}.
+    try passive_or_active_controller(PortOrRemotePeer) of
+        {passive, Port} ->
+            {ok, spawn(fun() ->
+                               init(passive, Port, Scenario)
+                       end)};
+        {active, Address, Port} ->
+            {ok, spawn(fun() ->
+                               init(active, {Address, Port}, Scenario)
+                       end)}
+    catch
+        error:bad_argument ->
+            lager:error("Incorrectly formed RemotePeer argument: ~p",
+                        [PortOrRemotePeer]),
+            init:stop()
+    end.
 
 stop(Pid) ->
     Pid ! stop.
@@ -119,7 +131,7 @@ barrier(Pid, To) ->
 %%% Controller logic
 %%%-----------------------------------------------------------------------------
 
-init(Port, Scenario) ->
+init(passive, Port, Scenario) ->
     Pid = self(),
     spawn_link(fun() ->
                        Opts = [binary, {packet, raw},
@@ -127,22 +139,40 @@ init(Port, Scenario) ->
                        {ok, LSocket} = gen_tcp:listen(Port, Opts),
                        accept(Pid, LSocket, Scenario)
                end),
+    loop([], Scenario);
+init(active, {Address, Port}, Scenario) ->
+    connect(self(), Address, Port, Scenario),
     loop([], Scenario).
 
 accept(Parent, LSocket, Scenario) ->
     {ok, Socket} = gen_tcp:accept(LSocket),
     Pid = spawn_link(fun() ->
-                             gen_tcp:send(Socket,
-                                          encoded_hello_message(Scenario)),
-                             {ok, Parser} = ofp_parser:new(4),
-                             inet:setopts(Socket, [{active, once}]),
-                             handle(#cstate{parent = Parent,
-                                            socket = Socket,
-                                            parser = Parser})
+                             handle_connection(Parent, Socket, Scenario)
                      end),
     ok = gen_tcp:controlling_process(Socket, Pid),
-    Parent ! {accept, Socket, Pid},
+    Parent ! {connected, passive, Socket, Pid},
     accept(Parent, LSocket, Scenario).
+
+connect(Parent, Address, Port, Scenario) ->
+    Opts = [binary, {packet, raw}, {active, once}, {reuseaddr, true}],
+    case gen_tcp:connect(Address, Port, Opts) of
+        {ok, Socket} ->
+            Pid = spawn_link(fun() ->
+                                     handle_connection(Parent, Socket, Scenario)
+                             end),
+            ok = gen_tcp:controlling_process(Socket, Pid),
+            Parent ! {connected, active, Socket, Pid};
+        {error, Reason} ->
+            lager:error("Cannot connect to controller ~p:~p. Reason: ~p.~n",
+                        [Address, Port, Reason])
+    end.
+
+handle_connection(Parent, Socket, Scenario) ->
+    gen_tcp:send(Socket, encoded_hello_message(Scenario)),
+    {ok, Parser} = ofp_parser:new(4),
+    inet:setopts(Socket, [{active, once}]),
+    handle(#cstate{parent = Parent, socket = Socket, parser = Parser}).
+
 
 scenario(all_messages) ->
     [flow_mod_table_miss,
@@ -390,17 +420,24 @@ scenario(_Unknown) ->
 
 loop(Connections, Scenario) ->
     receive
-        {accept, Socket, Pid} ->
+        {connected, Type, Socket, Pid} ->
             {ok, {Address, Port}} = inet:peername(Socket),
-            lager:info("Accepted connection from ~p {~p,~p}",
-                       [Socket, Address, Port]),
+            case Type of
+                passive ->
+                    lager:info("Accepted connection from ~p {~p,~p}",
+                               [Socket, Address, Port]);
+                active ->
+                    lager:info(
+                      "Connected to listening swtich through ~p {~p,~p}",
+                      [Socket, Address, Port])
+            end,
             [begin
                  Message = case MsgOrMsgGen of
-                           MsgGen when is_atom(MsgGen) ->
-                               ?MODULE:MsgGen();
-                           Msg ->
-                               Msg
-                       end,
+                               MsgGen when is_atom(MsgGen) ->
+                                   ?MODULE:MsgGen();
+                               Msg ->
+                                   Msg
+                           end,
                  timer:sleep(200),
                  do_send(Socket, Message)
              end || MsgOrMsgGen  <- scenario(Scenario)],
@@ -1033,3 +1070,16 @@ encoded_hello_message(Scenario) ->
 
 malform_version_in_hello(<<_:8, Rest/binary>>) ->
     <<(16#5):8, Rest/binary>>.
+
+passive_or_active_controller(Port) when is_integer(Port) ->
+    {passive, Port};
+passive_or_active_controller(RemotePeer) ->
+    case string:tokens(RemotePeer, ":") of
+        [Address, Port] ->
+            {ok, ParsedAddress} = inet_parse:address(Address),
+            {active, ParsedAddress, erlang:list_to_integer(Port)};
+        [Port] ->
+            {passive, erlang:list_to_integer(Port)};
+        _ ->
+            erlang:error(bad_argument, RemotePeer)
+    end.

@@ -128,6 +128,7 @@ generate_logical_switches(Switches, PortsMap) ->
        {backend, linc_us4},
        {controllers,[{"Switch" ++ SwitchId ++ "-Controller"
                       , "localhost", 6633, tcp}]},
+       {controllers_listener, disabled},
        {queues_status, disabled},
        {ports, generate_logical_switch_ports(PortsNames, PortsMap)}
       ]}

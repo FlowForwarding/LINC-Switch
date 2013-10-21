@@ -38,6 +38,14 @@ The controller will connect to the switch and sends it a flow modification messa
 `h1 ping -c 3 h2`  
 Optionally you can install Wireshark with [OpenFlow 1.3 dissector](https://github.com/CPqD/ofdissector) and observe OpenFlow protocol messages.
 
+### NOX 1.3 Controller ###
+To experiment with LINC on Mininet you can also utilize [NOX 1.3 controller](https://github.com/CPqD/nox13oflib) that is shipped with Mininet.
+Good starting point is running NOX with switch backend. To achieve this setup run NOX controller (by default NOX is installed in the same directory as Mininet):  
+`cd nox13oflib/build/src && sudo ./nox_core -i ptcp:6633 switch`  
+Then perform two first steps from the [ping](#ping) chapter. Now you can try to run ping between the two hosts.
+
+> Please note that as for the time being LNIC will only connect to a controller listening on localhost and port 6633.
+
 ### Further reading ###
 The best starting point to dive into the Mininet further is to follow the [Mininet Walkthrough](http://mininet.org/walkthrough/).
 

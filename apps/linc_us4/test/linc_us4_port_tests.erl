@@ -98,14 +98,30 @@ send_table() ->
 send_normal() ->
     ?assertEqual(bad_port, linc_us4_port:send(pkt(), normal)).
 
+%% Flood port represents traditional non-OpenFlow pipeline of the switch
+%% and should not supported by LINC. But we want LINC to cooperate with
+%% NOX 1.3 controller [1] that uses this port, incorrectly assuming that
+%% an OpenFlow switch supports it. It's important as NOX is shipped
+%% with Mininet [3]. As soon as this bug is fixed [2]
+%% linc_us4_port:send(term(), flood) call should return 'bad_port'.
+%% [1]: https://github.com/CPqD/nox13oflib
+%% [2]: https://github.com/CPqD/nox13oflib/issues/3
+%% [3]: http://mininet.org/
 send_flood() ->
-    ?assertEqual(bad_port, linc_us4_port:send(pkt(), flood)).
+    [InPort | PortsThatShouldBeFlooded] =
+        [PortNo || {port, PortNo, _Config} <- ports()],
+    Pkt = pkt(InPort),
+    ?assertEqual(ok, linc_us4_port:send(Pkt, flood)),
+    %% wait because send to port is a gen_server:cast
+    timer:sleep(500),
+    ?assertEqual(length(PortsThatShouldBeFlooded),
+                 meck:num_calls(linc_us4_port_native, send, '_')).
 
 send_all() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(), all)),
     %% wait because send to port is a gen_server:cast
     timer:sleep(500),
-    ?assertEqual(2, meck:num_calls(linc_us4_port_native, send, '_')).
+    ?assertMatch(3, meck:num_calls(linc_us4_port_native, send, '_')).
 
 send_controller() ->
     ?assertEqual(ok, linc_us4_port:send(pkt(controller,no_match), controller)).
@@ -145,7 +161,7 @@ port_stats_request() ->
     AllPorts = any,
     StatsRequest3 = #ofp_port_stats_request{port_no = AllPorts},
     StatsReply3 = linc_us4_port:get_stats(?SWITCH_ID, StatsRequest3),
-    ?assertEqual(2, length(StatsReply3#ofp_port_stats_reply.body)).
+    ?assertMatch([_, _, _], StatsReply3#ofp_port_stats_reply.body).
 
 config_port_down() ->
     ?assertEqual([], linc_us4_port:get_config(?SWITCH_ID, 1)),
@@ -210,6 +226,9 @@ ports() ->
                 {features, #features{}},
                 {config, #port_configuration{}}]},
      {port, 2, [{interface, "dummy2"},
+                {features, #features{}},
+                {config, #port_configuration{}}]},
+     {port, 3, [{interface, "dummy3"},
                 {features, #features{}},
                 {config, #port_configuration{}}]}].
 

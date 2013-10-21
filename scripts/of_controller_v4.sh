@@ -59,7 +59,11 @@ run_controller() {
     erlc of_controller_v4.erl -pa ../deps/*/ebin -pa ../apps/*/ebin
 
     if [ -z ${SCENARIO} ]; then
-        ERL_EVAL="of_controller_v4:start(\"${PORT_OR_REMOTE_PEER}\")"
+        if [ -z ${PORT_OR_REMOTE_PEER} ]; then
+            ERL_EVAL=ERL_EVAL="of_controller_v4:start()"
+        else
+            ERL_EVAL="of_controller_v4:start(\"${PORT_OR_REMOTE_PEER}\")"
+        fi
     else
         if [ -z ${PORT_OR_REMOTE_PEER} ]; then
             START_ARGS="${SCENARIO}"

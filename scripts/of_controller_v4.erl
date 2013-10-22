@@ -424,6 +424,28 @@ scenario(table_features_delete_flow_entries) ->
      table_features_keep_table_0,
      flow_stats_request_with_cookie(Cookie)];
 
+%% Scenario motivated by #113
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/113).
+%%
+%% This scenario requests that the switch not send flow_removed
+%% messages when a flow entry expires because of a hard timeout, and
+%% then creates a flow entry with a hard timeout of 1 second.
+%%
+%% The expected behaviour is that the switch log should contain a
+%% message like the following but no crash reports:
+%%
+%% Message: ... filtered and not sent through the channel with id: 0
+scenario(flow_removed_hard_timeout) ->
+    [async_config({[], []},
+                  {[], []},
+                  %% hard_timeout is not set
+                  {[idle_timeout, delete, group_delete],
+                   [idle_timeout, delete, group_delete]}),
+     flow_add([{hard_timeout, 1},
+               {flags, [send_flow_rem]}],
+              [],
+              [{write_actions, [{output, controller, no_buffer}]}])];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 

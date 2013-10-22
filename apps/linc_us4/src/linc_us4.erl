@@ -319,8 +319,9 @@ ofp_table_stats_request(#state{switch_id = SwitchId} = State,
 -spec ofp_table_features_request(state(), #ofp_table_features_request{}) ->
                                         {reply, #ofp_table_features_reply{},
                                          #state{}}.
-ofp_table_features_request(State, #ofp_table_features_request{} = Request) ->
-    Reply = linc_us4_table_features:handle_req(Request),
+ofp_table_features_request(#state{switch_id = SwitchId} = State,
+                           #ofp_table_features_request{} = Request) ->
+    Reply = linc_us4_table_features:handle_req(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get port description.

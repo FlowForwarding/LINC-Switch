@@ -83,9 +83,12 @@ controllers_for_switch(SwitchId, Config) ->
 -spec controllers_listener_for_switch(integer(), term()) -> tuple() | disabled.
 controllers_listener_for_switch(SwitchId, Config) ->
     {switch, SwitchId, Opts} = lists:keyfind(SwitchId, 2, Config),
-    {controllers_listener, ControllersListener}  =
-        lists:keyfind(controllers_listener, 1, Opts),
-    ControllersListener.
+    case lists:keyfind(controllers_listener, 1, Opts) of
+        {controllers_listener, ControllersListener}  ->
+            ControllersListener;
+        false ->
+            disabled
+    end.
 
 %%------------------------------------------------------------------------------
 %% Local helpers

@@ -131,7 +131,7 @@ match_flow_entry(_Pkt, _TableId,
                  #flow_entry{match = #ofp_match{fields = []}}) ->
     match;
 match_flow_entry(#linc_pkt{switch_id = SwitchId} = Pkt, TableId, FlowEntry) ->
-    case fields_match(Pkt#linc_pkt.fields#ofp_match.fields,
+    case pkt_fields_match_flow_fields(Pkt#linc_pkt.fields#ofp_match.fields,
                       FlowEntry#flow_entry.match#ofp_match.fields) of
         false ->
             nomatch;
@@ -142,30 +142,36 @@ match_flow_entry(#linc_pkt{switch_id = SwitchId} = Pkt, TableId, FlowEntry) ->
             match
     end.
 
--spec fields_match(list(#ofp_field{}), list(#ofp_field{})) -> boolean().
-fields_match(PktFields, FlowFields) ->
+-spec pkt_fields_match_flow_fields(list(#ofp_field{}), list(#ofp_field{})) ->
+                                          boolean().
+pkt_fields_match_flow_fields(PktFields, FlowFields) ->
     lists:all(fun(FlowField) ->
                       lists:any(fun(PktField) ->
-                                        two_fields_match(PktField, FlowField)
+                                        pkt_field_match_flow_field(PktField,
+                                                                   FlowField)
                                 end, PktFields)
               end, FlowFields).
 
 %% TODO: check for different types and classes
-two_fields_match(#ofp_field{name = F1},
-                 #ofp_field{name = F2}) when F1 =/= F2 ->
+pkt_field_match_flow_field(#ofp_field{name = PktFieldName},
+                           #ofp_field{name = FlowFieldName})
+  when PktFieldName =/= FlowFieldName ->
     false;
-two_fields_match(#ofp_field{value=Val},
-                 #ofp_field{value=Val, has_mask = false}) ->
+pkt_field_match_flow_field(#ofp_field{value= Value},
+                           #ofp_field{value= Value, has_mask = false}) ->
     true;
-two_fields_match(#ofp_field{value=Val1},
-                 #ofp_field{value=Val2, has_mask = true, mask = Mask}) ->
-    mask_match(Val1, Val2, Mask);
-two_fields_match(_, _) ->
+pkt_field_match_flow_field(#ofp_field{value = PktFieldValue},
+                           #ofp_field{value= FlowFieldValue, has_mask = true,
+                                      mask = Mask}) ->
+    masked_pkt_value_match_flow_value(PktFieldValue, FlowFieldValue, Mask);
+pkt_field_match_flow_field(_, _) ->
     false.
 
-mask_match(<<V1,Rest1/binary>>, <<V2,Rest2/binary>>, <<M,Rest3/binary>>) ->
-    V1 band M == V2 band M
+masked_pkt_value_match_flow_value(<<PktValue, PktRest/binary>>,
+                                  <<FlowValue, FlowRest/binary>>,
+                                  <<Mask, MaskRest/binary>>) ->
+    PktValue band Mask == FlowValue band Mask
         andalso
-        mask_match(Rest1, Rest2, Rest3);
-mask_match(<<>>, <<>>, <<>>) ->
+        masked_pkt_value_match_flow_value(PktRest, FlowRest, MaskRest);
+masked_pkt_value_match_flow_value(<<>>, <<>>, <<>>) ->
     true.

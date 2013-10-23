@@ -206,7 +206,9 @@ mask_match() ->
     [begin
          Field1 = #ofp_field{value = V1},
          Field2 = #ofp_field{value = V2, has_mask = true, mask = Mask},
-         ?assertEqual(Result, linc_us4_routing:two_fields_match(Field1, Field2))
+         ?assertEqual(Result,
+                      linc_us4_routing:pkt_field_match_flow_field(Field1,
+                                                                  Field2))
      end || {V1, V2, Mask, Result} <- [{<<>>, <<>>, <<>>, true},
                                        {<<7,7,7>>, <<7,7,7>>, <<1,1,1>>, true},
                                        {<<7,7,7>>, <<7,7,8>>, <<1,1,1>>, false},

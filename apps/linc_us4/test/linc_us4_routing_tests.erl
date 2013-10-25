@@ -56,6 +56,19 @@ routing_test_() ->
        {"Routing: spawn new route process", fun spawn_route/0}
       ]}}.
 
+%% @doc Test matching on VLAN tag in accordance to OF spec. v1.3.2 ch. 7.2.3.7.
+vlan_matching_test_() ->
+    [{"Test matching packets with and without a VLAN tag",
+      fun match_with_and_without_vlan_tag/0},
+     {"Test matching only packets without a VLAN tag",
+      fun match_only_without_vlan_tag/0},
+     {"Test matching only packets with a VLAN tag regardless of VID value",
+      fun match_unrestricted_vlan_tag/0},
+     {"Test matching packets containing a VLAN tag with masked VID",
+      fun match_masked_vlan_tag/0},
+     {"Test matching packets containing a VLAN tag with specified VID",
+      fun match_not_masked_vlan_tag/0}].
+
 match() ->
     Flow1 = 200,
     Flow2 = 100,
@@ -227,6 +240,58 @@ spawn_route() ->
     Pkt = pkt(MatchFieldsPkt),
     ?assert(is_pid(linc_us4_routing:spawn_route(Pkt))).
 
+match_with_and_without_vlan_tag() ->
+    PktFields1 = create_ofp_fields([{vlan_vid, <<10:12>>}]),
+    PktFields2 = [],
+    FlowFields = [],
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields1,
+                                                          FlowFields)),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields2,
+                                                          FlowFields)).
+
+match_only_without_vlan_tag() ->
+    PktFields1 = create_ofp_fields([{vlan_vid, <<10:12>>}]),
+    PktFields2 = [],
+    FlowFields = create_ofp_fields([{vlan_vid, <<?OFPVID_NONE:13>>}]),
+    ?assertNot(linc_us4_routing:pkt_fields_match_flow_fields(PktFields1,
+                                                             FlowFields)),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields2,
+                                                          FlowFields)).
+
+match_unrestricted_vlan_tag() ->
+    PktFields1 = create_ofp_fields([{vlan_vid, <<10:12>>}]),
+    PktFields2 = [],
+    FlowFields = create_ofp_fields([{vlan_vid, <<?OFPVID_PRESENT:13>>,
+                                     <<?OFPVID_PRESENT:13>>}]),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields1,
+                                                          FlowFields)),
+    ?assertNot(linc_us4_routing:pkt_fields_match_flow_fields(PktFields2,
+                                                             FlowFields)).
+
+match_masked_vlan_tag() ->
+    PktFields1 = create_ofp_fields([{vlan_vid, <<16#007:12>>}]),
+    PktFields2 = create_ofp_fields([{vlan_vid, <<16#00F:12>>}]),
+    PktFields3 = create_ofp_fields([{vlan_vid, <<16#006:12>>}]),
+    FlowFields = create_ofp_fields([{vlan_vid,
+                                     <<(?OFPVID_PRESENT bor 16#007):13>>,
+                                     <<(?OFPVID_PRESENT bor 16#FF7):13>>}]),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields1,
+                                                          FlowFields)),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields2,
+                                                          FlowFields)),
+    ?assertNot(linc_us4_routing:pkt_fields_match_flow_fields(PktFields3,
+                                                             FlowFields)).
+
+match_not_masked_vlan_tag() ->
+    PktFields1 = create_ofp_fields([{vlan_vid, <<16#007:12>>}]),
+    PktFields2 = create_ofp_fields([{vlan_vid, <<16#00F:12>>}]),
+    FlowFields = create_ofp_fields([{vlan_vid,
+                                     <<(?OFPVID_PRESENT bor 16#007):13>>}]),
+    ?assert(linc_us4_routing:pkt_fields_match_flow_fields(PktFields1,
+                                                          FlowFields)),
+    ?assertNot(linc_us4_routing:pkt_fields_match_flow_fields(PktFields2,
+                                                             FlowFields)).
+
 %% Fixtures --------------------------------------------------------------------
 
 setup() ->
@@ -242,6 +307,8 @@ foreach_setup() ->
 
 foreach_teardown(State) ->
     ok = linc_us4_flow:terminate(State).
+
+%% Helpers  --------------------------------------------------------------------
 
 flow_entry(FlowId, Matches) ->
     flow_entry(FlowId, Matches, <<0:64>>).
@@ -283,3 +350,13 @@ miss_no_matching_flow_entry(TableConfig, MissError) ->
     TableId = 0,
     flow_table(TableId, FlowEntries, TableConfig),
     ?assertEqual({table_miss, MissError}, linc_us4_routing:route(Pkt)).
+
+create_ofp_fields(Fields) ->
+    lists:foldr(fun(Field, Acc) ->
+                        [create_ofp_field(Field) | Acc]
+                end, [], Fields).
+
+create_ofp_field({Name, Value}) ->
+    #ofp_field{name = Name, value = Value};
+create_ofp_field({Name, Value, Mask}) ->
+    #ofp_field{name = Name, value = Value, has_mask = true, mask = Mask}.

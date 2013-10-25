@@ -146,13 +146,44 @@ match_flow_entry(#linc_pkt{switch_id = SwitchId} = Pkt, TableId, FlowEntry) ->
                                           boolean().
 pkt_fields_match_flow_fields(PktFields, FlowFields) ->
     lists:all(fun(FlowField) ->
-                      lists:any(fun(PktField) ->
-                                        pkt_field_match_flow_field(PktField,
-                                                                   FlowField)
-                                end, PktFields)
+                      pkt_fields_match_flow_field(PktFields, FlowField)
               end, FlowFields).
 
-%% TODO: check for different types and classes
+-spec pkt_fields_match_flow_field(list(#ofp_field{}), #ofp_field{}) ->
+                                         boolean().
+pkt_fields_match_flow_field(PktFields,
+                            #ofp_field{name = vlan_vid} = FlowField) ->
+    case lists:keyfind(vlan_vid, #ofp_field.name, PktFields) of
+        false ->
+            vlan_pkt_field_match_flow_field(none, FlowField);
+        PktField ->
+            vlan_pkt_field_match_flow_field(PktField, FlowField)
+    end;
+pkt_fields_match_flow_field(PktFields, FlowField) ->
+    lists:any(fun(PktField) ->
+                      pkt_field_match_flow_field(PktField, FlowField)
+              end, PktFields).
+
+vlan_pkt_field_match_flow_field(PktField, #ofp_field{value = <<?OFPVID_NONE:13>>,
+                                                     has_mask = false})  ->
+    not is_record(PktField, ofp_field);
+vlan_pkt_field_match_flow_field(PktField,
+                                #ofp_field{value = <<?OFPVID_PRESENT:13>>,
+                                           has_mask = true,
+                                           mask = <<?OFPVID_PRESENT:13>>}) ->
+    is_record(PktField, ofp_field);
+vlan_pkt_field_match_flow_field(PktField,
+                                #ofp_field{value = <<_:1, VID:12>>} = FlowField)
+  when <<(?OFPVID_PRESENT bor VID):13>> =:= FlowField#ofp_field.value ->
+    case PktField of
+        #ofp_field{} ->
+            pkt_field_match_flow_field(
+              PktField,
+              strip_vlan_presence_bit_from_flow_field(FlowField));
+        _ ->
+            false
+    end.
+
 pkt_field_match_flow_field(#ofp_field{name = PktFieldName},
                            #ofp_field{name = FlowFieldName})
   when PktFieldName =/= FlowFieldName ->
@@ -167,11 +198,26 @@ pkt_field_match_flow_field(#ofp_field{value = PktFieldValue},
 pkt_field_match_flow_field(_, _) ->
     false.
 
-masked_pkt_value_match_flow_value(<<PktValue, PktRest/binary>>,
-                                  <<FlowValue, FlowRest/binary>>,
-                                  <<Mask, MaskRest/binary>>) ->
-    PktValue band Mask == FlowValue band Mask
-        andalso
-        masked_pkt_value_match_flow_value(PktRest, FlowRest, MaskRest);
 masked_pkt_value_match_flow_value(<<>>, <<>>, <<>>) ->
-    true.
+    true;
+masked_pkt_value_match_flow_value(PktValue, FlowValue, MaskValue) ->
+    ValueSize = bit_size(PktValue),
+    <<IntPktValue:ValueSize>> = PktValue,
+    <<IntFlowValue:ValueSize>> = FlowValue,
+    <<IntMaskValue:ValueSize>> = MaskValue,
+    IntPktValue band IntMaskValue == IntFlowValue band IntMaskValue.
+
+%% @doc OFP field of type VLAN_VID has additional bit to indicate special
+%% conditions regarding VLAN tag.
+strip_vlan_presence_bit_from_flow_field(#ofp_field{value =
+                                                       <<_:1, VID:12/bitstring>>,
+                                                   has_mask = HasMask,
+                                                   mask = Mask} = Field) ->
+    NewMask = case HasMask of
+                  true ->
+                      <<_:1, StrippedMask:12/bitstring>> = Mask,
+                      StrippedMask;
+                  false ->
+                      Mask
+              end,
+    Field#ofp_field{value = VID, mask = NewMask}.

@@ -446,6 +446,22 @@ scenario(flow_removed_hard_timeout) ->
               [],
               [{write_actions, [{output, controller, no_buffer}]}])];
 
+%% Scenario motivated by #134
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/134).
+%% It sends a flow modification message that should make switch match frames
+%% tagged with VID 50 and forward them to port no 2. To verify that this scenario
+%% works start the switch with two ports and send prepared packet to the first
+%% one using tcpreplay:
+%% sudo tcpreplay -i tap0 pcap.data/ping_vlan_50.pcap
+%% Using some packet capturing tool (like Wireshark) you should see that this
+%% packet will appear on the second port.
+scenario(masked_vlan_id) ->
+    [flow_mod_delete_all_flows(),
+     flow_add([],
+              [{vlan_vid, <<(16#32 bor 16#1000):13>>,
+                <<(16#32 bor 16#1000):13>>}],
+             [{write_actions, [{output, 2, no_buffer}]}])];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 

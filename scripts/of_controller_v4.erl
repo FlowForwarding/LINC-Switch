@@ -462,6 +462,25 @@ scenario(masked_vlan_id) ->
                 <<(16#32 bor 16#1000):13>>}],
              [{write_actions, [{output, 2, no_buffer}]}])];
 
+%% Scenario motivated by #111
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/111).
+%%
+%% This scenarios sends a flow modification message to the switch that make it
+%% change SCTP source port in every packet and forwards it to the port no 2.
+%%
+%% To run this scenario start switch with two ports (1 and 2). Send pcap file
+%% pcap.data/sctp_src_port_32836.pcap on port 1 and verify the output
+%% on the other port. The frame going out through the port no 2 should has
+%% SCTP source port changed to 32999.
+scenario(sctp_src_port_change) ->
+    [flow_mod_delete_all_flows(),
+     flow_add([],
+              [{eth_type, <<(16#0800):16>>},
+               %% SCTP payload
+               {ip_proto, <<?IPPROTO_SCTP:8>>}],
+              [{apply_actions, [{set_field, sctp_src, <<32999:16>>}]},
+               {write_actions, [{output, 2, no_buffer}]}])];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 

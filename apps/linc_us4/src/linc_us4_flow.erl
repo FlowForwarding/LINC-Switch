@@ -473,6 +473,8 @@ add_new_flow(SwitchId, TableId,
                       IdleTime, HardTime),
     ets:insert(flow_table_ets(SwitchId, TableId), NewEntry),
     increment_group_ref_count(SwitchId, Instructions),
+    ?DEBUG("[FLOWMOD] Added new flow entry with id ~w: ~w",
+           [NewEntry#flow_entry.id, FlowMod]),
     ok.
 
 %% Delete a flow
@@ -490,6 +492,8 @@ delete_flow(SwitchId, TableId,
     ets:delete(linc:lookup(SwitchId, flow_entry_counters), FlowId),
     delete_flow_timer(SwitchId, FlowId),
     decrement_group_ref_count(SwitchId, Instructions),
+    ?DEBUG("[FLOWMOD] Deleted flow entry with id ~w: ~w",
+           [FlowId, Flow]),
     ok.
 
 send_flow_removed(SwitchId, TableId,
@@ -917,6 +921,8 @@ replace_existing_flow(SwitchId, TableId,
             NewEntry = create_flow_entry(FlowMod),
             ets:insert(flow_table_ets(SwitchId, TableId),
                        NewEntry#flow_entry{id=Id}),
+            ?DEBUG("[FLOWMOD] Replaced flow entry ~w with: ~w",
+                   [Id, NewEntry]),
             ok
     end.
 
@@ -927,6 +933,8 @@ modify_flow(SwitchId, TableId, #flow_entry{id=Id,instructions=PrevInstructions},
     ets:update_element(flow_table_ets(SwitchId, TableId),
                        Id,
                        {#flow_entry.instructions, NewInstructions}),
+    ?DEBUG("[FLOWMOD] New instructions for flow entry ~w: ~w",
+           [Id, NewInstructions]),
     increment_group_ref_count(SwitchId, NewInstructions),
     decrement_group_ref_count(SwitchId, PrevInstructions),
     case lists:member(reset_counts, Flags) of

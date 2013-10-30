@@ -17,10 +17,19 @@ main(Args) ->
     end.
 
 usage() ->
-    io:format("~s [-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
-              ++ " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
-              ++ " -o OUTPUT_FILE~n",
-             [escript:script_name()]).
+    ScriptName = escript:script_name(),
+    io:format("~s~n~n"
+              "Example usage:~n ~s~n",
+              [usage_pattern(ScriptName), usage_example(ScriptName)]).
+
+usage_pattern(ScriptName) ->
+    ScriptName ++ "[-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
+        " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
+        " -o OUTPUT_FILE".
+
+usage_example(ScriptName) ->
+    ScriptName ++ "-s 0 tap0 tap1 -c tcp:10.48.11.5:6633 tls:10.48.11.6:5533 "
+        "-o ../rel/files/sys.config".
 
 parse_args([], Config) ->
     Config;

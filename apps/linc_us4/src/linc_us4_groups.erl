@@ -126,6 +126,12 @@ apply(GroupId, #linc_pkt{switch_id = SwitchId} = Pkt) ->
                                              {error, Type :: atom(), Code :: atom()}.
 
 %%------ group_mod ADD GROUP
+modify(_SwitchId, #ofp_group_mod{ command = add, group_id = BadGroupId })
+  when is_atom(BadGroupId); BadGroupId > ?OFPG_MAX ->
+    %% Can't add a group with a reserved group id (represented as
+    %% atoms here), or with a group id greater than the largest
+    %% allowed.
+    {error, #ofp_error_msg{type = group_mod_failed, code = invalid_group}};
 modify(SwitchId, #ofp_group_mod{ command = add,
                                  group_id = Id,
                                  type = Type,

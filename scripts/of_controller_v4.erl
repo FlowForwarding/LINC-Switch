@@ -1125,11 +1125,16 @@ do_send(Connections, {Address, Port}, Message) ->
     end.
 
 do_send(Socket, Message) when is_binary(Message) ->
-    ok = gen_tcp:send(Socket, Message);
+    try
+        gen_tcp:send(Socket, Message)
+    catch
+        _:_ ->
+            ok
+    end;
 do_send(Socket, Message) when is_tuple(Message) ->
     case of_protocol:encode(Message) of
         {ok, EncodedMessage} ->
-            ok = gen_tcp:send(Socket, EncodedMessage);
+            do_send(Socket, EncodedMessage);
         _Error ->
             lager:error("Error in encode of: ~p", [Message])
     end.

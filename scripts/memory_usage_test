@@ -1,0 +1,240 @@
+#!/usr/bin/env escript
+%%! -sname linc_tester@localhost
+
+-define(CONFIG_FILE, "tmp.sys.config").
+-define(COOKIE, cookie).
+-define(LINC_NODE_NAME_BASE, "linc_under_test").
+-define(MNESIA_DIR_BASE, "Mnesia." ++ ?LINC_NODE_NAME_BASE).
+-define(LOG_DIR, "log/").
+
+main([Type, Arg1, Arg2]) ->
+    process_flag(trap_exit, true),
+    compile:file("config_generator.erl"),
+    register(linc_tester_proc, self()),
+    erlang:set_cookie(node(), ?COOKIE),
+    case Type of
+        "ports" ->
+            increasing_ports(get_linc_node_name(),
+                             0,
+                             list_to_integer(Arg1),
+                             list_to_integer(Arg2),
+                             {0, []});
+        "switches" ->
+            increasing_switches(get_linc_node_name(),
+                                list_to_integer(Arg1),
+                                0,
+                                list_to_integer(Arg2), {0, 0});
+        _ ->
+            io:format("Unknown test.~n"),
+            usage()
+    end,
+    clean_up();
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("~s [ports <interval> <max ports>"
+              ++ " | switches <ports per switch> <max switches>]~n",
+              [escript:script_name()]).
+
+
+
+increasing_switches(_ , Ports, Switches, MaxSwitches, {_, MemPerSwitchAcc})
+  when Switches > MaxSwitches ->
+    file:write_file(result_file(switches),
+                    io_lib:fwrite("On avarage a logical switch with ~p ports"
+                                  ++ " consumes ~p kb.~n",
+                                  [Ports, MemPerSwitchAcc/(Switches - 1)]),
+                    [append]);
+increasing_switches(LincNode, Ports, Switches, MaxSwitches, Data) ->
+    ok = generate_config(Ports, Switches),
+    LincNodePort = start_linc_node(LincNode),
+    Mem = test_memory(LincNode),
+    ok = stop_linc_node(LincNode, LincNodePort),
+    NewData = case Switches of
+                  0 ->
+                      write_result(switches, Switches, Mem, undef),
+                      {Mem, 0};
+                  _ ->
+                      {LastMem, MemPerSwitchAcc} = Data,
+                      Diff = Mem - LastMem,
+                      write_result(switches, Switches, Mem, Diff),
+                      {Mem, MemPerSwitchAcc + Diff}
+              end,
+    increasing_switches(
+      get_linc_node_name(), Ports, Switches + 1, MaxSwitches, NewData).
+
+increasing_ports(LincNode, PortsCnt, Interval, MaxPortsCnt, TestData)
+  when PortsCnt > MaxPortsCnt ->
+    increasing_ports(
+      LincNode,
+      MaxPortsCnt,
+      MaxPortsCnt rem Interval,
+      MaxPortsCnt,
+      TestData);
+increasing_ports(LincNode, PortsCnt, Interval, MaxPortsCnt, TestData) ->
+    ok  = generate_config(PortsCnt, 1),
+    LincNodePort = start_linc_node(LincNode),
+    NewTestData = case PortsCnt of
+                      0 ->
+                          Mem = test_memory(LincNode),
+                          write_result(ports, PortsCnt, Mem, undef),
+                          {Mem, []};
+                      _ ->
+                          Mem = test_memory(LincNode),
+                          {LastMem, PortAvgMem} = TestData,
+                          write_result(ports, PortsCnt, Mem,
+                                       Diff = Mem - LastMem),
+                          {Mem, [Diff div Interval | PortAvgMem]}
+                  end,
+    ok = stop_linc_node(LincNode, LincNodePort),
+    case PortsCnt == MaxPortsCnt of
+        true ->
+            {_, PortAvgMem2} = NewTestData,
+            file:write_file(result_file(ports),
+                            io_lib:fwrite("On average a port consumes ~p kb.~n",
+                                          [lists:foldl(fun(X, Acc) ->
+                                                               X + Acc end,
+                                                       0, PortAvgMem2)
+                                           / length(PortAvgMem2)]),
+                            [append]);
+        _ ->
+            increasing_ports(get_linc_node_name(),
+                             PortsCnt + Interval,
+                             Interval,
+                             MaxPortsCnt,
+                             NewTestData)
+    end.
+
+test_memory(LincNode) ->
+    Pid = self(),
+    spawn(LincNode, fun() ->
+                            Pid ! {mem_test, erlang:memory(total)}
+                    end),
+    receive
+        {mem_test, Memory} ->
+            io:format("Got memory usage: ~p kb.~n", [Memory]),
+            Memory div 1024
+    after
+        5000 ->
+            io:format("No response from ~p.~n", [LincNode]),
+            0
+    end.
+
+start_linc_node(LincNode) ->
+    Cmd = "erl -env ERL_MAX_ETS_TABLES 6000 "
+        ++ code_paths()
+        ++ " -config " ++ ?CONFIG_FILE
+        ++ " -setcookie " ++ atom_to_list(?COOKIE)
+        ++ " -sname " ++ atom_to_list(LincNode)
+        ++ " -detached"
+        ++ " -eval \""
+        ++ eval(Msg = hello)
+        ++ "\"",
+    LincNodePort = erlang:open_port({spawn, Cmd}, []),
+    io:format("Waiting for test node to connect..."),
+    receive
+        Msg ->
+            io:format("connected~n")
+    after
+        20000 ->
+            io:format("Error while starting test node~n")
+    end,
+    LincNodePort.
+
+stop_linc_node(LincNode, LincNodePort) ->
+    %% port_close(LincNodePort).
+    spawn(LincNode, fun() ->
+                            init:stop()
+                    end),
+    receive
+        {'EXIT', LincNodePort, normal} ->
+            ok
+    after
+        10000 ->
+            io:format("LINC node: not exitted~n"),
+            error
+    end.
+
+code_paths() ->
+    Paths = lists:foldl(fun(Path, Acc) ->
+                                Acc ++ filelib:wildcard(Path)
+                        end, [], ["../apps/*/ebin", "../deps/*/ebin"]),
+    lists:foldl(fun(Path, Acc) ->
+                        Acc ++ " -pa " ++ Path
+                end, [], Paths).
+
+eval(Msg) ->
+    {registered_name, ProcName} = process_info(self(), registered_name),
+    "lists:map(fun application:start/1,
+                                       [kernel, stdlib, public_key, crypto, ssl,
+                                        compiler, syntax_tools, runtime_tools,
+                                        xmerl, mnesia, lager, linc]),"
+        ++ "true = net_kernel:connect_node(" ++ atom_to_list(node()) ++ "),"
+        ++ "{" ++ atom_to_list(ProcName) ++ "," ++ atom_to_list(node()) ++ "}"
+        ++ " ! " ++ atom_to_list(Msg) ++ ".".
+
+
+ports_result_header() ->
+    "Ports | Memory | Difference\n".
+
+switches_result_header() ->
+    "Switches | Memory | Difference\n".
+
+result_line(0, Mem, _) ->
+    "0 " ++ integer_to_list(Mem) ++ " none\n";
+result_line(PortsCnt, Mem, Diff) ->
+    integer_to_list(PortsCnt)
+        ++ " "
+        ++ integer_to_list(Mem)
+        ++ " "
+        ++ integer_to_list(Diff)
+        ++ "\n".
+
+generate_config(Ports, Switches) ->
+    file:write_file(?CONFIG_FILE,
+                         io_lib:fwrite(
+                           "~p.~n",
+                           [config_generator:generate(Ports, Switches)])).
+
+write_result(Type, Cnt, Mem, Diff) ->
+    Content = case Cnt of
+                  0 ->
+                      result_header(Type) ++ result_line(0, Mem, undef);
+                  _ ->
+                      result_line(Cnt, Mem, Diff)
+              end,
+    ok = file:write_file(result_file(Type), Content, case Cnt of
+                                                    0 -> [write];
+                                                    _ -> [append]
+                                                end).
+result_file(Type) ->
+    case Type of
+        ports -> "ports.test";
+        switches -> "switches.test"
+    end.
+
+result_header(Type) ->
+    case Type of
+        ports ->
+            ports_result_header();
+        switches ->
+            switches_result_header()
+    end.
+
+get_linc_node_name() ->
+    list_to_atom(?LINC_NODE_NAME_BASE
+                 ++ integer_to_list(element(3, now()))
+                 ++ "@localhost").
+
+clean_up() ->
+    file:delete(?CONFIG_FILE),
+    lists:foreach(fun(Dir) ->
+                          ok = delete_directory(Dir)
+                  end, [ ?LOG_DIR | filelib:wildcard(?MNESIA_DIR_BASE ++ "*")]).
+
+delete_directory(Dir) ->
+    lists:foreach(fun(File) ->
+                          ok = file:delete(File)
+                  end, filelib:wildcard(Dir ++ "/*")),
+    ok = file:del_dir(Dir).

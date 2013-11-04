@@ -460,7 +460,7 @@ scenario(masked_vlan_id) ->
      flow_add([],
               [{vlan_vid, <<(16#32 bor 16#1000):13>>,
                 <<(16#32 bor 16#1000):13>>}],
-             [{write_actions, [{output, 2, no_buffer}]}])];
+              [{write_actions, [{output, 2, no_buffer}]}])];
 
 %% Scenario motivated by #111
 %% (https://github.com/FlowForwarding/LINC-Switch/issues/111).
@@ -480,6 +480,20 @@ scenario(sctp_src_port_change) ->
                {ip_proto, <<?IPPROTO_SCTP:8>>}],
               [{apply_actions, [{set_field, sctp_src, <<32999:16>>}]},
                {write_actions, [{output, 2, no_buffer}]}])];
+
+%% Scenario motivated by #105
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/105).
+%%
+%% This scenario proves that LINC-Swich accepts several OFP messages that spans
+%% one TCP datagram.
+scenario(several_messages_in_one_tcp_packet) ->
+    [lists:foldr(fun(Message, Acc) ->
+                         {ok, EncodedMessage} = of_protocol:encode(Message),
+                         <<EncodedMessage/binary, Acc/binary>>
+                 end, <<>>, [desc_request(),
+                             port_desc_request(),
+                             flow_mod_table_miss(),
+                             flow_mod_delete_all_flows()])];
 
 scenario(table_miss) ->
     [flow_mod_table_miss()];

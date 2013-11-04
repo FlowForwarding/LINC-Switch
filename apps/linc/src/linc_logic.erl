@@ -351,8 +351,11 @@ code_change(_OldVersion, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 start_and_register_ofp_channels_sup(SwitchId) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
-                  permanent, 5000, supervisor, [ofp_channel_sup]},
+                  temporary, 5000, supervisor, [ofp_channel_sup]},
     {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
                                                              linc_sup),
                                                  ChannelSup),
@@ -394,10 +397,13 @@ controllers_listener_args(SwitchId, {Address, Port, tcp}, Opts) ->
     [ParsedAddress, Port, linc:lookup(SwitchId, channel_sup), Opts].
 
 start_controllers_listener(ConnListenerArgs, LincSupPid) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
     ConnListenerSupSpec =
         {ofp_conn_listener_sup, {ofp_conn_listener_sup, start_link,
                                  ConnListenerArgs},
-         permanent, infinity, supervisor, [ofp_conn_listener_sup]},
+         temporary, infinity, supervisor, [ofp_conn_listener_sup]},
     {ok, ConnListenerSupPid} = supervisor:start_child(LincSupPid,
                                                       ConnListenerSupSpec),
     ConnListenerSupPid.

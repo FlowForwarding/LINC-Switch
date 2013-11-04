@@ -30,6 +30,7 @@
          convert_port_features/1,
          convert_port_state/1,
          read_and_update_startup/0,
+         read_startup_without_of_config/0,
          get_certificates/0,
          get_switch_state/1]).
 
@@ -350,6 +351,9 @@ read_and_update_startup() ->
     mnesia_write(startup, NewStartup#ofconfig{
                             certificates = Startup#ofconfig.certificates}),
     Config.
+
+read_startup_without_of_config() ->
+    ok.
 
 update_switches([], _, New) ->
     New;

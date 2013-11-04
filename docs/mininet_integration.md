@@ -38,22 +38,24 @@ The controller will connect to the switch and sends it a flow modification messa
 `h1 ping -c 3 h2`  
 Optionally you can install Wireshark with [OpenFlow 1.3 dissector](https://github.com/CPqD/ofdissector) and observe OpenFlow protocol messages.
 
-### NOX 1.3 Controller ###
-To experiment with LINC on Mininet you can also utilize [NOX 1.3 controller](https://github.com/CPqD/nox13oflib) that is shipped with Mininet.
+### Other controllers ###
+You can use other controllers to experiment with LINC on Mininet. To make LINC connect to a remote controller use below syntax:  
+`sudo bin/mn --controller=remote,ip=<CONTROLLER IP>>,port=<CONTROLLER PORT> --switch=linc`
+
+For example you can utilize [NOX 1.3 controller](https://github.com/CPqD/nox13oflib) that is shipped with Mininet.
 Good starting point is running NOX with switch backend. To achieve this setup run NOX controller (by default NOX is installed in the same directory as Mininet):  
-`cd nox13oflib/build/src && sudo ./nox_core -i ptcp:6633 switch`  
+`cd nox13oflib/build/src && sudo ./nox_core -i ptcp:6655 switch`  
+Let's assume that this NOX instance is running on `10.0.0.23` machine. Then you have to start Mininet with LINC as follows:  
+`sudo bin/mn --controller=remote,ip=10.0.0.23,port=6655 --switch=remote`  
 Then perform two first steps from the [ping](#ping) chapter. Now you can try to run ping between the two hosts.
 
-> Please note that as for the time being LNIC will only connect to a controller listening on localhost and port 6633.
+> By default a switch started by Mininet tries to connect to a controller that listens on 127.0.0.1:6633.
 
 ### Further reading ###
 The best starting point to dive into the Mininet further is to follow the [Mininet Walkthrough](http://mininet.org/walkthrough/).
 
-> Please note that the LINC-Switch is integrated with the Mininet **at very basic level** and not all features will work. Particularly the LINC-Switch was not tested with other controllers.
+> Please note that the LINC-Switch is integrated with the Mininet **at very basic level** and not all features will work.
 
 The future
 ----------
-It the nearest future the integration will also cover:
-* automatic Mininet installation in the [LINC-environment](https://github.com/mentels/LINC-environment) that already has the OpenFlow 1.3 dissector on board,
-* LINC-Switch cooperation with other controllers shipped with the Mininet,
-* support for more Mininet features.
+It the nearest future we are going to support more Mininet features.

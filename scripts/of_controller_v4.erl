@@ -495,6 +495,14 @@ scenario(several_messages_in_one_tcp_packet) ->
                              flow_mod_table_miss(),
                              flow_mod_delete_all_flows()])];
 
+%% Scenario motivated by #208
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/208).
+%%
+%% This scenario verifies that all table features property types are correctly
+%% encoded (apart from experimenter ones).
+scenario(all_table_0_features) ->
+    [all_table_features_request(0)];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 
@@ -1106,6 +1114,31 @@ message(Body) ->
     #ofp_message{version = 4,
                  xid = get_xid(),
                  body = Body}.
+
+all_table_features_request(TableId) ->
+    message(#ofp_table_features_request{
+               body = [#ofp_table_features{
+                          table_id = TableId,
+                          name = <<"flow table 0">>,
+                          metadata_match = <<0:64>>,
+                          metadata_write = <<0:64>>,
+                          max_entries = 10,
+                          properties =
+                              [#ofp_table_feature_prop_instructions{},
+                               #ofp_table_feature_prop_instructions_miss{},
+                               #ofp_table_feature_prop_next_tables{},
+                               #ofp_table_feature_prop_next_tables_miss{},
+                               #ofp_table_feature_prop_write_actions{},
+                               #ofp_table_feature_prop_write_actions_miss{},
+                               #ofp_table_feature_prop_apply_actions{},
+                               #ofp_table_feature_prop_apply_actions_miss{},
+                               #ofp_table_feature_prop_match{},
+                               #ofp_table_feature_prop_wildcards{},
+                               #ofp_table_feature_prop_write_setfield{},
+                               #ofp_table_feature_prop_write_setfield_miss{},
+                               #ofp_table_feature_prop_apply_setfield{},
+                               #ofp_table_feature_prop_apply_setfield_miss{}]
+                         }]}).
 
 get_xid() ->
     random:uniform(1 bsl 32 - 1).

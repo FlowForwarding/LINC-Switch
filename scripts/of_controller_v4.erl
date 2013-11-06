@@ -505,6 +505,21 @@ scenario(hello_with_bad_version) ->
 scenario(_Unknown) ->
     lager:debug("Unknown controller's scenario. Running `all_messages` one."),
     scenario(all_messages).
+%% Scenario motivated by #218
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/218).
+%%
+%% This scenario reproduces the error reported in the bug. The correct behavior
+%% should be that the switch sends a single packet_in message to a controller
+%% each time it receives a packet on port 1.
+scenario(group_with_output_to_controller) ->
+    GroupId = 10,
+    [flow_mod_delete_all_flows(),
+     delete_all_groups(),
+     group_mod_bucket_with_output_to_controller(GroupId),
+     flow_add([],
+              [{in_port, <<1:32>>}],
+              [{write_actions, [{group, GroupId}]}])];
+
 
 
 loop(Connections, Scenario) ->
@@ -734,6 +749,22 @@ port_mod() ->
                           config = [],
                           mask = [],
                           advertise = [fiber]}).
+
+group_mod_bucket_with_output_to_controller(GroupId) ->
+    message(#ofp_group_mod{
+               command  = add,
+               type = all,
+               group_id = GroupId,
+               buckets = [#ofp_bucket{
+                             actions = [#ofp_action_output{port = controller}]}]
+              }).
+
+delete_all_groups() ->
+    message(#ofp_group_mod{
+               command = delete,
+               type = all,
+               group_id = 16#fffffffc
+              }).
 
 port_desc_request() ->
     message(#ofp_port_desc_request{}).

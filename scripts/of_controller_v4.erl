@@ -498,13 +498,6 @@ scenario(several_messages_in_one_tcp_packet) ->
 scenario(table_miss) ->
     [flow_mod_table_miss()];
 
-%% This scenario is empty as hello message is malformed and sent just after
-%% the connection is established.
-scenario(hello_with_bad_version) ->
-    [];
-scenario(_Unknown) ->
-    lager:debug("Unknown controller's scenario. Running `all_messages` one."),
-    scenario(all_messages).
 %% Scenario motivated by #218
 %% (https://github.com/FlowForwarding/LINC-Switch/issues/218).
 %%
@@ -519,6 +512,14 @@ scenario(group_with_output_to_controller) ->
      flow_add([],
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
+
+%% This scenario is empty as hello message is malformed and sent just after
+%% the connection is established.
+scenario(hello_with_bad_version) ->
+    [];
+scenario(_Unknown) ->
+    lager:debug("Unknown controller's scenario. Running `all_messages` one."),
+    scenario(all_messages).
 
 
 

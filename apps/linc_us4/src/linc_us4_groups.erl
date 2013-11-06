@@ -355,12 +355,11 @@ apply_bucket(#linc_bucket{
 
     %%ActionsSet = ordsets:from_list(Actions),
     case linc_us4_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
-        {output, PortNo, NewPkt} ->
-            linc_us4_port:send(NewPkt, PortNo),
+        {error, Reason} ->
+            larger:error("Applying bucket with ID ~p failed becase: ~p~n",
+                         [BucketId, Reason]),
             ok;
-        {group, GroupId, NewPkt} ->
-            ?MODULE:apply(GroupId, NewPkt); %% tail-recur & should return ok
-        {drop, _} ->
+        _SideEffects ->
             ok
     end.
 

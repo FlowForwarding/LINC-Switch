@@ -85,18 +85,23 @@
 %% @doc Start the switch.
 -spec start(any()) -> {ok, Version :: 4, state()}.
 start(BackendOpts) ->
-    {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
-    {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
-    {config, Config} = lists:keyfind(config, 1, BackendOpts),
-    BufferState = linc_buffer:initialize(SwitchId),
-    {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
-    linc_us4_groups:initialize(SwitchId),
-    FlowState = linc_us4_flow:initialize(SwitchId),
-    linc_us4_port:initialize(SwitchId, Config),
-    {ok, 4, #state{flow_state = FlowState,
-                   buffer_state = BufferState,
-                   switch_id = SwitchId,
-                   datapath_mac = DatapathMac}}.
+    try
+        {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
+        {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
+        {config, Config} = lists:keyfind(config, 1, BackendOpts),
+        BufferState = linc_buffer:initialize(SwitchId),
+        {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
+        linc_us4_groups:initialize(SwitchId),
+        FlowState = linc_us4_flow:initialize(SwitchId),
+        linc_us4_port:initialize(SwitchId, Config),
+        {ok, 4, #state{flow_state = FlowState,
+                       buffer_state = BufferState,
+                       switch_id = SwitchId,
+                       datapath_mac = DatapathMac}}
+    catch
+        _:Error ->
+            {error, Error}
+    end.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
@@ -107,6 +112,8 @@ stop(#state{flow_state = FlowState,
     linc_us4_flow:terminate(FlowState),
     linc_us4_groups:terminate(SwitchId),
     linc_buffer:terminate(BufferState),
+    ok;
+stop([]) ->
     ok.
 
 -spec handle_message(ofp_message_body(), state()) ->

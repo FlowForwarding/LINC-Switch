@@ -1302,10 +1302,8 @@ rate(Features) ->
                               '100Gb';
                          ('1tb_fd') ->
                               '1Tb';
-                         (other) ->
-                              other;
                          (_) ->
-                              invalid
+                              other
                       end, Features),
     lists:filter(fun(invalid) ->
                          true;

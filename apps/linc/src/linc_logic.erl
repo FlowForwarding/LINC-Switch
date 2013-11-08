@@ -305,14 +305,18 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                                   {datapath_mac, extract_mac(DatapathId)}),
     BackendOpts3 = lists:keystore(config, 1, BackendOpts2,
                                   {config, Config}),
-    {ok, Version, BackendState2} = BackendMod:start(BackendOpts3),
-    start_and_register_ofp_channels_sup(SwitchId),
-    Opts = [{controlling_process, self()}, {version, Version}],
-    open_ofp_channels(Opts, State),
-    start_and_register_controllers_listener(Opts, State),
-    {noreply, State#state{version = Version,
-                          backend_state = BackendState2,
-                          datapath_id = DatapathId}};
+    case BackendMod:start(BackendOpts3) of
+        {ok, Version, BackendState2} ->
+            start_and_register_ofp_channels_sup(SwitchId),
+            Opts = [{controlling_process, self()}, {version, Version}],
+            open_ofp_channels(Opts, State),
+            start_and_register_controllers_listener(Opts, State),
+            {noreply, State#state{version = Version,
+                                  backend_state = BackendState2,
+                                  datapath_id = DatapathId}};
+        {error, Reason} ->
+            {stop, {backend_failed, Reason}, State}
+    end;
 
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
@@ -339,8 +343,17 @@ handle_info({ofp_closed, _Pid, {Host, Port, Id, Reason}}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{backend_mod = BackendMod,
-                          backend_state = BackendState}) ->
+terminate(Reason, #state{switch_id = SwitchId, backend_mod = BackendMod,
+                         backend_state = BackendState}) ->
+    case Reason of
+        {backend_failed, DeatiledReason} ->
+            ?ERROR("Backend module ~p failed to start because: ~p",
+                   [BackendMod, DeatiledReason]),
+            supervisor:terminate_child(linc:lookup(SwitchId, linc_sup),
+                                       linc_logic);
+        _ ->
+            ok
+    end,
     BackendMod:stop(BackendState).
 
 code_change(_OldVersion, State, _Extra) ->
@@ -351,8 +364,11 @@ code_change(_OldVersion, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 start_and_register_ofp_channels_sup(SwitchId) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
     ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
-                  permanent, 5000, supervisor, [ofp_channel_sup]},
+                  temporary, 5000, supervisor, [ofp_channel_sup]},
     {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
                                                              linc_sup),
                                                  ChannelSup),
@@ -394,10 +410,13 @@ controllers_listener_args(SwitchId, {Address, Port, tcp}, Opts) ->
     [ParsedAddress, Port, linc:lookup(SwitchId, channel_sup), Opts].
 
 start_controllers_listener(ConnListenerArgs, LincSupPid) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
     ConnListenerSupSpec =
         {ofp_conn_listener_sup, {ofp_conn_listener_sup, start_link,
                                  ConnListenerArgs},
-         permanent, infinity, supervisor, [ofp_conn_listener_sup]},
+         temporary, infinity, supervisor, [ofp_conn_listener_sup]},
     {ok, ConnListenerSupPid} = supervisor:start_child(LincSupPid,
                                                       ConnListenerSupSpec),
     ConnListenerSupPid.

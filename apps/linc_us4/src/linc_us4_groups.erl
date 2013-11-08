@@ -141,12 +141,12 @@ modify(SwitchId, #ofp_group_mod{ command = add,
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
     RefersToGroups = calculate_refers_to_groups(Buckets, ordsets:new()),
     Entry = #linc_group{
-               id = Id,
-               type = Type,
-               buckets = OFSBuckets,
-               total_weight = calculate_total_weight(Buckets),
-               refers_to_groups = RefersToGroups
-              },
+      id = Id,
+      type = Type,
+      buckets = OFSBuckets,
+      total_weight = calculate_total_weight(Buckets),
+      refers_to_groups = RefersToGroups
+     },
     case ets:insert_new(linc:lookup(SwitchId, group_table), Entry) of
         true ->
             %% just in case, zero stats
@@ -170,11 +170,11 @@ modify(SwitchId, #ofp_group_mod{ command = modify,
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
     Entry = #linc_group{
-               id = Id,
-               type = Type,
-               buckets = Buckets,
-               total_weight = calculate_total_weight(Buckets)
-              },
+      id = Id,
+      type = Type,
+      buckets = wrap_buckets_into_linc_buckets(Id, Buckets),
+      total_weight = calculate_total_weight(Buckets)
+     },
     %% Reset group counters
     %% Delete stats for buckets
     case group_get(SwitchId, Id) of

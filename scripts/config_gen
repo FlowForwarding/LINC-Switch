@@ -89,7 +89,8 @@ generate_sys_config(Switches, Controllers) ->
       ]},
      {enetconf,
       [
-       {capabilities, [{base, {1, 1}},
+       {capabilities, [{base, {1, 0}},
+                       {base, {1, 1}},
                        {startup, {1, 0}},
                        {'writable-running', {1, 0}}]},
        {callback_module, linc_ofconfig},

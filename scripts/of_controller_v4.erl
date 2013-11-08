@@ -516,7 +516,26 @@ scenario(group_with_output_to_controller) ->
     GroupId = 10,
     [flow_mod_delete_all_flows(),
      delete_all_groups(),
-     group_mod_bucket_with_output_to_controller(GroupId),
+     group_mod_add_bucket_with_output_to_controller(GroupId),
+     flow_add([],
+              [{in_port, <<1:32>>}],
+              [{write_actions, [{group, GroupId}]}])];
+
+%% Scenario motivated by #228
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/228).
+%%
+%% This scenario first adds a group that forwards packets to controller and then
+%% modifies this group so that packets are forwarded to port 2. Then it sends
+%% a flow mod that matches packets on port 1 and applies previously defined group
+%% to them.
+%%
+%% In result packets from port 1 should be sent out through port 2.
+scenario(group_mod_modify_group) ->
+    GroupId =10,
+    [flow_mod_delete_all_flows(),
+     delete_all_groups(),
+     group_mod_add_bucket_with_output_to_controller(GroupId),
+     group_mod_modify_bucket(GroupId),
      flow_add([],
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
@@ -759,13 +778,22 @@ port_mod() ->
                           mask = [],
                           advertise = [fiber]}).
 
-group_mod_bucket_with_output_to_controller(GroupId) ->
+group_mod_add_bucket_with_output_to_controller(GroupId) ->
     message(#ofp_group_mod{
                command  = add,
                type = all,
                group_id = GroupId,
                buckets = [#ofp_bucket{
                              actions = [#ofp_action_output{port = controller}]}]
+              }).
+
+group_mod_modify_bucket(GroupId) ->
+    message(#ofp_group_mod{
+               command  = modify,
+               type = all,
+               group_id = GroupId,
+               buckets = [#ofp_bucket{
+                             actions = [#ofp_action_output{port = 2}]}]
               }).
 
 delete_all_groups() ->

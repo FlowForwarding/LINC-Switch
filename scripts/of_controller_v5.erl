@@ -61,7 +61,8 @@
          flow_mod_output_to_port/3,
          async_config/3,
          role_request/2,
-         flow_mod_issue153/0
+         flow_mod_issue153/0,
+         table_features_keep_table_0/0
          ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -82,17 +83,29 @@
 start() ->
     start_scenario(6633, all_messages).
 
-start(Port) ->
-    start_scenario(Port, all_messages).
+start(PortOrRemotePeer) ->
+    start_scenario(PortOrRemotePeer, all_messages).
 
 start_scenario(Scenario) ->
     start_scenario(6633, Scenario).
 
-start_scenario(Port, Scenario) ->
+start_scenario(PortOrRemotePeer, Scenario) ->
     lager:start(),
-    {ok, spawn(fun() ->
-                       init(Port, Scenario)
-               end)}.
+    try passive_or_active_controller(PortOrRemotePeer) of
+        {passive, Port} ->
+            {ok, spawn(fun() ->
+                               init(passive, Port, Scenario)
+                       end)};
+        {active, Address, Port} ->
+            {ok, spawn(fun() ->
+                               init(active, {Address, Port}, Scenario)
+                       end)}
+    catch
+        error:bad_argument ->
+            lager:error("Incorrectly formed RemotePeer argument: ~p",
+                        [PortOrRemotePeer]),
+            init:stop()
+    end.
 
 stop(Pid) ->
     Pid ! stop.
@@ -119,7 +132,7 @@ barrier(Pid, To) ->
 %%% Controller logic
 %%%-----------------------------------------------------------------------------
 
-init(Port, Scenario) ->
+init(passive, Port, Scenario) ->
     Pid = self(),
     spawn_link(fun() ->
                        Opts = [binary, {packet, raw},
@@ -127,22 +140,40 @@ init(Port, Scenario) ->
                        {ok, LSocket} = gen_tcp:listen(Port, Opts),
                        accept(Pid, LSocket, Scenario)
                end),
+    loop([], Scenario);
+init(active, {Address, Port}, Scenario) ->
+    connect(self(), Address, Port, Scenario),
     loop([], Scenario).
 
 accept(Parent, LSocket, Scenario) ->
     {ok, Socket} = gen_tcp:accept(LSocket),
     Pid = spawn_link(fun() ->
-                             gen_tcp:send(Socket,
-                                          encoded_hello_message(Scenario)),
-                             {ok, Parser} = ofp_parser:new(?VERSION),
-                             inet:setopts(Socket, [{active, once}]),
-                             handle(#cstate{parent = Parent,
-                                            socket = Socket,
-                                            parser = Parser})
+                             handle_connection(Parent, Socket, Scenario)
                      end),
     ok = gen_tcp:controlling_process(Socket, Pid),
-    Parent ! {accept, Socket, Pid},
+    Parent ! {connected, passive, Socket, Pid},
     accept(Parent, LSocket, Scenario).
+
+connect(Parent, Address, Port, Scenario) ->
+    Opts = [binary, {packet, raw}, {active, once}, {reuseaddr, true}],
+    case gen_tcp:connect(Address, Port, Opts) of
+        {ok, Socket} ->
+            Pid = spawn_link(fun() ->
+                                     handle_connection(Parent, Socket, Scenario)
+                             end),
+            ok = gen_tcp:controlling_process(Socket, Pid),
+            Parent ! {connected, active, Socket, Pid};
+        {error, Reason} ->
+            lager:error("Cannot connect to controller ~p:~p. Reason: ~p.~n",
+                        [Address, Port, Reason])
+    end.
+
+handle_connection(Parent, Socket, Scenario) ->
+    gen_tcp:send(Socket, encoded_hello_message(Scenario)),
+    {ok, Parser} = ofp_parser:new(?VERSION),
+    inet:setopts(Socket, [{active, once}]),
+    handle(#cstate{parent = Parent, socket = Socket, parser = Parser}).
+
 
 scenario(all_messages) ->
     [flow_mod_table_miss,
@@ -376,8 +407,138 @@ scenario(pop_mpls) ->
               [{apply_actions, [{pop_mpls, 16#0800}]},
                {write_actions, [{output, 2, no_buffer}]}])];
 
+%% Scenario motivated by #146
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/146). We
+%% create a flow entry in flow table 1, ask for flow table 1 to be
+%% deleted, and then verify that the flow entry has been deleted.
+%%
+%% In the first flow stats response, the flow entry should be listed,
+%% but in the second response, it should be gone.
+scenario(table_features_delete_flow_entries) ->
+    Cookie = <<"flow_del">>,
+    [flow_add([{table_id, 1},
+               {cookie, Cookie}],
+              [],
+              [{write_actions, [{output, controller, no_buffer}]}]),
+     flow_stats_request_with_cookie(Cookie),
+     table_features_keep_table_0,
+     flow_stats_request_with_cookie(Cookie)];
+
+%% Scenario motivated by #113
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/113).
+%%
+%% This scenario requests that the switch not send flow_removed
+%% messages when a flow entry expires because of a hard timeout, and
+%% then creates a flow entry with a hard timeout of 1 second.
+%%
+%% The expected behaviour is that the switch log should contain a
+%% message like the following but no crash reports:
+%%
+%% Message: ... filtered and not sent through the channel with id: 0
+scenario(flow_removed_hard_timeout) ->
+    [async_config({[], []},
+                  {[], []},
+                  %% hard_timeout is not set
+                  {[idle_timeout, delete, group_delete],
+                   [idle_timeout, delete, group_delete]}),
+     flow_add([{hard_timeout, 1},
+               {flags, [send_flow_rem]}],
+              [],
+              [{write_actions, [{output, controller, no_buffer}]}])];
+
+%% Scenario motivated by #134
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/134).
+%% It sends a flow modification message that should make switch match frames
+%% tagged with VID 50 and forward them to port no 2. To verify that this scenario
+%% works start the switch with two ports and send prepared packet to the first
+%% one using tcpreplay:
+%% sudo tcpreplay -i tap0 pcap.data/ping_vlan_50.pcap
+%% Using some packet capturing tool (like Wireshark) you should see that this
+%% packet will appear on the second port.
+scenario(masked_vlan_id) ->
+    [flow_mod_delete_all_flows(),
+     flow_add([],
+              [{vlan_vid, <<(16#32 bor 16#1000):13>>,
+                <<(16#32 bor 16#1000):13>>}],
+              [{write_actions, [{output, 2, no_buffer}]}])];
+
+%% Scenario motivated by #111
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/111).
+%%
+%% This scenarios sends a flow modification message to the switch that make it
+%% change SCTP source port in every packet and forwards it to the port no 2.
+%%
+%% To run this scenario start switch with two ports (1 and 2). Send pcap file
+%% pcap.data/sctp_src_port_32836.pcap on port 1 and verify the output
+%% on the other port. The frame going out through the port no 2 should has
+%% SCTP source port changed to 32999.
+scenario(sctp_src_port_change) ->
+    [flow_mod_delete_all_flows(),
+     flow_add([],
+              [{eth_type, <<(16#0800):16>>},
+               %% SCTP payload
+               {ip_proto, <<?IPPROTO_SCTP:8>>}],
+              [{apply_actions, [{set_field, sctp_src, <<32999:16>>}]},
+               {write_actions, [{output, 2, no_buffer}]}])];
+
+%% Scenario motivated by #105
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/105).
+%%
+%% This scenario proves that LINC-Swich accepts several OFP messages that spans
+%% one TCP datagram.
+scenario(several_messages_in_one_tcp_packet) ->
+    [lists:foldr(fun(Message, Acc) ->
+                         {ok, EncodedMessage} = of_protocol:encode(Message),
+                         <<EncodedMessage/binary, Acc/binary>>
+                 end, <<>>, [desc_request(),
+                             port_desc_request(),
+                             flow_mod_table_miss(),
+                             flow_mod_delete_all_flows()])];
+
+%% Scenario motivated by #208
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/208).
+%%
+%% This scenario verifies that all table features property types are correctly
+%% encoded (apart from experimenter ones).
+scenario(all_table_0_features) ->
+    [all_table_features_request(0)];
+
 scenario(table_miss) ->
     [flow_mod_table_miss()];
+
+%% Scenario motivated by #218
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/218).
+%%
+%% This scenario reproduces the error reported in the bug. The correct behavior
+%% should be that the switch sends a single packet_in message to a controller
+%% each time it receives a packet on port 1.
+scenario(group_with_output_to_controller) ->
+    GroupId = 10,
+    [flow_mod_delete_all_flows(),
+     delete_all_groups(),
+     group_mod_add_bucket_with_output_to_controller(GroupId),
+     flow_add([],
+              [{in_port, <<1:32>>}],
+              [{write_actions, [{group, GroupId}]}])];
+
+%% Scenario motivated by #228
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/228).
+%%
+%% This scenario first adds a group that forwards packets to controller and then
+%% modifies this group so that packets are forwarded to port 2. Then it sends
+%% a flow mod that matches packets on port 1 and applies previously defined group
+%% to them.
+%%
+%% In result packets from port 1 should be sent out through port 2.
+scenario(group_mod_modify_group) ->
+    GroupId =10,
+    [flow_mod_delete_all_flows(),
+     delete_all_groups(),
+     group_mod_add_bucket_with_output_to_controller(GroupId),
+     group_mod_modify_bucket(GroupId),
+     flow_add([],
+              [{in_port, <<1:32>>}],
+              [{write_actions, [{group, GroupId}]}])];
 
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
@@ -388,19 +549,27 @@ scenario(_Unknown) ->
     scenario(all_messages).
 
 
+
 loop(Connections, Scenario) ->
     receive
-        {accept, Socket, Pid} ->
+        {connected, Type, Socket, Pid} ->
             {ok, {Address, Port}} = inet:peername(Socket),
-            lager:info("Accepted connection from ~p {~p,~p}",
-                       [Socket, Address, Port]),
+            case Type of
+                passive ->
+                    lager:info("Accepted connection from ~p {~p,~p}",
+                               [Socket, Address, Port]);
+                active ->
+                    lager:info(
+                      "Connected to listening swtich through ~p {~p,~p}",
+                      [Socket, Address, Port])
+            end,
             [begin
                  Message = case MsgOrMsgGen of
-                           MsgGen when is_atom(MsgGen) ->
-                               ?MODULE:MsgGen();
-                           Msg ->
-                               Msg
-                       end,
+                               MsgGen when is_atom(MsgGen) ->
+                                   ?MODULE:MsgGen();
+                               Msg ->
+                                   Msg
+                           end,
                  timer:sleep(200),
                  do_send(Socket, Message)
              end || MsgOrMsgGen  <- scenario(Scenario)],
@@ -559,6 +728,11 @@ desc_request() ->
 flow_stats_request() ->
     message(#ofp_flow_stats_request{table_id = all}).
 
+flow_stats_request_with_cookie(Cookie) ->
+    message(#ofp_flow_stats_request{table_id = all,
+                                    cookie = Cookie,
+                                    cookie_mask = <<-1:64>>}).
+
 aggregate_stats_request() ->
     message(#ofp_aggregate_stats_request{table_id = all}).
 
@@ -603,6 +777,31 @@ port_mod() ->
                           config = [],
                           mask = [],
                           advertise = [fiber]}).
+
+group_mod_add_bucket_with_output_to_controller(GroupId) ->
+    message(#ofp_group_mod{
+               command  = add,
+               type = all,
+               group_id = GroupId,
+               buckets = [#ofp_bucket{
+                             actions = [#ofp_action_output{port = controller}]}]
+              }).
+
+group_mod_modify_bucket(GroupId) ->
+    message(#ofp_group_mod{
+               command  = modify,
+               type = all,
+               group_id = GroupId,
+               buckets = [#ofp_bucket{
+                             actions = [#ofp_action_output{port = 2}]}]
+              }).
+
+delete_all_groups() ->
+    message(#ofp_group_mod{
+               command = delete,
+               type = all,
+               group_id = 16#fffffffc
+              }).
 
 port_desc_request() ->
     message(#ofp_port_desc_request{}).
@@ -951,12 +1150,55 @@ flow_mod_issue153() ->
                match = #ofp_match{fields = [MatchField]},
                instructions = [Instruction]}).
 
+table_features_keep_table_0() ->
+    message(#ofp_table_features_request{
+               body = [#ofp_table_features{
+                          table_id = 0,
+                          name = <<"flow table 0">>,
+                          metadata_match = <<0:64>>,
+                          metadata_write = <<0:64>>,
+                          max_entries = 10,
+                          properties = [#ofp_table_feature_prop_instructions{}
+                                       , #ofp_table_feature_prop_next_tables{}
+                                       , #ofp_table_feature_prop_write_actions{}
+                                       , #ofp_table_feature_prop_apply_actions{}
+                                       , #ofp_table_feature_prop_match{}
+                                       , #ofp_table_feature_prop_wildcards{}
+                                       , #ofp_table_feature_prop_write_setfield{}
+                                       , #ofp_table_feature_prop_apply_setfield{}
+                                       ]}]}).
+
 %%% Helpers --------------------------------------------------------------------
 
 message(Body) ->
     #ofp_message{version = 5,
                  xid = get_xid(),
                  body = Body}.
+
+all_table_features_request(TableId) ->
+    message(#ofp_table_features_request{
+               body = [#ofp_table_features{
+                          table_id = TableId,
+                          name = <<"flow table 0">>,
+                          metadata_match = <<0:64>>,
+                          metadata_write = <<0:64>>,
+                          max_entries = 10,
+                          properties =
+                              [#ofp_table_feature_prop_instructions{},
+                               #ofp_table_feature_prop_instructions_miss{},
+                               #ofp_table_feature_prop_next_tables{},
+                               #ofp_table_feature_prop_next_tables_miss{},
+                               #ofp_table_feature_prop_write_actions{},
+                               #ofp_table_feature_prop_write_actions_miss{},
+                               #ofp_table_feature_prop_apply_actions{},
+                               #ofp_table_feature_prop_apply_actions_miss{},
+                               #ofp_table_feature_prop_match{},
+                               #ofp_table_feature_prop_wildcards{},
+                               #ofp_table_feature_prop_write_setfield{},
+                               #ofp_table_feature_prop_write_setfield_miss{},
+                               #ofp_table_feature_prop_apply_setfield{},
+                               #ofp_table_feature_prop_apply_setfield_miss{}]
+                         }]}).
 
 get_xid() ->
     random:uniform(1 bsl 32 - 1).
@@ -1009,11 +1251,16 @@ do_send(Connections, {Address, Port}, Message) ->
     end.
 
 do_send(Socket, Message) when is_binary(Message) ->
-    ok = gen_tcp:send(Socket, Message);
+    try
+        gen_tcp:send(Socket, Message)
+    catch
+        _:_ ->
+            ok
+    end;
 do_send(Socket, Message) when is_tuple(Message) ->
     case of_protocol:encode(Message) of
         {ok, EncodedMessage} ->
-            ok = gen_tcp:send(Socket, EncodedMessage);
+            do_send(Socket, EncodedMessage);
         _Error ->
             lager:error("Error in encode of: ~p", [Message])
     end.
@@ -1033,3 +1280,16 @@ encoded_hello_message(Scenario) ->
 
 malform_version_in_hello(<<_:8, Rest/binary>>) ->
     <<(16#5):8, Rest/binary>>.
+
+passive_or_active_controller(Port) when is_integer(Port) ->
+    {passive, Port};
+passive_or_active_controller(RemotePeer) ->
+    case string:tokens(RemotePeer, ":") of
+        [Address, Port] ->
+            {ok, ParsedAddress} = inet_parse:address(Address),
+            {active, ParsedAddress, erlang:list_to_integer(Port)};
+        [Port] ->
+            {passive, erlang:list_to_integer(Port)};
+        _ ->
+            erlang:error(bad_argument, RemotePeer)
+    end.

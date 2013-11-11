@@ -125,6 +125,12 @@ apply(GroupId, #linc_pkt{switch_id = SwitchId} = Pkt) ->
                                              {error, Type :: atom(), Code :: atom()}.
 
 %%------ group_mod ADD GROUP
+modify(_SwitchId, #ofp_group_mod{ command = add, group_id = BadGroupId })
+  when is_atom(BadGroupId); BadGroupId > ?OFPG_MAX ->
+    %% Can't add a group with a reserved group id (represented as
+    %% atoms here), or with a group id greater than the largest
+    %% allowed.
+    {error, #ofp_error_msg{type = group_mod_failed, code = invalid_group}};
 modify(SwitchId, #ofp_group_mod{ command = add,
                                  group_id = Id,
                                  type = Type,
@@ -134,12 +140,12 @@ modify(SwitchId, #ofp_group_mod{ command = add,
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
     RefersToGroups = calculate_refers_to_groups(Buckets, ordsets:new()),
     Entry = #linc_group{
-               id = Id,
-               type = Type,
-               buckets = OFSBuckets,
-               total_weight = calculate_total_weight(Buckets),
-               refers_to_groups = RefersToGroups
-              },
+      id = Id,
+      type = Type,
+      buckets = OFSBuckets,
+      total_weight = calculate_total_weight(Buckets),
+      refers_to_groups = RefersToGroups
+     },
     case ets:insert_new(linc:lookup(SwitchId, group_table), Entry) of
         true ->
             %% just in case, zero stats
@@ -163,11 +169,11 @@ modify(SwitchId, #ofp_group_mod{ command = modify,
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
     Entry = #linc_group{
-               id = Id,
-               type = Type,
-               buckets = Buckets,
-               total_weight = calculate_total_weight(Buckets)
-              },
+      id = Id,
+      type = Type,
+      buckets = wrap_buckets_into_linc_buckets(Id, Buckets),
+      total_weight = calculate_total_weight(Buckets)
+     },
     %% Reset group counters
     %% Delete stats for buckets
     case group_get(SwitchId, Id) of
@@ -347,12 +353,11 @@ apply_bucket(#linc_bucket{
 
     %%ActionsSet = ordsets:from_list(Actions),
     case linc_us5_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
-        {output, PortNo, NewPkt} ->
-            linc_us5_port:send(NewPkt, PortNo),
+        {error, Reason} ->
+            larger:error("Applying bucket with ID ~p failed becase: ~p~n",
+                         [BucketId, Reason]),
             ok;
-        {group, GroupId, NewPkt} ->
-            ?MODULE:apply(GroupId, NewPkt); %% tail-recur & should return ok
-        {drop, _} ->
+        _SideEffects ->
             ok
     end.
 

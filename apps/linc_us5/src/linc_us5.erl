@@ -85,18 +85,23 @@
 %% @doc Start the switch.
 -spec start(any()) -> {ok, Version :: ?VERSION, state()}.
 start(BackendOpts) ->
-    {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
-    {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
-    {config, Config} = lists:keyfind(config, 1, BackendOpts),
-    BufferState = linc_buffer:initialize(SwitchId),
-    {ok, _Pid} = linc_us5_sup:start_backend_sup(SwitchId),
-    linc_us5_groups:initialize(SwitchId),
-    FlowState = linc_us5_flow:initialize(SwitchId),
-    linc_us5_port:initialize(SwitchId, Config),
-    {ok, ?VERSION, #state{flow_state = FlowState,
-                   buffer_state = BufferState,
-                   switch_id = SwitchId,
-                   datapath_mac = DatapathMac}}.
+    try
+        {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
+        {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
+        {config, Config} = lists:keyfind(config, 1, BackendOpts),
+        BufferState = linc_buffer:initialize(SwitchId),
+        {ok, _Pid} = linc_us5_sup:start_backend_sup(SwitchId),
+        linc_us5_groups:initialize(SwitchId),
+        FlowState = linc_us5_flow:initialize(SwitchId),
+        linc_us5_port:initialize(SwitchId, Config),
+        {ok, ?VERSION, #state{flow_state = FlowState,
+                              buffer_state = BufferState,
+                              switch_id = SwitchId,
+                              datapath_mac = DatapathMac}}
+    catch
+        _:Error ->
+            {error, Error}
+    end.
 
 %% @doc Stop the switch.
 -spec stop(state()) -> any().
@@ -107,6 +112,8 @@ stop(#state{flow_state = FlowState,
     linc_us5_flow:terminate(FlowState),
     linc_us5_groups:terminate(SwitchId),
     linc_buffer:terminate(BufferState),
+    ok;
+stop([]) ->
     ok.
 
 -spec handle_message(ofp_message_body(), state()) ->
@@ -319,8 +326,9 @@ ofp_table_stats_request(#state{switch_id = SwitchId} = State,
 -spec ofp_table_features_request(state(), #ofp_table_features_request{}) ->
                                         {reply, #ofp_table_features_reply{},
                                          #state{}}.
-ofp_table_features_request(State, #ofp_table_features_request{} = Request) ->
-    Reply = linc_us5_table_features:handle_req(Request),
+ofp_table_features_request(#state{switch_id = SwitchId} = State,
+                           #ofp_table_features_request{} = Request) ->
+    Reply = linc_us5_table_features:handle_req(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get port description.

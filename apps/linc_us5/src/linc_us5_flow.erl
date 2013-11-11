@@ -27,6 +27,7 @@
          get_flow_table/2,
          delete_where_group/2,
          delete_where_meter/2,
+         clear_table_flows/2,
          get_stats/2,
          get_aggregate_stats/2,
          get_table_stats/2,
@@ -248,6 +249,15 @@ delete_where_meter(SwitchId, MeterId) ->
      || TableId <- lists:seq(0, ?OFPTT_MAX)],
     ok.
 
+%% @doc Delete all flow entries in the given flow table.
+%%
+%% `ofp_flow_removed' events are not sent.
+-spec clear_table_flows(integer(), 0..?OFPTT_MAX) -> ok.
+clear_table_flows(SwitchId, TableId) ->
+    ets:foldl(fun(#flow_entry{} = FlowEntry, _Acc) ->
+                      delete_flow(SwitchId, TableId, FlowEntry, no_event)
+              end, ok, flow_table_ets(SwitchId, TableId)).
+
 %% @doc Get flow statistics.
 -spec get_stats(integer(), #ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
 get_stats(SwitchId, #ofp_flow_stats_request{table_id = all,
@@ -463,6 +473,8 @@ add_new_flow(SwitchId, TableId,
                       IdleTime, HardTime),
     ets:insert(flow_table_ets(SwitchId, TableId), NewEntry),
     increment_group_ref_count(SwitchId, Instructions),
+    ?DEBUG("[FLOWMOD] Added new flow entry with id ~w: ~w",
+           [NewEntry#flow_entry.id, FlowMod]),
     ok.
 
 %% Delete a flow
@@ -480,6 +492,8 @@ delete_flow(SwitchId, TableId,
     ets:delete(linc:lookup(SwitchId, flow_entry_counters), FlowId),
     delete_flow_timer(SwitchId, FlowId),
     decrement_group_ref_count(SwitchId, Instructions),
+    ?DEBUG("[FLOWMOD] Deleted flow entry with id ~w: ~w",
+           [FlowId, Flow]),
     ok.
 
 send_flow_removed(SwitchId, TableId,
@@ -845,7 +859,7 @@ validate_action(_SwitchId, #ofp_action_push_vlan{}, _Match) ->
 validate_action(_SwitchId, #ofp_action_pop_vlan{}, _Match) ->
     ok;
 validate_action(_SwitchId, #ofp_action_push_mpls{ethertype=Ether}, _Match)
-  when Ether == 16#8100; Ether==16#88A8 ->
+  when Ether==16#8847; Ether==16#8848 ->
     ok;
 validate_action(_SwitchId, #ofp_action_push_mpls{}, _Match) ->
     {error,{bad_action,bad_argument}};
@@ -907,6 +921,8 @@ replace_existing_flow(SwitchId, TableId,
             NewEntry = create_flow_entry(FlowMod),
             ets:insert(flow_table_ets(SwitchId, TableId),
                        NewEntry#flow_entry{id=Id}),
+            ?DEBUG("[FLOWMOD] Replaced flow entry ~w with: ~w",
+                   [Id, NewEntry]),
             ok
     end.
 
@@ -917,6 +933,8 @@ modify_flow(SwitchId, TableId, #flow_entry{id=Id,instructions=PrevInstructions},
     ets:update_element(flow_table_ets(SwitchId, TableId),
                        Id,
                        {#flow_entry.instructions, NewInstructions}),
+    ?DEBUG("[FLOWMOD] New instructions for flow entry ~w: ~w",
+           [Id, NewInstructions]),
     increment_group_ref_count(SwitchId, NewInstructions),
     decrement_group_ref_count(SwitchId, PrevInstructions),
     case lists:member(reset_counts, Flags) of

@@ -102,7 +102,7 @@ Erlang representation of those ports are stored in `linc_ports` ets table.
 Because the controller populated the switch's flow table with some flows we have to clear them before we move on to the Demo. To clear the flow table we create an appropriate `flow_mod` message:
 
     (controller)4> ClearFlowTable = #ofp_message{
-                                      version = 3,
+                                      version = 4,
                                       xid = 100,
                                       body = #ofp_flow_mod{
                                                cookie = <<0:64>>,
@@ -151,7 +151,7 @@ Without any input from the Controller all the packets received by the Switch are
 We create a `flow_mod` message containing a match field (match on packets received from port 1) and an action (send matched packets to port 2).
 
     (controller)7> FlowMod = #ofp_message{
-                                version = 3,
+                                version = 4,
                                 xid = 100,
                                  body = #ofp_flow_mod{
                                       cookie = <<0:64>>,
@@ -210,7 +210,7 @@ Now when we send the same ping packet using `tcpreplay`...
 We create another `flow_mod` message - this time we want to remove all the flow entires from the flow table `0`.
 
     (controller)10> RemoveFlows = #ofp_message{
-                                    version = 3,
+                                    version = 4,
                                     xid = 200,
                                     body = #ofp_flow_mod{
                                               cookie = <<0:64>>,

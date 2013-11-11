@@ -284,9 +284,10 @@ handle_cast({set_queue_max_rate, PortNo, QueueId, Rate},
 handle_cast({open_controller, ControllerId, Host, Port, Proto},
             #state{version = Version,
                    switch_id = SwitchId} = State) ->
-    Channel = linc:lookup(SwitchId, channel_sup),
+    ChannelSup = linc:lookup(SwitchId, channel_sup),
     Opts = [{controlling_process, self()}, {version, Version}],
-    ofp_channel:open(Channel, ControllerId, Host, Port, Proto, Opts),
+    ofp_channel:open(
+      ChannelSup, ControllerId, {remote_peer, Host, Port, Proto}, Opts),
     {noreply, State};
 handle_cast(_Message, State) ->
     {noreply, State}.
@@ -295,12 +296,6 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                             backend_state = BackendState,
                             switch_id = SwitchId,
                             config = Config} = State) ->
-    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
-                  permanent, 5000, supervisor, [ofp_channel_sup]},
-    {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
-                                                             linc_sup),
-                                                 ChannelSup),
-    linc:register(SwitchId, channel_sup, ChannelSupPid),
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
     DatapathId = gen_datapath_id(SwitchId),
@@ -310,20 +305,18 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                                   {datapath_mac, extract_mac(DatapathId)}),
     BackendOpts3 = lists:keystore(config, 1, BackendOpts2,
                                   {config, Config}),
-    {ok, Version, BackendState2} = BackendMod:start(BackendOpts3),
-    Controllers = linc:controllers_for_switch(SwitchId, Config),
-    Opts = [{controlling_process, self()}, {version, Version}],
-    Ctrls = [case Ctrl of
-                 {Id, Host, Port, Protocol} ->
-                     {Id, Host, Port, Protocol, Opts};
-                 {Id, Host, Port, Protocol, SysOpts} ->
-                     {Id, Host, Port, Protocol, Opts ++ SysOpts}
-             end || Ctrl <- Controllers],
-    [ofp_channel:open(ChannelSupPid, Id, Host, Port, Protocol, Opt)
-     || {Id, Host, Port, Protocol, Opt} <- Ctrls],
-    {noreply, State#state{version = Version,
-                          backend_state = BackendState2,
-                          datapath_id = DatapathId}};
+    case BackendMod:start(BackendOpts3) of
+        {ok, Version, BackendState2} ->
+            start_and_register_ofp_channels_sup(SwitchId),
+            Opts = [{controlling_process, self()}, {version, Version}],
+            open_ofp_channels(Opts, State),
+            start_and_register_controllers_listener(Opts, State),
+            {noreply, State#state{version = Version,
+                                  backend_state = BackendState2,
+                                  datapath_id = DatapathId}};
+        {error, Reason} ->
+            {stop, {backend_failed, Reason}, State}
+    end;
 
 handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
             #state{backend_mod = Backend,
@@ -350,8 +343,17 @@ handle_info({ofp_closed, _Pid, {Host, Port, Id, Reason}}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{backend_mod = BackendMod,
-                          backend_state = BackendState}) ->
+terminate(Reason, #state{switch_id = SwitchId, backend_mod = BackendMod,
+                         backend_state = BackendState}) ->
+    case Reason of
+        {backend_failed, DeatiledReason} ->
+            ?ERROR("Backend module ~p failed to start because: ~p",
+                   [BackendMod, DeatiledReason]),
+            supervisor:terminate_child(linc:lookup(SwitchId, linc_sup),
+                                       linc_logic);
+        _ ->
+            ok
+    end,
     BackendMod:stop(BackendState).
 
 code_change(_OldVersion, State, _Extra) ->
@@ -360,6 +362,64 @@ code_change(_OldVersion, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 %%% Helpers
 %%%-----------------------------------------------------------------------------
+
+start_and_register_ofp_channels_sup(SwitchId) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
+    ChannelSup = {ofp_channel_sup, {ofp_channel_sup, start_link, [SwitchId]},
+                  temporary, 5000, supervisor, [ofp_channel_sup]},
+    {ok, ChannelSupPid} = supervisor:start_child(linc:lookup(SwitchId,
+                                                             linc_sup),
+                                                 ChannelSup),
+    linc:register(SwitchId, channel_sup, ChannelSupPid).
+
+open_ofp_channels(Opts, #state{switch_id = SwitchId, config = Config}) ->
+    CtrlsConfig = controllers_config(Opts, linc:controllers_for_switch(SwitchId,
+                                                                       Config)),
+    ChannelSupPid = linc:lookup(SwitchId, channel_sup),
+    [ofp_channel:open(
+       ChannelSupPid, Id, {remote_peer, Host, Port, Protocol}, Opt)
+     || {Id, Host, Port, Protocol, Opt} <- CtrlsConfig].
+
+controllers_config(Opts, Controllers) ->
+    [case Ctrl of
+         {Id, Host, Port, Protocol} ->
+             {Id, Host, Port, Protocol, Opts};
+         {Id, Host, Port, Protocol, SysOpts} ->
+             {Id, Host, Port, Protocol, Opts ++ SysOpts}
+     end || Ctrl <- Controllers].
+
+start_and_register_controllers_listener(Opts, #state{switch_id = SwitchId,
+                                                     config = Config}) ->
+    case linc:controllers_listener_for_switch(SwitchId, Config) of
+        disabled ->
+            ok;
+        ConnListenerConfig ->
+            CtrlsListenerArgs = controllers_listener_args(SwitchId,
+                                                          ConnListenerConfig,
+                                                          Opts),
+            ConnListenerSupPid = start_controllers_listener(
+                                   CtrlsListenerArgs,
+                                   linc:lookup(SwitchId, linc_sup)),
+            linc:register(SwitchId, conn_listener_sup, ConnListenerSupPid)
+    end.
+
+controllers_listener_args(SwitchId, {Address, Port, tcp}, Opts) ->
+    {ok, ParsedAddress} = inet_parse:address(Address),
+    [ParsedAddress, Port, linc:lookup(SwitchId, channel_sup), Opts].
+
+start_controllers_listener(ConnListenerArgs, LincSupPid) ->
+    %% This needs to be temporary, since it is explicitly started as a
+    %% child of linc_sup by linc_logic, and thus should _not_ be
+    %% automatically restarted by the supervisor.
+    ConnListenerSupSpec =
+        {ofp_conn_listener_sup, {ofp_conn_listener_sup, start_link,
+                                 ConnListenerArgs},
+         temporary, infinity, supervisor, [ofp_conn_listener_sup]},
+    {ok, ConnListenerSupPid} = supervisor:start_child(LincSupPid,
+                                                      ConnListenerSupSpec),
+    ConnListenerSupPid.
 
 get_datapath_mac() ->
     {ok, Ifs} = inet:getifaddrs(),

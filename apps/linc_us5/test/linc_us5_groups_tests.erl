@@ -37,6 +37,7 @@ group_test_() ->
     {setup, fun setup/0, fun teardown/1,
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
       [{"Add group",        fun add_group/0},
+       {"Add invalid group", add_invalid_group()},
        {"Modify group",     fun modify_group/0},
        {"Delete group",     fun delete_group/0},
        {"Chain deletion",   fun chain_delete_group/0},
@@ -89,6 +90,24 @@ add_group() ->
     ?assertMatch(_ when G2StatsTime + 1000 =< G3StatsTime, {G2StatsTime, G3StatsTime}),
 
     ?assertEqual(Pkt2#linc_pkt.size, stats_get(G2Stats, 1, byte_count)).
+
+add_invalid_group() ->
+    OfpgAny = any,
+    OfpgAll = all,
+    InvalidGroupId = 16#ffffff0a,
+
+    [{Description,
+      inorder,
+      [?_assertMatch({error, #ofp_error_msg{}},
+                     call_group_mod(add, GroupId, all, [])),
+       ?_assertNot(group_exists(GroupId))]}
+     || {Description, GroupId} <-
+            [{"adding group with id OFPG_ALL should give an error",
+              OfpgAll},
+             {"adding group with id OFPG_ANY should give an error",
+              OfpgAny},
+             {"adding group with id greater than OFPG_MAX should give an error",
+              InvalidGroupId}]].
 
 %%--------------------------------------------------------------------
 modify_group() ->

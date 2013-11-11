@@ -34,7 +34,9 @@ switch_setup_test_() ->
       {"Start/stop LINC v4 switch backend w/o OF-Config subsystem",
        fun no_ofconfig/0},
       {"Start/stop LINC v4 switch backend with OF-Config subsystem",
-       fun with_ofconfig/0}
+       fun with_ofconfig/0},
+      {"Start/stop LINC v4 switch backend with controllers listener enabled",
+       fun with_controllers_listener/0}
      ]}.
 
 switch_config_request_reply_test_() ->
@@ -52,18 +54,7 @@ switch_config_request_reply_test_() ->
      ]}.
 
 no_ofconfig() ->
-    application:load(linc),
-    application:set_env(linc, of_config, disabled),
-    Config = [{switch, 0,
-               [{backend, linc_us5},
-                {controllers, []},
-                {ports, []},
-                {queues_status, disabled},
-                {queues, []}]}],
-    application:set_env(linc, logical_switches, Config),
-    application:set_env(linc, capable_switch_ports, []),
-    application:set_env(linc, capable_switch_queues, []),
-
+    load_linc_with_default_env(),
     [begin
          ?assertEqual(ok, application:start(linc)),
          timer:sleep(?TIMEOUT),
@@ -80,12 +71,25 @@ with_ofconfig() ->
 
     [begin
          case application:start(linc) of
-	     ok ->
-		 ok;
-	     {error, Error} ->
-		 ?debugFmt("Cannot start linc: ~p~n", [Error]),
-		 erlang:error({start_error, Error})
-	 end,
+             ok ->
+                 ok;
+             {error, Error} ->
+                 ?debugFmt("Cannot start linc: ~p~n", [Error]),
+                 erlang:error({start_error, Error})
+         end,
+         timer:sleep(?TIMEOUT),
+         ?assertEqual(ok, application:stop(linc))
+     end || _ <- [lists:seq(1,10)]].
+
+with_controllers_listener() ->
+    load_linc_with_default_env(),
+    {ok, [{switch, 0, Config}]} = application:get_env(linc, logical_switches),
+    NewConfig =
+        lists:keyreplace(controllers_listener, 1, Config,
+                         {controllers_listener, {"127.0.0.1", 6653, tcp}}),
+    application:set_env(linc, logical_switches, [{switch, 0, NewConfig}]),
+    [begin
+         ?assertEqual(ok, application:start(linc)),
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
@@ -176,3 +180,19 @@ mocked_us5_backend_setup() ->
                                                  config] ],
     {ok, 5, State} = linc_us5:start(DummyBackendOpts),
     State.
+
+%% Helper functions  -----------------------------------------------------------
+
+load_linc_with_default_env() ->
+    application:load(linc),
+    application:set_env(linc, of_config, disabled),
+    Config = [{switch, 0,
+               [{backend, linc_us5},
+                {controllers, []},
+                {controllers_listener, disabled},
+                {ports, []},
+                {queues_status, disabled},
+                {queues, []}]}],
+    application:set_env(linc, logical_switches, Config),
+    application:set_env(linc, capable_switch_ports, []),
+    application:set_env(linc, capable_switch_queues, []).

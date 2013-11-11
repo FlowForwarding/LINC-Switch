@@ -19,7 +19,7 @@
 %% @doc Userspace implementation of the OpenFlow Switch logic.
 -module(linc_us5_table_features).
 
--export([handle_req/1]).
+-export([handle_req/2]).
 
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc_us5/include/linc_us5.hrl").
@@ -40,13 +40,22 @@
                               write_setfield_miss,
                               apply_setfield_miss]).
 
-handle_req(#ofp_table_features_request{body=[]}) ->
+handle_req(_SwitchId, #ofp_table_features_request{body=[]}) ->
     %% Read request
     #ofp_table_features_reply{body = get_all_features()};
-handle_req(#ofp_table_features_request{body=[_TF|_]=TableFeaturesList}) ->
+handle_req(SwitchId, #ofp_table_features_request{body=[_TF|_]=TableFeaturesList}) ->
     %% SetRequest
     case validate_config(TableFeaturesList) of
         ok ->
+            %% When a table is "deleted" by not being present in the
+            %% list of tables in the request, we should remove all
+            %% flow entries.
+            DeletedTables = lists:seq(0, ?OFPTT_MAX) --
+                [TableId || #ofp_table_features{table_id = TableId} <- TableFeaturesList],
+            [linc_us5_flow:clear_table_flows(SwitchId, TableId)
+             || TableId <- DeletedTables],
+            %% Currently we have no concept of deleted tables, though,
+            %% so we report them all as existing.
             #ofp_table_features_reply{body = get_all_features()};
         {error,Reason} ->
             #ofp_error_msg{type=table_features_failed, code=Reason}

@@ -39,7 +39,7 @@ table_features_test_() ->
 
 get_table_features() ->
     Req = #ofp_table_features_request{body=[]},
-    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(Req)).
+    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req)).
 
 set_missing_feature() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -55,7 +55,7 @@ set_missing_feature() ->
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_argument },
-                 linc_us5_table_features:handle_req(Req)).
+                 linc_us5_table_features:handle_req(0, Req)).
 
 set_duplicate_feature() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -72,7 +72,7 @@ set_duplicate_feature() ->
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_argument },
-                 linc_us5_table_features:handle_req(Req)).
+                 linc_us5_table_features:handle_req(0, Req)).
 
 set_bad_table_id() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -88,7 +88,7 @@ set_bad_table_id() ->
              body=[#ofp_table_features{table_id=all,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_table },
-                 linc_us5_table_features:handle_req(Req)).
+                 linc_us5_table_features:handle_req(0, Req)).
 
 set_features() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -103,13 +103,22 @@ set_features() ->
     Req = #ofp_table_features_request{
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
-    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(Req)).
+    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req)).
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
+    ets:new(linc_switch_0, [named_table]),
+    [
+     ets:insert(linc_switch_0,
+                {list_to_atom("flow_table_" ++ integer_to_list(Table)),
+                 ets:new(flow_table, [])})
+     || Table <- lists:seq(0, ?OFPTT_MAX)
+    ],
     ok.
 
 teardown(_State) ->
+    ets:foldl(fun({_, Tid}, _) -> ets:delete(Tid) end, ignored, linc_switch_0),
+    ets:delete(linc_switch_0),
     ok.
 
 %% Helpers ---------------------------------------------------------------------

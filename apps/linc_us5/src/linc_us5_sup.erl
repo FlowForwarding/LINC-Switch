@@ -39,8 +39,12 @@ start_link(SwitchId) ->
 -spec start_backend_sup(integer()) -> {ok, pid()}.
 start_backend_sup(SwitchId) ->
     LincSup = linc:lookup(SwitchId, linc_sup),
+    %% This should be a 'temporary' child, since it is added by one of
+    %% the children of linc_sup.  Otherwise we would get an
+    %% already_started error, when linc_sup restarts one copy of
+    %% linc_us5_sup, and linc_us5 tries to add another linc_us5_sup.
     BackendSup = {?MODULE, {?MODULE, start_link, [SwitchId]},
-                  transient, 5000, supervisor, [?MODULE]},
+                  temporary, 5000, supervisor, [?MODULE]},
     supervisor:start_child(LincSup, BackendSup).
 
 %%------------------------------------------------------------------------------

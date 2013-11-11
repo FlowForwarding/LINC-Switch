@@ -1,4 +1,4 @@
-#!/usr/bin/env escript 
+#!/usr/bin/env escript
 
 main([]) ->
     usage();
@@ -6,23 +6,37 @@ main(Args) ->
     try parse_args(Args, []) of
         Config ->
             {switches, Switches} = lists:keyfind(switches, 1, Config),
+            {controllers, Controllers} = lists:keyfind(controllers, 1, Config),
             {output_file, OutputFile} = lists:keyfind(output_file, 1, Config),
-            ok = file:write_file(OutputFile,
-                                 io_lib:fwrite("~p.~n",
-                                               [generate_config(Switches, [])]))
+            SysConfig = generate_sys_config(Switches, Controllers),
+            ok = file:write_file(OutputFile, io_lib:fwrite("~p.~n", [SysConfig]))
     catch
+        _:required_argument_missing ->
+            io:format("Required argument missing.~n"),
+            usage();
         _:_ ->
             io:format("Invalid argument.~n"),
             usage()
     end.
 
 usage() ->
-    io:format("~s [-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
-              ++ " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
-              ++ " -o OUTPUT_FILE~n",
-             [escript:script_name()]).
+    ScriptName = escript:script_name(),
+    io:format("~s~n~n"
+              "Example usage:~n ~s~n",
+              [usage_pattern(ScriptName), usage_example(ScriptName)]).
+
+usage_pattern(ScriptName) ->
+    ScriptName ++ "[-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
+        " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
+        " -o OUTPUT_FILE".
+
+usage_example(ScriptName) ->
+    ScriptName ++ "-s 0 tap0 tap1 -c tcp:10.48.11.5:6633 tls:10.48.11.6:5533 "
+        "-o ../rel/files/sys.config".
 
 parse_args([], Config) ->
+    [lists:keymember(RequiredArgument, 1, Config) orelse error(required_argument_missing)
+     || RequiredArgument <- [switches, controllers, output_file]],
     Config;
 parse_args(["-s", LogicalSwitch | Rest], Config) ->
     {Interfaces, NewRest} = parse_interfaces(Rest),
@@ -61,7 +75,7 @@ parse_controllers(Args) ->
                  end, [], Controllers),
      Rest}.
 
-generate_config(Switches, _Controllers) ->
+generate_sys_config(Switches, Controllers) ->
     PortsNames = ports_names(Switches),
     PortsMap = lists:zip(PortsNames, lists:seq(1, length(PortsNames))),
     [
@@ -71,11 +85,12 @@ generate_config(Switches, _Controllers) ->
        {capable_switch_ports, generate_ports(PortsMap)},
        {capable_switch_queues, []},
        {logical_switches,
-        generate_logical_switches(Switches, PortsMap)}
+        generate_logical_switches(Switches, Controllers, PortsMap)}
       ]},
      {enetconf,
       [
-       {capabilities, [{base, {1, 1}},
+       {capabilities, [{base, {1, 0}},
+                       {base, {1, 1}},
                        {startup, {1, 0}},
                        {'writable-running', {1, 0}}]},
        {callback_module, linc_ofconfig},
@@ -121,17 +136,27 @@ ports_names(Switches) ->
 generate_ports(PortsMap) ->
     [{port, PortNo, [{interface, PortName}]} || {PortName, PortNo} <- PortsMap].
 
-generate_logical_switches(Switches, PortsMap) ->
+generate_logical_switches(Switches, Controllers, PortsMap) ->
     [
      {switch, list_to_integer(SwitchId),
       [
        {backend, linc_us4},
-       {controllers,[{"Switch" ++ SwitchId ++ "-Controller"
-                      , "localhost", 6633, tcp}]},
+       %% {controllers,[{"Switch" ++ SwitchId ++ "-Controller"
+       %% , "localhost", 6633, tcp}]},
+       {controllers, generate_logical_switch_controllers(SwitchId, Controllers)},
+       {controllers_listener, disabled},
        {queues_status, disabled},
        {ports, generate_logical_switch_ports(PortsNames, PortsMap)}
       ]}
      || {SwitchId, PortsNames} <- Switches].
+
+generate_logical_switch_controllers(SwitchId, Controllers) ->
+    lists:foldl(fun({Protocol, HostOrIP, Port}, Acc) ->
+                        [{"Switch" ++ SwitchId ++ "-Controller",
+                          HostOrIP,
+                          list_to_integer(Port),
+                          list_to_atom(Protocol)} | Acc]
+                end, [], Controllers).
 
 generate_logical_switch_ports(PortsNames, PortsMap) ->
     [{port, element(2, lists:keyfind(PortName, 1, PortsMap)), {queues, []}}

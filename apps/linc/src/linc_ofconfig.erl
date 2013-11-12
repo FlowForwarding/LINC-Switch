@@ -1281,38 +1281,30 @@ get_controllers(SwitchId) ->
 %% Helper conversion functions
 %%------------------------------------------------------------------------------
 
-rate(Features) ->
-    Rates = lists:map(fun('10mb_hd') ->
-                              '10Mb-HD';
-                         ('10mb_fd') ->
-                              '10Mb-FD';
-                         ('100mb_hd') ->
-                              '100Mb-HD';
-                         ('100mb_fd') ->
-                              '100Mb-FD';
-                         ('1gb_hd') ->
-                              '1Gb-HD';
-                         ('1gb_fd') ->
-                              '1Gb-FD';
-                         ('10gb_fd') ->
-                              '10Gb';
-                         ('40gb_fd') ->
-                              '40Gb';
-                         ('100gb_fd') ->
-                              '100Gb';
-                         ('1tb_fd') ->
-                              '1Tb';
-                         (other) ->
-                              other;
-                         (_) ->
-                              invalid
-                      end, Features),
-    lists:filter(fun(invalid) ->
-                         true;
-                    (_) ->
-                         false
-                 end, Rates),
-    hd(Rates).
+rate(['10mb_hd' | _]) ->
+    '10Mb-HD';
+rate(['10mb_fd' | _]) ->
+    '10Mb-FD';
+rate(['100mb_hd' | _]) ->
+    '100Mb-HD';
+rate(['100mb_fd' | _]) ->
+    '100Mb-FD';
+rate(['1gb_hd' | _]) ->
+    '1Gb-HD';
+rate(['1gb_fd' | _]) ->
+    '1Gb-FD';
+rate(['10gb_fd' | _]) ->
+    '10Gb';
+rate(['40gb_fd' | _]) ->
+    '40Gb';
+rate(['100gb_fd' | _]) ->
+    '100Gb';
+rate(['1tb_fd' | _]) ->
+    '1Tb';
+rate([_OtherFeature | Rest]) ->
+    rate(Rest);
+rate([]) ->
+    other.
 
 ip(undefined) ->
     undefined;

@@ -540,6 +540,17 @@ scenario(group_mod_modify_group) ->
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
 
+%% This scenario first requests to become master, and then installs a
+%% flow entry and waits for packets.  This can be used for testing
+%% task #161 (https://github.com/FlowForwarding/LINC-Switch/issues/161):
+%% run two controllers using this scenario on separate ports,
+%% configure the switch to connect to both controllers, and verify
+%% that one controller gets a role_status message demoting it to slave.
+scenario(master_controller) ->
+    GenId = generation_id(),
+    [role_request(master, GenId),
+     flow_mod_table_miss()];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

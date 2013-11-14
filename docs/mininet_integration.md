@@ -8,7 +8,7 @@ Now LINC-Switch is shipped with Mininet and can be ran as a part of its virtual 
 Installation
 ------------
 
-Mininet has an installation script for Ubuntu and Debian. To install Mininet with LINC-Switch on board clone the [repository](https://github.com/mentels/mininet), enter mininet directory and run the following commands:  
+Mininet has an installation script for Ubuntu and Debian. To install Mininet with LINC-Switch on board clone the [repository](https://github.com/FlowForwarding/mininet), enter mininet directory and run the following commands:  
 `util/install.sh -3nfxL`
 
 Optionally you can provide a revision to checkout:  

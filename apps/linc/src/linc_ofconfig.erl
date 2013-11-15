@@ -68,6 +68,8 @@
                                   medium = copper,
                                   pause = unsupported}).
 
+-define(DEFAULT_PORT_RATE, {100, mbps}).
+
 -type ofc_port() :: {port,
                      {PortId :: integer(),
                       SwitchId :: integer()},
@@ -200,7 +202,7 @@ convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
         lists:foldl(fun({port, PortNo, QueuesConfig}, {Ports, Queues}) ->
                             {port, PortNo, PortConfig} =
                                 lists:keyfind(PortNo, 2, CapableSwitchPorts),
-                            PortRate = lists:keyfind(port_rate, 1, PortConfig),
+                            PortRate = logical_switch_port_rate(PortConfig),
                             NewPortQueues = convert_queues(PortNo, PortRate,
                                                            QueuesConfig,
                                                            CapableSwitchQueues),
@@ -1282,6 +1284,14 @@ get_logical_switch_controllers(SwitchId) ->
 
 get_controllers(SwitchId) ->
     [{SwitchId, C} || C <- get_logical_switch_controllers(SwitchId)].
+
+logical_switch_port_rate(PortConfig) ->
+    case lists:keyfind(port_rate, 1, PortConfig) of
+        false ->
+            {port_rate, ?DEFAULT_PORT_RATE};
+        R ->
+            R
+    end.
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

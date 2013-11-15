@@ -540,6 +540,11 @@ scenario(group_mod_modify_group) ->
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
 
+scenario(port_stats_two_messages) ->
+    Xid = get_xid(),
+    [port_stats_request_first_message(Xid, 1),
+     port_stats_request_second_message(Xid, 2)];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->
@@ -1168,13 +1173,6 @@ table_features_keep_table_0() ->
                                        , #ofp_table_feature_prop_apply_setfield{}
                                        ]}]}).
 
-%%% Helpers --------------------------------------------------------------------
-
-message(Body) ->
-    #ofp_message{version = 4,
-                 xid = get_xid(),
-                 body = Body}.
-
 all_table_features_request(TableId) ->
     message(#ofp_table_features_request{
                body = [#ofp_table_features{
@@ -1199,6 +1197,26 @@ all_table_features_request(TableId) ->
                                #ofp_table_feature_prop_apply_setfield{},
                                #ofp_table_feature_prop_apply_setfield_miss{}]
                          }]}).
+
+port_stats_request_first_message(Xid, PortNo) ->
+    #ofp_message{version = 4,
+                 xid = Xid,
+                 body = #ofp_port_stats_request{
+                   flags = [more],
+                   port_no = PortNo}}.
+
+port_stats_request_second_message(Xid, PortNo) ->
+    #ofp_message{version = 4,
+                 xid = Xid,
+                 body = #ofp_port_stats_request{
+                   port_no = PortNo}}.
+
+%%% Helpers --------------------------------------------------------------------
+
+message(Body) ->
+    #ofp_message{version = 4,
+                 xid = get_xid(),
+                 body = Body}.
 
 get_xid() ->
     random:uniform(1 bsl 32 - 1).

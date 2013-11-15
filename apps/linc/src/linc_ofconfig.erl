@@ -353,7 +353,9 @@ read_and_update_startup() ->
     Config.
 
 read_startup_without_of_config() ->
-    ok.
+    SysConfig = get_linc_logical_switches(),
+    {Config, _} = update_switches(SysConfig, #ofconfig{}, {[], #ofconfig{}}),
+    Config.
 
 update_switches([], _, New) ->
     New;

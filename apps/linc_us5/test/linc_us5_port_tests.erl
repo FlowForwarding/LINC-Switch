@@ -103,7 +103,7 @@ send_normal() ->
 %% NOX 1.3 controller [1] that uses this port, incorrectly assuming that
 %% an OpenFlow switch supports it. It's important as NOX is shipped
 %% with Mininet [3]. As soon as this bug is fixed [2]
-%% linc_us4_port:send(term(), flood) call should return 'bad_port'.
+%% linc_us5_port:send(term(), flood) call should return 'bad_port'.
 %% [1]: https://github.com/CPqD/nox13oflib
 %% [2]: https://github.com/CPqD/nox13oflib/issues/3
 %% [3]: http://mininet.org/
@@ -111,11 +111,11 @@ send_flood() ->
     [InPort | PortsThatShouldBeFlooded] =
         [PortNo || {port, PortNo, _Config} <- ports()],
     Pkt = pkt(InPort),
-    ?assertEqual(ok, linc_us4_port:send(Pkt, flood)),
+    ?assertEqual(ok, linc_us5_port:send(Pkt, flood)),
     %% wait because send to port is a gen_server:cast
     timer:sleep(500),
     ?assertEqual(length(PortsThatShouldBeFlooded),
-                 meck:num_calls(linc_us4_port_native, send, '_')).
+                 meck:num_calls(linc_us5_port_native, send, '_')).
 
 send_all() ->
     ?assertEqual(ok, linc_us5_port:send(pkt(), all)),

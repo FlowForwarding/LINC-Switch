@@ -309,10 +309,12 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                      name = PortName,
                      config = PortConfig,
                      state = [live],
-                     curr = ?FEATURES,
-                     advertised = Advertised,
-                     supported = ?FEATURES, peer = ?FEATURES,
-                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
+                     properties =
+                         [#ofp_port_desc_prop_ethernet{
+                             curr = ?FEATURES,
+                             advertised = Advertised,
+                             supported = ?FEATURES, peer = ?FEATURES,
+                             curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}]},
     QueuesState = case queues_enabled(SwitchId) of
                       false ->
                           disabled;
@@ -404,11 +406,18 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                      config = Config,
                                      mask = _Mask,
                                      advertise = Advertise}}, _From,
-            #state{port = #ofp_port{hw_addr = HWAddr} = Port} = State) ->
+            #state{port = #ofp_port{hw_addr = HWAddr, properties = Properties} = Port} = State) ->
     {Reply, NewPort} = case PMHwAddr == HWAddr of
                            true ->
+                               {value, Ethernet} =
+                                   lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+                               NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{
+                                               advertised = Advertise},
+                               NewProperties =
+                                   lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
+                                                    NewEthernet),
                                {ok, Port#ofp_port{config = Config,
-                                                  advertised = Advertise}};
+                                                  properties = NewProperties}};
                            false ->
                                {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,
@@ -437,19 +446,28 @@ handle_call({set_port_config, NewPortConfig}, _From,
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
-                             curr = CurrentFeatures,
-                             advertised = AdvertisedFeatures,
-                             supported = SupportedFeatures,
-                             peer  = PeerFeatures
+                             properties = Properties
                             }} = State) ->
+    #ofp_port_desc_prop_ethernet{
+       curr = CurrentFeatures,
+       advertised = AdvertisedFeatures,
+       supported = SupportedFeatures,
+       peer = PeerFeatures} = lists:keyfind(ofp_port_desc_prop_ethernet, 1, Properties),
     {reply, {CurrentFeatures, AdvertisedFeatures,
              SupportedFeatures, PeerFeatures}, State};
 handle_call(get_advertised_features, _From,
-            #state{port = #ofp_port{advertised = AdvertisedFeatures}} = State) ->
+            #state{port = #ofp_port{properties = Properties}} = State) ->
+    #ofp_port_desc_prop_ethernet{advertised = AdvertisedFeatures} =
+        lists:keyfind(ofp_port_desc_prop_ethernet, 1, Properties),
     {reply, AdvertisedFeatures, State};
 handle_call({set_advertised_features, AdvertisedFeatures}, _From,
-            #state{port = Port, switch_id = SwitchId} = State) ->
-    NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
+            #state{port = Port = #ofp_port{properties = Properties}, switch_id = SwitchId} = State) ->
+    {value, Ethernet} =
+        lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+    NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{advertised = AdvertisedFeatures},
+    NewProperties = lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
+                                     NewEthernet),
+    NewPort = Port#ofp_port{properties = NewProperties},
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),

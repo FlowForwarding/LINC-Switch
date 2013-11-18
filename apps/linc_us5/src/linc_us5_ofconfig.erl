@@ -74,12 +74,15 @@ get_ports(SwitchId) ->
                                          name = Name,
                                          config = Config,
                                          state = State,
-                                         curr = Current,
-                                         advertised = Advertised,
-                                         supported = Supported,
-                                         peer = Peer,
-                                         curr_speed = CurrSpeed,
-                                         max_speed = MaxSpeed}}) ->
+                                         properties = Properties}}) ->
+                      #ofp_port_desc_prop_ethernet{
+                         curr = Current,
+                         advertised = Advertised,
+                         supported = Supported,
+                         peer = Peer,
+                         curr_speed = CurrSpeed,
+                         max_speed = MaxSpeed} =
+                          lists:keyfind(ofp_port_desc_prop_ethernet, 1, Properties),
                       Configuration = linc_ofconfig:convert_port_config(Config),
                       Features = linc_ofconfig:convert_port_features({Current,
                                                                       Advertised,

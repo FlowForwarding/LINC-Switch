@@ -30,7 +30,7 @@
          convert_port_features/1,
          convert_port_state/1,
          read_and_update_startup/0,
-         read_startup_without_of_config/0,
+         get_startup_without_ofconfig/0,
          get_certificates/0,
          get_switch_state/1]).
 
@@ -354,11 +354,6 @@ read_and_update_startup() ->
                             certificates = Startup#ofconfig.certificates}),
     Config.
 
-read_startup_without_of_config() ->
-    SysConfig = get_linc_logical_switches(),
-    {Config, _} = update_switches(SysConfig, #ofconfig{}, {[], #ofconfig{}}),
-    Config.
-
 update_switches([], _, New) ->
     New;
 update_switches([{switch, SwitchId, Opts} | Rest],
@@ -473,6 +468,13 @@ update_controllers(Ctrls, SwitchId, OldCtrls) ->
     OldCtrls2 = [Controller || {SId, #controller{} = Controller} <- OldCtrls,
                                SId == SwitchId],
     Ctrls ++ OldCtrls2.
+
+-spec get_startup_without_ofconfig() -> [term()].
+get_startup_without_ofconfig() ->
+    [begin
+         LogicalSwitchTmp = add_datapath_id_to_logical_switch(LogicalSwitch),
+         convert_logical_switch_ports(LogicalSwitchTmp)
+     end || LogicalSwitch <- get_linc_logical_switches()].
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks
@@ -1292,6 +1294,28 @@ logical_switch_port_rate(PortConfig) ->
         R ->
             R
     end.
+
+add_datapath_id_to_logical_switch({switch, SwitchId, LogicalSwitchConfig}) ->
+    {switch, SwitchId, [{datapath_id, linc_logic:gen_datapath_id(SwitchId)}
+                        | LogicalSwitchConfig]}.
+
+convert_logical_switch_ports({switch, SwitchId, LogicalSwitchConfig}) ->
+    LogicalPorts = proplists:get_value(ports, LogicalSwitchConfig),
+    StartupLogicalPorts =
+        lists:foldl(fun(LogicalPort, Acc) ->
+                            [create_startup_logical_port(LogicalPort) | Acc]
+                    end, [], LogicalPorts),
+    {switch, SwitchId, lists:keyreplace(ports, 1, LogicalSwitchConfig,
+                                        {ports, StartupLogicalPorts})}.
+
+create_startup_logical_port({port, PortId, CapablePortConfig}) ->
+    logical_switch_default_startup_port_config(PortId, CapablePortConfig).
+
+logical_switch_default_startup_port_config(PortId, CapablePortConfig) ->
+    {port, PortId, [{config, ?DEFAULT_PORT_CONFIG},
+                    {features, ?DEFAULT_PORT_FEATURES}
+                    | CapablePortConfig]}.
+
 
 %%------------------------------------------------------------------------------
 %% Helper conversion functions

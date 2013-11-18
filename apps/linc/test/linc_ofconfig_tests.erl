@@ -45,7 +45,8 @@ startup_format_without_ofconfig_test_() ->
               {"Test startup for the simplest switch config with one port "
                "with two queues attached",
                fun() ->
-                       should_return_startup_with_ports_and_queues(LogicalSwitchPorts)
+                       should_return_startup_with_ports_and_queues(
+                         LogicalSwitchPorts)
                end}
       end}].
 
@@ -60,11 +61,11 @@ should_return_simple_startup_with_datapath_id() ->
                                {queues_status, disabled},
                                {queues, []}]}]
                  when is_list(DatapathId) andalso length(DatapathId) == 23,
-                      linc_ofconfig:read_startup_without_of_config()).
+                      linc_ofconfig:get_startup_without_ofconfig()).
 
 should_return_startup_with_ports(CapableSwitchPorts) ->
     [{switch, _SwitchId, SwitchConfig}] =
-        linc_ofconfig:read_startup_without_of_config(),
+        linc_ofconfig:get_startup_without_ofconfig(),
     Ports = proplists:get_value(ports, SwitchConfig),
     [?assertMatch({port, PortNo, [{config, #port_configuration{}},
                                   {features, #features{}},
@@ -74,7 +75,7 @@ should_return_startup_with_ports(CapableSwitchPorts) ->
 
 should_return_startup_with_ports_and_queues(LogicalSwitchPorts) ->
     [{switch, _SwitchId, SwitchConfig}] =
-        linc_ofconfig:read_startup_without_of_config(),
+        linc_ofconfig:get_startup_without_ofconfig(),
     Queues = proplists:get_value(queues, SwitchConfig),
     [begin
          {port, ActualPortNo, PortOptsForQueues} = lists:keyfind(ExpectedPortNo,

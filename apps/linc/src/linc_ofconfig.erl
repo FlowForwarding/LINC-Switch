@@ -354,121 +354,6 @@ read_and_update_startup() ->
                             certificates = Startup#ofconfig.certificates}),
     Config.
 
-update_switches([], _, New) ->
-    New;
-update_switches([{switch, SwitchId, Opts} | Rest],
-                #ofconfig{ports = OldPorts,
-                          queues = OldQueues,
-                          switches = OldSwitches,
-                          controllers = OldCtrls} = Startup,
-                {NewConfig, #ofconfig{switches = NewSwitches} = NewStartup}) ->
-    Ports = case lists:keyfind(ports, 1, Opts) of
-                {ports, P} -> P;
-                false -> []
-            end,
-    Ctrls = case lists:keyfind(controllers, 1, Opts) of
-                {controllers, C} -> C;
-                false -> []
-            end,
-    Queues = case lists:keyfind(queues_status, 1, Opts) of
-                 {queues_status, enabled} ->
-                     case lists:keyfind(queues, 1, Opts) of
-                         {queues, Q} -> Q;
-                         false -> []
-                     end;
-                 _ -> []
-             end,
-    {NewQueues, NewStartup2} = update_queues(Queues, SwitchId, OldQueues,
-                                             {[], NewStartup}),
-    {NewPorts, NewStartup3} = update_ports(Ports, NewQueues, SwitchId, OldPorts,
-                                           {[], NewStartup2}),
-    NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
-
-    NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
-    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
-    NewOpts3 = lists:keyreplace(controllers, 1,
-                                NewOpts2, {controllers, NewCtrls}),
-
-    DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
-                     {switch, _, D} -> D;
-                     false -> linc_logic:gen_datapath_id(SwitchId)
-                 end,
-    update_switches(Rest, Startup,
-                    {[{switch, SwitchId,
-                       [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
-                     NewStartup3#ofconfig{
-                       switches = [{switch, SwitchId, DatapathId}
-                                   | NewSwitches],
-                       controllers = OldCtrls}}).
-
-update_ports([], _, _, _, New) ->
-    New;
-update_ports([{port, PortId, Opts} | Rest], Queues, SwitchId, OldPorts,
-             {NewPorts, #ofconfig{ports = NewSPorts} = NewStartup}) ->
-    {NP, NSP} = case lists:keyfind({PortId, SwitchId}, 2, OldPorts) of
-                    {port, _, Config, Features} = P ->
-                        {{port, PortId,
-                          [{config, Config},
-                           {features, Features},
-                           {queues, Queues} | Opts]}, P};
-                    false ->
-                        {{port, PortId,
-                          [{config, ?DEFAULT_PORT_CONFIG},
-                           {features, ?DEFAULT_PORT_FEATURES} | Opts]},
-                         {port, {PortId, SwitchId},
-                          ?DEFAULT_PORT_CONFIG,
-                          ?DEFAULT_PORT_FEATURES}}
-                end,
-    update_ports(Rest, Queues, SwitchId, OldPorts,
-                 {[NP | NewPorts],
-                  NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
-
-update_queues([], _, _, New) ->
-    New;
-update_queues([{port, PortId, Opts} | Rest], SwitchId, OldQueues,
-              {NewQueues, NewStartup}) ->
-    case lists:keyfind(port_queues, 1, Opts) of
-        {port_queues, Queues} ->
-            {NQ, NS} = update_queues2(Queues, PortId, SwitchId,
-                                      OldQueues, {[], NewStartup}),
-            NewOpts = lists:keyreplace(port_queues, 1, Opts,
-                                       {port_queues, NQ}),
-            update_queues(Rest, SwitchId, OldQueues,
-                          {[{port, PortId, NewOpts} | NewQueues], NS});
-        false ->
-            update_queues(Rest, SwitchId, OldQueues, {NewQueues, NewStartup})
-    end.
-
-update_queues2([], _, _, _, New) ->
-    New;
-update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
-               {NewQueues, #ofconfig{queues = NewSQueues} = NewStartup}) ->
-    {NQ, NSQ} = case lists:keyfind({QueueId, PortId, SwitchId}, 2, OldQueues) of
-                    {queue, _, MinRate, MaxRate} = Q ->
-                        {{QueueId, [{min_rate, MinRate},
-                                    {max_rate, MaxRate}]}, Q};
-                    false ->
-                        MinRate = case lists:keyfind(min_rate, 1, Opts) of
-                                      {min_rate, MinR} -> MinR;
-                                      false -> undefined
-                                  end,
-                        MaxRate = case lists:keyfind(max_rate, 1, Opts) of
-                                      {max_rate, MaxR} -> MaxR;
-                                      false -> undefined
-                                  end,
-                        {{QueueId, Opts},
-                         {queue, {QueueId, PortId, SwitchId},
-                          MinRate, MaxRate}}
-                end,
-    update_queues2(Rest, PortId, SwitchId, OldQueues,
-                   {[NQ | NewQueues],
-                    NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
-
-update_controllers(Ctrls, SwitchId, OldCtrls) ->
-    OldCtrls2 = [Controller || {SId, #controller{} = Controller} <- OldCtrls,
-                               SId == SwitchId],
-    Ctrls ++ OldCtrls2.
-
 -spec get_startup_without_ofconfig() -> [term()].
 get_startup_without_ofconfig() ->
     [begin
@@ -1286,6 +1171,121 @@ get_logical_switch_controllers(SwitchId) ->
 
 get_controllers(SwitchId) ->
     [{SwitchId, C} || C <- get_logical_switch_controllers(SwitchId)].
+
+update_switches([], _, New) ->
+    New;
+update_switches([{switch, SwitchId, Opts} | Rest],
+                #ofconfig{ports = OldPorts,
+                          queues = OldQueues,
+                          switches = OldSwitches,
+                          controllers = OldCtrls} = Startup,
+                {NewConfig, #ofconfig{switches = NewSwitches} = NewStartup}) ->
+    Ports = case lists:keyfind(ports, 1, Opts) of
+                {ports, P} -> P;
+                false -> []
+            end,
+    Ctrls = case lists:keyfind(controllers, 1, Opts) of
+                {controllers, C} -> C;
+                false -> []
+            end,
+    Queues = case lists:keyfind(queues_status, 1, Opts) of
+                 {queues_status, enabled} ->
+                     case lists:keyfind(queues, 1, Opts) of
+                         {queues, Q} -> Q;
+                         false -> []
+                     end;
+                 _ -> []
+             end,
+    {NewQueues, NewStartup2} = update_queues(Queues, SwitchId, OldQueues,
+                                             {[], NewStartup}),
+    {NewPorts, NewStartup3} = update_ports(Ports, NewQueues, SwitchId, OldPorts,
+                                           {[], NewStartup2}),
+    NewCtrls = update_controllers(Ctrls, SwitchId, OldCtrls),
+
+    NewOpts = lists:keyreplace(ports, 1, Opts, {ports, NewPorts}),
+    NewOpts2 = lists:keyreplace(queues, 1, NewOpts, {queues, NewQueues}),
+    NewOpts3 = lists:keyreplace(controllers, 1,
+                                NewOpts2, {controllers, NewCtrls}),
+
+    DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
+                     {switch, _, D} -> D;
+                     false -> linc_logic:gen_datapath_id(SwitchId)
+                 end,
+    update_switches(Rest, Startup,
+                    {[{switch, SwitchId,
+                       [{datapath_id, DatapathId} | NewOpts3]} | NewConfig],
+                     NewStartup3#ofconfig{
+                       switches = [{switch, SwitchId, DatapathId}
+                                   | NewSwitches],
+                       controllers = OldCtrls}}).
+
+update_ports([], _, _, _, New) ->
+    New;
+update_ports([{port, PortId, Opts} | Rest], Queues, SwitchId, OldPorts,
+             {NewPorts, #ofconfig{ports = NewSPorts} = NewStartup}) ->
+    {NP, NSP} = case lists:keyfind({PortId, SwitchId}, 2, OldPorts) of
+                    {port, _, Config, Features} = P ->
+                        {{port, PortId,
+                          [{config, Config},
+                           {features, Features},
+                           {queues, Queues} | Opts]}, P};
+                    false ->
+                        {{port, PortId,
+                          [{config, ?DEFAULT_PORT_CONFIG},
+                           {features, ?DEFAULT_PORT_FEATURES} | Opts]},
+                         {port, {PortId, SwitchId},
+                          ?DEFAULT_PORT_CONFIG,
+                          ?DEFAULT_PORT_FEATURES}}
+                end,
+    update_ports(Rest, Queues, SwitchId, OldPorts,
+                 {[NP | NewPorts],
+                  NewStartup#ofconfig{ports = [NSP | NewSPorts]}}).
+
+update_queues([], _, _, New) ->
+    New;
+update_queues([{port, PortId, Opts} | Rest], SwitchId, OldQueues,
+              {NewQueues, NewStartup}) ->
+    case lists:keyfind(port_queues, 1, Opts) of
+        {port_queues, Queues} ->
+            {NQ, NS} = update_queues2(Queues, PortId, SwitchId,
+                                      OldQueues, {[], NewStartup}),
+            NewOpts = lists:keyreplace(port_queues, 1, Opts,
+                                       {port_queues, NQ}),
+            update_queues(Rest, SwitchId, OldQueues,
+                          {[{port, PortId, NewOpts} | NewQueues], NS});
+        false ->
+            update_queues(Rest, SwitchId, OldQueues, {NewQueues, NewStartup})
+    end.
+
+update_queues2([], _, _, _, New) ->
+    New;
+update_queues2([{QueueId, Opts} | Rest], PortId, SwitchId, OldQueues,
+               {NewQueues, #ofconfig{queues = NewSQueues} = NewStartup}) ->
+    {NQ, NSQ} = case lists:keyfind({QueueId, PortId, SwitchId}, 2, OldQueues) of
+                    {queue, _, MinRate, MaxRate} = Q ->
+                        {{QueueId, [{min_rate, MinRate},
+                                    {max_rate, MaxRate}]}, Q};
+                    false ->
+                        MinRate = case lists:keyfind(min_rate, 1, Opts) of
+                                      {min_rate, MinR} -> MinR;
+                                      false -> undefined
+                                  end,
+                        MaxRate = case lists:keyfind(max_rate, 1, Opts) of
+                                      {max_rate, MaxR} -> MaxR;
+                                      false -> undefined
+                                  end,
+                        {{QueueId, Opts},
+                         {queue, {QueueId, PortId, SwitchId},
+                          MinRate, MaxRate}}
+                end,
+    update_queues2(Rest, PortId, SwitchId, OldQueues,
+                   {[NQ | NewQueues],
+                    NewStartup#ofconfig{queues = [NSQ | NewSQueues]}}).
+
+update_controllers(Ctrls, SwitchId, OldCtrls) ->
+    OldCtrls2 = [Controller || {SId, #controller{} = Controller} <- OldCtrls,
+                               SId == SwitchId],
+    Ctrls ++ OldCtrls2.
 
 logical_switch_port_rate(PortConfig) ->
     case lists:keyfind(port_rate, 1, PortConfig) of

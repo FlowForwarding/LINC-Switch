@@ -291,9 +291,10 @@ scenario(equal_controller) ->
     [role_request(equal, generation_id()),
      flow_mod_delete_all_flows(),
      async_config({[no_match], []}, {[], []}, {[], []}),
-     flow_mod_output_to_port(1, 2, undefined),
+     flow_add([], [{in_port, <<1:32>>}], [{apply_actions,
+                                           [{output,controller,no_buffer},
+                                            {output,2, no_buffer}]}]),
      flow_mod_output_to_port(2, 1, undefined),
-     flow_mod_output_to_port(1, controller, no_buffer),
      flow_mod_table_miss()];
 %% Scenario for slave controller:
 %% 1. Request slave role.

@@ -24,31 +24,45 @@
 %% Generators ------------------------------------------------------------------
 
 startup_format_without_ofconfig_test_() ->
-    [{setup,
-      fun load_simple_environment_without_ofconfig/0,
-      fun unload_environment/1,
-      {"Test startup for the simplest switch config",
-       fun should_return_simple_startup_with_datapath_id/0}},
-     {setup,
-      fun load_simple_environment_with_ports_without_ofconfig/0,
-      fun unload_environment/1,
-      fun(CapableSwitchPorts) ->
-              {"Test startup for the simplest switch config with two ports",
-               fun() ->
-                       should_return_startup_with_ports(CapableSwitchPorts)
-               end}
-      end},
-     {setup,
-      fun load_simple_environment_with_ports_and_queues_without_ofconfig/0,
-      fun unload_environment/1,
-      fun(LogicalSwitchPorts) ->
-              {"Test startup for the simplest switch config with one port "
-               "with two queues attached",
-               fun() ->
-                       should_return_startup_with_ports_and_queues(
-                         LogicalSwitchPorts)
-               end}
-      end}].
+    {setup,
+     fun() ->
+             meck:new(inet, [unstick, passthrough]),
+             meck:expect(inet, getifaddrs, 0,
+                         {ok, [{"fake0",
+                                [{flags,[up,broadcast,running,multicast]},
+                                 {hwaddr,[2,0,0,0,0,1]},
+                                 {addr,{192,168,1,1}},
+                                 {netmask,{255,255,255,0}},
+                                 {broadaddr,{192,168,1,255}}]}]})
+     end,
+     fun(_) ->
+             meck:unload()
+     end,
+     [{setup,
+       fun load_simple_environment_without_ofconfig/0,
+       fun unload_environment/1,
+       {"Test startup for the simplest switch config",
+        fun should_return_simple_startup_with_datapath_id/0}},
+      {setup,
+       fun load_simple_environment_with_ports_without_ofconfig/0,
+       fun unload_environment/1,
+       fun(CapableSwitchPorts) ->
+               {"Test startup for the simplest switch config with two ports",
+                fun() ->
+                        should_return_startup_with_ports(CapableSwitchPorts)
+                end}
+       end},
+      {setup,
+       fun load_simple_environment_with_ports_and_queues_without_ofconfig/0,
+       fun unload_environment/1,
+       fun(LogicalSwitchPorts) ->
+               {"Test startup for the simplest switch config with one port "
+                "with two queues attached",
+                fun() ->
+                        should_return_startup_with_ports_and_queues(
+                          LogicalSwitchPorts)
+                end}
+       end}]}.
 
 %% Tests -----------------------------------------------------------------------
 

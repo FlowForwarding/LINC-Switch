@@ -72,8 +72,9 @@ eth_and_vlan_fields(P) ->
     end.
 
 %% @doc Extracts known fields from different packet header types
-header_fields(#pbb{i_sid = ISID}) ->
-    [ofp_field(pbb_isid, <<ISID:24>>)];
+header_fields(#pbb{i_sid = ISID, i_uca = UCA}) ->
+    [ofp_field(pbb_isid, <<ISID:24>>),
+     ofp_field(pbb_uca, <<UCA:1>>)];
 header_fields(#arp{op = Op,
                    sip = SPA,
                    tip = TPA,

@@ -50,8 +50,8 @@ convert_test_() ->
      ]}.
 
 pbb() ->
-    Packet = [#pbb{i_sid = 100}],
-    check_packet(Packet, [{pbb_isid, <<100:24>>}]).
+    Packet = [#pbb{i_sid = 100, i_uca = 1}],
+    check_packet(Packet, [{pbb_isid, <<100:24>>}, {pbb_uca, <<1:1>>}]).
 
 ether() ->
     Packet = [#ether{dhost = dhost, shost = shost, type = 1}],

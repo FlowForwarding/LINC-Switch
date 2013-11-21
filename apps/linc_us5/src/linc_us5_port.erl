@@ -405,19 +405,26 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
 handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                      config = Config,
                                      mask = _Mask,
-                                     advertise = Advertise}}, _From,
+                                     properties = PMProperties}}, _From,
             #state{port = #ofp_port{hw_addr = HWAddr, properties = Properties} = Port} = State) ->
     {Reply, NewPort} = case PMHwAddr == HWAddr of
                            true ->
-                               {value, Ethernet} =
-                                   lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
-                               NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{
-                                               advertised = Advertise},
-                               NewProperties =
-                                   lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
-                                                    NewEthernet),
-                               {ok, Port#ofp_port{config = Config,
-                                                  properties = NewProperties}};
+                               case PMProperties of
+                                   %% Ensure there is one single property, for Ethernet...
+                                   [#ofp_port_mod_prop_ethernet{advertise = Advertise}] ->
+                                       {value, Ethernet} =
+                                           lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+                                       NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{
+                                                       advertised = Advertise},
+                                       NewProperties =
+                                           lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
+                                                            NewEthernet),
+                                       {ok, Port#ofp_port{config = Config,
+                                                          properties = NewProperties}};
+                                   %% ...otherwise reject the message.
+                                   _ ->
+                                       {{error, {port_mod_failed, bad_config}}, Port}
+                               end;
                            false ->
                                {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,

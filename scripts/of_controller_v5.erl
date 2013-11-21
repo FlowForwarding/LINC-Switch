@@ -787,7 +787,8 @@ port_mod() ->
                           hw_addr = <<0,17,0,0,17,17>>,
                           config = [],
                           mask = [],
-                          advertise = [fiber]}).
+                          properties = [#ofp_port_mod_prop_ethernet{
+                                           advertise = [fiber]}]}).
 
 group_mod_add_bucket_with_output_to_controller(GroupId) ->
     message(#ofp_group_mod{

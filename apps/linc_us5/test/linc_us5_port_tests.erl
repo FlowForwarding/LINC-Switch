@@ -77,8 +77,28 @@ port_mod() ->
     HwAddr = <<1,1,1,1,1,1>>,
     PortMod3 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
                              config = [], mask = [],
-                             advertise = [copper, autoneg]},
-    ?assertEqual(ok, linc_us5_port:modify(?SWITCH_ID, PortMod3)).
+                             properties = [#ofp_port_mod_prop_ethernet{
+                                              advertise = [copper, autoneg]}]},
+    ?assertEqual(ok, linc_us5_port:modify(?SWITCH_ID, PortMod3)),
+
+    %% missing ethernet property
+    PortMod4 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
+                             config = [], mask = [],
+                             properties = []},
+    ?assertEqual({error, {port_mod_failed, bad_config}},
+                 linc_us5_port:modify(?SWITCH_ID, PortMod4)),
+
+    %% optical instead of ethernet
+    PortMod5 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
+                             config = [], mask = [],
+                             properties = [#ofp_port_mod_prop_optical{
+                                             configure = [rx_tune],
+                                             freq_lmda = 0,
+                                             fl_offset = 0,
+                                             grid_span = 0,
+                                             tx_pwr = 0}]},
+    ?assertEqual({error, {port_mod_failed, bad_config}},
+                 linc_us5_port:modify(?SWITCH_ID, PortMod5)).
 
 is_valid() ->
     ?assertEqual(true, linc_us5_port:is_valid(?SWITCH_ID, any)),

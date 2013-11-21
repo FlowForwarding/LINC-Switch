@@ -103,7 +103,8 @@ terminate(#state{switch_id = SwitchId, tref=Tref}) ->
     ok.
 
 %% @doc Handle ofp_table_mod request
-%% In version 1.3 This doesn't do anything anymore.
+%% In version 1.4 this is used for configuring eviction and vacancy, which
+%% are not yet implemented.
 -spec table_mod(#ofp_table_mod{}) -> ok.
 table_mod(#ofp_table_mod{}) ->
     ok.

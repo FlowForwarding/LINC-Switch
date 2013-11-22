@@ -736,9 +736,7 @@ check_occurances(Instructions) ->
         true ->
             ok;
         false ->
-            %% FIXME: The spec 1.2 does not specify an error for this case.
-            %% So for now we return this.
-            {error,{bad_instruction, unknown_inst}}
+            {error,{bad_instruction, dup_inst}}
     end.
 
 check_occurrences(ofp_instruction_goto_table, Instructions) ->

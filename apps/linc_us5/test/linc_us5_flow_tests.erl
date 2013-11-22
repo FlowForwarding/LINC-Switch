@@ -245,8 +245,8 @@ valid_meter() ->
                  linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
 
 dupl_instruction() ->
-    %% FIXME: The spec 1.2 does not specify an error for this case.
-    %% So for now we return this {bad_instruction, unknown_inst}.
+    %% As of version 1.4 of the spec, a duplicate instruction causes a
+    %% dup_inst error.
     FlowModAdd = ofp_v5_utils:flow_add(
                    [{table_id,5},
                     {priority,5},
@@ -254,7 +254,7 @@ dupl_instruction() ->
                    [{in_port,6},{eth_type,<<8,0>>},{udp_src,<<8,0>>}],
                    [{write_actions,[{set_field,tcp_dst,<<8,0>>}]},
                     {write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
-    ?assertEqual({error,{bad_instruction, unknown_inst}},
+    ?assertEqual({error,{bad_instruction, dup_inst}},
                  linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
 
 %% Match un UDP, but action tries to change a TCP field

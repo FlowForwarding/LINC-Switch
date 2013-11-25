@@ -4,11 +4,10 @@ main([]) ->
     usage();
 main(Args) ->
     try parse_args(Args, []) of
-        Config ->
-            {switches, Switches} = lists:keyfind(switches, 1, Config),
-            {controllers, Controllers} = lists:keyfind(controllers, 1, Config),
-            {output_file, OutputFile} = lists:keyfind(output_file, 1, Config),
-            SysConfig = generate_sys_config(Switches, Controllers),
+        ParsedConfig ->
+            {output_file, OutputFile} = lists:keyfind(output_file, 1,
+                                                      ParsedConfig),
+            SysConfig = generate_sys_config(ParsedConfig),
             ok = file:write_file(OutputFile, io_lib:fwrite("~p.~n", [SysConfig]))
     catch
         _:required_argument_missing ->
@@ -26,12 +25,13 @@ usage() ->
               [usage_pattern(ScriptName), usage_example(ScriptName)]).
 
 usage_pattern(ScriptName) ->
-    ScriptName ++ "[-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
+    ScriptName ++ " [-s LOGICAL_SWITCH_ID [INTERFACE_NAME]]"
         " -c [[tcp|tls]:CONTROLLER_ADDRES:CONTROLLER_PORT]"
+        " [-l CONTROLLERS_LISTENER_ADDRESS:PORT]"
         " -o OUTPUT_FILE".
 
 usage_example(ScriptName) ->
-    ScriptName ++ "-s 0 tap0 tap1 -c tcp:10.48.11.5:6633 tls:10.48.11.6:5533 "
+    ScriptName ++ " -s 0 tap0 tap1 -c tcp:10.48.11.5:6633 tls:10.48.11.6:5533 "
         "-o ../rel/files/sys.config".
 
 parse_args([], Config) ->
@@ -56,7 +56,11 @@ parse_args(["-o", Outputfile | Rest], Config) ->
     parse_args(Rest, [{output_file, Outputfile} | Config]);
 parse_args(["-c" | Rest], Config) ->
     {Controllers, NewRest} = parse_controllers(Rest),
-    parse_args(NewRest, [{controllers, Controllers} | Config]).
+    parse_args(NewRest, [{controllers, Controllers} | Config]);
+parse_args(["-l" | Rest], Config) ->
+    {ControllersListener, NewRest} = parse_controllers_listener(Rest),
+    parse_args(NewRest, [{controllers_listener, ControllersListener} | Config]).
+
 
 parse_interfaces(Args) ->
     split_to_next_option(Args).
@@ -66,6 +70,7 @@ split_to_next_option(Args) ->
                             Element =/= "-s"
                                 andalso Element =/= "-o"
                                 andalso Element =/= "-c"
+                                andalso Element =/= "-l"
                     end, Args).
 
 parse_controllers(Args) ->
@@ -75,8 +80,12 @@ parse_controllers(Args) ->
                  end, [], Controllers),
      Rest}.
 
-generate_sys_config(Switches, Controllers) ->
-    PortsNames = ports_names(Switches),
+parse_controllers_listener(Args) ->
+    {[ControllersListener], Rest} = split_to_next_option(Args),
+    {list_to_tuple(string:tokens(ControllersListener, ":")), Rest}.
+
+generate_sys_config(ParsedConfig) ->
+    PortsNames = ports_names(ParsedConfig),
     PortsMap = lists:zip(PortsNames, lists:seq(1, length(PortsNames))),
     [
      {linc,
@@ -85,7 +94,7 @@ generate_sys_config(Switches, Controllers) ->
        {capable_switch_ports, generate_ports(PortsMap)},
        {capable_switch_queues, []},
        {logical_switches,
-        generate_logical_switches(Switches, Controllers, PortsMap)}
+        generate_logical_switches(ParsedConfig, PortsMap)}
       ]},
      {enetconf,
       [
@@ -127,7 +136,8 @@ generate_sys_config(Switches, Controllers) ->
       ]}
     ].
 
-ports_names(Switches) ->
+ports_names(ParsedConfig) ->
+    {switches, Switches} = lists:keyfind(switches, 1, ParsedConfig),
     lists:foldl(fun({_, Ports}, Acc) ->
                         Ports ++ Acc
                 end, [], Switches).
@@ -136,15 +146,16 @@ ports_names(Switches) ->
 generate_ports(PortsMap) ->
     [{port, PortNo, [{interface, PortName}]} || {PortName, PortNo} <- PortsMap].
 
-generate_logical_switches(Switches, Controllers, PortsMap) ->
+generate_logical_switches(ParsedConfig, PortsMap) ->
+    {switches, Switches} = lists:keyfind(switches, 1, ParsedConfig),
+    {controllers, Controllers} = lists:keyfind(controllers, 1, ParsedConfig),
     [
      {switch, list_to_integer(SwitchId),
       [
        {backend, linc_us4},
-       %% {controllers,[{"Switch" ++ SwitchId ++ "-Controller"
-       %% , "localhost", 6633, tcp}]},
        {controllers, generate_logical_switch_controllers(SwitchId, Controllers)},
-       {controllers_listener, disabled},
+       {controllers_listener,
+        generate_logical_switch_controllers_listener(ParsedConfig)},
        {queues_status, disabled},
        {ports, generate_logical_switch_ports(PortsNames, PortsMap)}
       ]}
@@ -157,6 +168,14 @@ generate_logical_switch_controllers(SwitchId, Controllers) ->
                           list_to_integer(Port),
                           list_to_atom(Protocol)} | Acc]
                 end, [], Controllers).
+
+generate_logical_switch_controllers_listener(ParsedConfig) ->
+    case lists:keyfind(controllers_listener, 1, ParsedConfig) of
+        {controllers_listener, {IP, Port}} ->
+            {IP, list_to_integer(Port), tcp};
+        false ->
+            disabled
+    end.
 
 generate_logical_switch_ports(PortsNames, PortsMap) ->
     [{port, element(2, lists:keyfind(PortName, 1, PortsMap)), {queues, []}}

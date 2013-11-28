@@ -51,11 +51,22 @@ Then perform two first steps from the [ping](#ping) chapter. Now you can try to 
 
 > By default a switch started by Mininet tries to connect to a controller that listens on 127.0.0.1:6633.
 
+### More advanced topologies ###
+Mininet allows to create more complex topologies through its python API. You can setup a topology with two directly connected LINC switches plus a host for each switch
+`host --- switch --- switch --- host`  
+This topology is defined in the Mininet repository in [topo-2sw-2host.py](https://github.com/mininet/mininet/blob/master/custom/topo-2sw-2host.py). To get started follow the  instructions below:
+
+1. Start the Mininet with LINC-Switch and the custom topology:  
+`sudo bin/mn --controller=remote --switch=linc --custom custom/topo-3sw-2host.py --topo mytopo`
+1. In another console run the controller with a prepared scenario:  
+`cd LINC-Switch/scripts`      
+`sudo ./of_controller_v4.sh -p 6633 -d -s mininet_mytopo`  
+3. Ping the hosts from the Mininet CLI:  
+`pingall`  
+4. Optionally you can attach to switches' consoles (the commands has to be ran from separate terminals):  
+`sudo linc s3 attach`  
+`sudo linc s4 attach`
+
 ### Further reading ###
 The best starting point to dive into the Mininet further is to follow the [Mininet Walkthrough](http://mininet.org/walkthrough/).
-
-> Please note that the LINC-Switch is integrated with the Mininet **at very basic level** and not all features will work.
-
-The future
-----------
-It the nearest future we are going to support more Mininet features.
+To get more familiar with Mininet Python API you can read [Introduction to Mininet](https://github.com/mininet/mininet/wiki/Introduction-to-Mininet).

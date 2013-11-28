@@ -541,6 +541,19 @@ scenario(group_mod_modify_group) ->
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
 
+%% This scenario is intended for LINC running on Mininet simple topology that can
+%% be found in MININET_ROOT/custom/mininet/topo-2sw-2host.py. This topology
+%% represents two directly connected switches plus a host for each switch:
+%%
+%% host --- switch --- switch --- host
+%%
+%% So the forwarding tables for two switches are identical.
+scenario(mininet_mytopo) ->
+    [flow_mod_delete_all_flows(),
+     flow_mod_output_to_port(1, 2, undefined),
+     flow_mod_output_to_port(2, 1, undefined)];
+
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

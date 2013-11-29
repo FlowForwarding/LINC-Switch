@@ -81,13 +81,13 @@
 %%%-----------------------------------------------------------------------------
 
 start() ->
-    start_scenario(6633, all_messages).
+    start_scenario(6653, all_messages).
 
 start(PortOrRemotePeer) ->
     start_scenario(PortOrRemotePeer, all_messages).
 
 start_scenario(Scenario) ->
-    start_scenario(6633, Scenario).
+    start_scenario(6653, Scenario).
 
 start_scenario(PortOrRemotePeer, Scenario) ->
     lager:start(),

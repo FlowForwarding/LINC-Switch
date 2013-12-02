@@ -111,8 +111,10 @@ terminate(SwitchId) ->
                                                     Code :: atom()}}.
 modify(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, invalid} ->
             {error, {bad_request, bad_port}};
+        {error, nonexistent} ->
+            {error, {port_mod_failed, bad_port}};
         Pid ->
             gen_server:call(Pid, {port_mod, PortMod})
     end.
@@ -166,7 +168,7 @@ send(#linc_pkt{}, any) ->
     bad_port;
 send(#linc_pkt{switch_id = SwitchId} = Pkt, PortNo) when is_integer(PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             bad_port;
         Pid ->
             gen_server:cast(Pid, {send, Pkt})
@@ -198,7 +200,7 @@ get_stats(SwitchId, #ofp_port_stats_request{port_no = PortNo}) ->
 -spec get_state(integer(), ofp_port_no()) -> [ofp_port_state()].
 get_state(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, get_port_state)
@@ -207,7 +209,7 @@ get_state(SwitchId, PortNo) ->
 -spec set_state(integer(), ofp_port_no(), [ofp_port_state()]) -> ok.
 set_state(SwitchId, PortNo, PortState) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, {set_port_state, PortState})
@@ -216,7 +218,7 @@ set_state(SwitchId, PortNo, PortState) ->
 -spec get_config(integer(), ofp_port_no()) -> [ofp_port_config()].
 get_config(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, get_port_config)
@@ -225,7 +227,7 @@ get_config(SwitchId, PortNo) ->
 -spec set_config(integer(), ofp_port_no(), [ofp_port_config()]) -> ok.
 set_config(SwitchId, PortNo, PortConfig) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, {set_port_config, PortConfig})
@@ -237,7 +239,7 @@ set_config(SwitchId, PortNo, PortConfig) ->
                                                       [ofp_port_feature()]).
 get_features(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, get_features)
@@ -246,7 +248,7 @@ get_features(SwitchId, PortNo) ->
 -spec get_advertised_features(integer(), ofp_port_no()) -> [ofp_port_feature()].
 get_advertised_features(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, get_advertised_features)
@@ -255,7 +257,7 @@ get_advertised_features(SwitchId, PortNo) ->
 -spec set_advertised_features(integer(), ofp_port_no(), [ofp_port_feature()]) -> ok.
 set_advertised_features(SwitchId, PortNo, AdvertisedFeatures) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, {set_advertised_features, AdvertisedFeatures})
@@ -553,7 +555,7 @@ add(physical, SwitchId, PortConfig) ->
 -spec remove(integer(), ofp_port_no()) -> ok | bad_port.
 remove(SwitchId, PortNo) ->
     case get_port_pid(SwitchId, PortNo) of
-        bad_port ->
+        {error, _} ->
             bad_port;
         Pid ->
             Sup = linc:lookup(SwitchId, linc_us4_port_sup),
@@ -587,11 +589,13 @@ update_port_tx_counters(SwitchId, PortNum, Bytes) ->
                        [{#ofp_port_stats.tx_packets, 1},
                         {#ofp_port_stats.tx_bytes, Bytes}]).
 
--spec get_port_pid(integer(), ofp_port_no()) -> pid() | bad_port.
+-spec get_port_pid(integer(), ofp_port_no()) -> pid() | {error, invalid | nonexistent}.
+get_port_pid(_SwitchId, PortNo) when is_atom(PortNo); PortNo > ?OFPP_MAX ->
+    {error, invalid};
 get_port_pid(SwitchId, PortNo) ->
     case ets:lookup(linc:lookup(SwitchId, linc_ports), PortNo) of
         [] ->
-            bad_port;
+            {error, nonexistent};
         [#linc_port{pid = Pid}] ->
             Pid
     end.

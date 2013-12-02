@@ -56,7 +56,8 @@ meters_test_() ->
                               fun(_, _) -> ok end) end,
          fun(_) -> meck:unload(linc_us4_flow) end,
          [{"Delete", fun delete/0},
-          {"Delete non-existing", fun delete_nonexisting/0}]},
+          {"Delete non-existing", fun delete_nonexisting/0},
+          {"Delete all", fun delete_all/0}]},
         {"Get config, no meters", fun get_config_none/0},
         {"Get stats, no meters", fun get_stats_none/0},
         {"Get stats, stats disabled", fun get_stats_disabled/0},
@@ -88,6 +89,9 @@ get_features() ->
     ?assert(is_record(Features, ofp_meter_features_reply)).
 
 add() ->
+    add(1).
+
+add(MeterId) ->
     Bands = [#ofp_meter_band_drop{rate = 200},
              #ofp_meter_band_dscp_remark{rate = 100,
                                          prec_level = 1},
@@ -97,13 +101,12 @@ add() ->
                                           experimenter = 123}],
     MeterMod = #ofp_meter_mod{command = add,
                               flags = [kbps, stats],
-                              meter_id = 1,
+                              meter_id = MeterId,
                               bands = Bands},
     ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
-    ?assert(?MOD:is_valid(?ID, 1)),
+    ?assert(?MOD:is_valid(?ID, MeterId)),
     ExpectedConfig = meter_config([MeterMod]),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, 1)),
-    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, all)).
+    ?assertEqual(ExpectedConfig, ?MOD:get_config(?ID, MeterId)).
 
 add_twice() ->
     add(),
@@ -240,6 +243,17 @@ delete_nonexisting() ->
                               bands = []},
     ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
     ?assertNot(?MOD:is_valid(?ID, 1)).
+
+delete_all() ->
+    add(1),
+    add(2),
+    MeterMod = #ofp_meter_mod{command = delete,
+                              meter_id = all,
+                              flags = [],
+                              bands = []},
+    ?assertEqual(noreply, ?MOD:modify(?ID, MeterMod)),
+    ?assertNot(?MOD:is_valid(?ID, 1)),
+    ?assertNot(?MOD:is_valid(?ID, 2)).
 
 get_config_none() ->
     ?assertEqual(meter_config([]), ?MOD:get_config(?ID, all)),

@@ -551,6 +551,9 @@ scenario(master_controller) ->
     [role_request(master, GenId),
      flow_mod_table_miss()];
 
+scenario(table_desc) ->
+    [message(#ofp_table_desc_request{})];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

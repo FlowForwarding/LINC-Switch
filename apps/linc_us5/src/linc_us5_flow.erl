@@ -23,6 +23,7 @@
 -export([initialize/1,
          terminate/1,
          table_mod/1,
+         table_desc/0,
          modify/2,
          get_flow_table/2,
          delete_where_group/2,
@@ -108,6 +109,19 @@ terminate(#state{switch_id = SwitchId, tref=Tref}) ->
 -spec table_mod(#ofp_table_mod{}) -> ok.
 table_mod(#ofp_table_mod{}) ->
     ok.
+
+-spec table_desc() -> ofp_table_desc_reply().
+table_desc() ->
+    #ofp_table_desc_reply{
+       %% Entire reply in one packet - need to update this if we exceed 64 kB
+       flags = [],
+       tables = [#ofp_table_desc{
+                    table_id = Id,
+                    %% Eviction and vacancy - currently we support neither.
+                    config = [],
+                    %% Ditto for properties.
+                    properties = []}
+                 || Id <- lists:seq(0, ?OFPTT_MAX)]}.
 
 %% @doc Handle a flow_mod request from a controller.
 %% This may add/modify/delete one or more flows.

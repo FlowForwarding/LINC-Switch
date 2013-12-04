@@ -66,9 +66,7 @@ copy_release_dir() {
 
 create_erts_lib_links() {
     NEW_REL=$1
-    echo $NEW_REL
     ERTS_DIR=$(ls -A | grep 'erts-.*')
-    echo $ERTS_DIR
     ln -s `pwd`/lib ../$NEW_REL/lib
     ln -s `pwd`/$ERTS_DIR ../$NEW_REL/$ERTS_DIR
 }

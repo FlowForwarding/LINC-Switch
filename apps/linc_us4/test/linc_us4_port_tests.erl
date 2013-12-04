@@ -65,7 +65,7 @@ port_test_() ->
 port_mod() ->
     BadPort = 999,
     PortMod1 = #ofp_port_mod{port_no = BadPort},
-    Error1 = {error, {bad_request, bad_port}},
+    Error1 = {error, {port_mod_failed, bad_port}},
     ?assertEqual(Error1, linc_us4_port:modify(?SWITCH_ID, PortMod1)),
 
     Port = 1,

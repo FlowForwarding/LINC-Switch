@@ -36,7 +36,7 @@
 %%% Routing functions ----------------------------------------------------------
 %%%
 
--type route_result() :: {match, integer(), linc_pkt()}
+-type route_result() :: {match, flow_id(), linc_pkt()}
                       | {table_miss, drop | controller}.
 
 -spec spawn_route(#linc_pkt{}) -> pid().

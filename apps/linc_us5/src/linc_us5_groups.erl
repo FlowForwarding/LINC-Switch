@@ -352,7 +352,8 @@ apply_bucket(#linc_bucket{
     group_update_bucket_stats(SwitchId, BucketId, byte_count, Pkt#linc_pkt.size),
 
     %%ActionsSet = ordsets:from_list(Actions),
-    case linc_us5_actions:apply_set(Pkt#linc_pkt{ actions = Actions }) of
+    case linc_us5_actions:apply_set(Pkt#linc_pkt{packet_in_reason = group,
+                                                 actions = Actions}) of
         {error, Reason} ->
             larger:error("Applying bucket with ID ~p failed becase: ~p~n",
                          [BucketId, Reason]),

@@ -87,16 +87,11 @@ apply_list(Pkt, Actions) ->
 -spec apply_list(Pkt :: linc_pkt(),
                  Actions :: list(ofp_action()),
                  SideEffects :: list(side_effect())) -> action_list_output().
-apply_list(#linc_pkt{packet_in_reason = no_match} = Pkt,
-           [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
-           SideEffects) ->
-    linc_us5_port:send(Pkt#linc_pkt{packet_in_bytes = MaxLen}, controller),
-    apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
 apply_list(Pkt,
            [#ofp_action_output{port = controller, max_len = MaxLen} | Rest],
            SideEffects) ->
-    linc_us5_port:send(Pkt#linc_pkt{packet_in_reason = action, 
-                                    packet_in_bytes = MaxLen}, controller),
+    %% NB: we assume that packet_in_reason has been set to the right value.
+    linc_us5_port:send(Pkt#linc_pkt{packet_in_bytes = MaxLen}, controller),
     apply_list(Pkt, Rest, [{output, controller, Pkt} | SideEffects]);
 apply_list(Pkt, [#ofp_action_output{port = Port} | Rest], SideEffects) ->
     linc_us5_port:send(Pkt, Port),

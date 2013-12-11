@@ -637,16 +637,16 @@ microsec_to_sec(Micro) ->
 microsec_to_nsec(Micro) ->
     (Micro rem 1000000) * 1000.
 
-maybe_buffer(_SwitchId, action, Packet, no_buffer) ->
-    {no_buffer,pkt:encapsulate(Packet)};
-maybe_buffer(SwitchId, action, Packet, Bytes) ->
-    maybe_buffer(SwitchId, Packet, Bytes);
-maybe_buffer(SwitchId, no_match, Packet, _Bytes) ->
+%% If the packet is sent to the controller because of a "send to
+%% controller" action, then we should use the max_len field from that
+%% action.  If the packet is sent for other reasons, then we should
+%% send at least miss_send_len bytes.
+maybe_buffer(SwitchId, table_miss, Packet, _Bytes) ->
     maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len));
 maybe_buffer(SwitchId, invalid_ttl, Packet, _Bytes) ->
-    %% The spec does not specify how many bytes to include for invalid_ttl,
-    %% so we use miss_send_len here as well.
-    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len)).
+    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len));
+maybe_buffer(SwitchId, _Reason, Packet, Bytes) ->
+    maybe_buffer(SwitchId, Packet, Bytes).
 
 maybe_buffer(_SwitchId, Packet, no_buffer) ->
     {no_buffer, pkt:encapsulate(Packet)};

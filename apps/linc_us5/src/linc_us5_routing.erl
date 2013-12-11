@@ -63,7 +63,7 @@ route(#linc_pkt{switch_id = SwitchId} = Pkt, TableId) ->
             Pkt2 = Pkt#linc_pkt{table_id = TableId, cookie = Cookie},
             case linc_us5_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
-                    linc_us5_actions:apply_set(Pkt3),
+                    linc_us5_actions:apply_set(Pkt3#linc_pkt{packet_in_reason = action_set}),
                     {match, FlowId, Pkt3};
                 {{goto, NextTableId}, Pkt3} ->
                     route(Pkt3, NextTableId)
@@ -71,12 +71,12 @@ route(#linc_pkt{switch_id = SwitchId} = Pkt, TableId) ->
         {match, table_miss, #flow_entry{id = FlowId,
                                         cookie = Cookie,
                                         instructions = Instructions}} ->
-            Pkt2 = Pkt#linc_pkt{packet_in_reason = no_match,
+            Pkt2 = Pkt#linc_pkt{packet_in_reason = table_miss,
                                cookie = Cookie,
                                table_id = TableId},
             case linc_us5_instructions:apply(Pkt2, Instructions) of
                 {stop, Pkt3} ->
-                    linc_us5_actions:apply_set(Pkt3),
+                    linc_us5_actions:apply_set(Pkt3#linc_pkt{packet_in_reason = action_set}),
                     {match, FlowId, Pkt3};
                 {{goto, NextTableId}, Pkt3} ->
                     route(Pkt3, NextTableId)
@@ -92,7 +92,7 @@ route(#linc_pkt{switch_id = SwitchId} = Pkt, TableId) ->
         %% Thus we still support table miss logic where no flow entries are 
         %% present in the flow table.
         table_miss ->
-            Pkt2 = Pkt#linc_pkt{packet_in_reason = no_match,
+            Pkt2 = Pkt#linc_pkt{packet_in_reason = table_miss,
                                 switch_id = SwitchId,
                                 table_id = TableId},
             case linc_us5_flow:get_table_config(SwitchId, TableId) of

@@ -24,9 +24,11 @@
          mock_reset/1,
          check_output_on_ports/0,
          check_output_to_groups/0,
+         check_output_to_controllers/0,
          check_if_called/1,
          check_if_called/2,
          add_logic_path/0]).
+-include_lib("of_protocol/include/of_protocol.hrl").
 
 mock([]) ->
     mocked;
@@ -177,6 +179,12 @@ check_output_on_ports() ->
 check_output_to_groups() ->
     [{Pkt, GroupId}
      || {_, {_, apply, [Pkt, GroupId]}, ok} <- meck:history(linc_us5_group)].
+
+check_output_to_controllers() ->
+    [{SwitchId, Type, Body}
+     || {_, {_, send_to_controllers, [SwitchId, #ofp_message{type = Type,
+                                                             body = Body}]}, ok} <- 
+            meck:history(linc_logic)].
 
 check_if_called({Module, Fun, Arity}) ->
     check_if_called({Module, Fun, Arity}, {1, times}).

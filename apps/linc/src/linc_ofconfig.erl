@@ -779,10 +779,10 @@ extract_queue_id(String) ->
                 true ->
                     {QueueId, PortId, SwitchId};
                 false ->
-                    {invalid, invalid, invalid}
+                    invalid
             end;
         nomatch ->
-            {invalid, invalid, invalid}
+            invalid
     end.
 
 execute_operations(Ops, OnError, startup, Certs) ->

@@ -636,13 +636,15 @@ convert_before_merge(#ofconfig{ports = Ports,
       || {switch, SwitchId, DatapathId} <- Switches]}.
 
 filter_switch_resources(SwitchId, Resources) ->
-    lists:map(fun({port, {PortId, SId}, _, _}) when SId == SwitchId ->
-                      {port, resource_id(port, {SId, PortId})};
-                 ({queue, {QueueId, PortId, SId}, _, _}) when SId == SwitchId ->
-                      {queue, resource_id(queue, {SId, PortId, QueueId})};
-                 (_) ->
-                      false
-              end, Resources).
+    %% filtermap
+    lists:reverse(lists:foldl(
+        fun({port, {PortId, SId}, _, _}, Acc) when SId == SwitchId ->
+               [{port, resource_id(port, {SId, PortId})}|Acc];
+           ({queue, {QueueId, PortId, SId}, _, _}, Acc) when SId == SwitchId ->
+               [{queue, resource_id(queue, {SId, PortId, QueueId})}|Acc];
+           (_, Acc) ->
+               Acc
+        end, [], Resources)).
 
 convert_ports_before_merge(Ports) ->
     [#port{resource_id = resource_id(port, {PSwitchId, PortId}),

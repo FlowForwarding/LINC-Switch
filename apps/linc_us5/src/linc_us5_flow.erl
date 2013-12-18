@@ -104,11 +104,23 @@ terminate(#state{switch_id = SwitchId, tref=Tref}) ->
     ok.
 
 %% @doc Handle ofp_table_mod request
-%% In version 1.4 this is used for configuring eviction and vacancy, which
-%% are not yet implemented.
--spec table_mod(#ofp_table_mod{}) -> ok.
-table_mod(#ofp_table_mod{}) ->
-    ok.
+%% In version 1.4 this is used for configuring eviction and vacancy.
+-spec table_mod(#ofp_table_mod{}) ->
+                       ok | {error, {ofp_error_type(), ofp_error_code()}}.
+table_mod(#ofp_table_mod{config = Config}) ->
+    case lists:member(eviction, Config) of
+        true ->
+            %% "Flow entry eviction is optional and as a consequence a
+            %% switch may not support setting this flag."
+            {error, {table_mod_failed, bad_config}};
+        false ->
+            %% Supporting the flow vacancy flag is not optional, as
+            %% far as I can see.  However, since the number of flow
+            %% entries per flow table is virtually unlimited, we never
+            %% have a reason to send any vacancy events, nor to store
+            %% the vacancy setting anywhere.
+            ok
+    end.
 
 -spec table_desc() -> ofp_table_desc_reply().
 table_desc() ->

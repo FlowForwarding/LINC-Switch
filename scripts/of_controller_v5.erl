@@ -575,6 +575,17 @@ scenario(packet_out_plus_packet_in) ->
                 data = ICMPv6,
                 actions = [#ofp_action_output{port = controller}]})];
 
+%% Send table_mod messages to the switch.
+%%
+%% The first message should be rejected with OFPET_TABLE_MOD_FAILED +
+%% OFPTMFC_BAD_CONFIG, since the switch doesn't support flow entry
+%% eviction.
+%%
+%% The second message should be silently accepted.
+scenario(table_mod_config) ->
+    [message(#ofp_table_mod{table_id = all, config = [eviction]}),
+     message(#ofp_table_mod{table_id = all, config = [vacancy_events]})];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

@@ -1279,7 +1279,7 @@ delete_where_meter(SwitchId, MeterId, TableId) ->
                       case meter_match(MeterId, Instructions) of
                           true ->
                               delete_flow(SwitchId, TableId,
-                                          FlowEntry, group_delete);
+                                          FlowEntry, meter_delete);
                           false ->
                               Acc
                       end

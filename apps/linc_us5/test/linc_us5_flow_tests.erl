@@ -69,6 +69,7 @@ flow_mod_test_() ->
        ,{"Delete flow, all tables", fun delete_all_tables/0}
        ,{"Delete where group", fun delete_where_group/0}
        ,{"Delete where meter", fun delete_where_meter/0}
+       ,{"Delete where meter, check reason", fun delete_where_meter_reason/0}
        ,{"Add flow with an incompatible value/mask pair in the match",
          fun incompatible_value_mask_pair_in_match/0}
       ]}}.
@@ -1028,6 +1029,23 @@ delete_where_meter() ->
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
                  linc_us5_flow:get_flow_table(?SWITCH_ID, 1)).
+
+delete_where_meter_reason() ->
+    %% Add flow with with a send_flow_rem flag
+    FlowModAdd = ofp_v5_utils:flow_add(
+                    [{table_id,1}, {flags, [send_flow_rem]}],
+                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
+                    [{meter,4}]),
+
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)),
+    %% Delete flows referencing meter 5
+    ?assertEqual(ok, linc_us5_flow:delete_where_meter(?SWITCH_ID, 4)),
+
+    %%timer:sleep(1000),
+    Msgs = linc_us5_test_utils:check_output_to_controllers(),
+    Msg = lists:last([M || {?SWITCH_ID, ofp_flow_removed, M} <- Msgs, 
+                           is_record(M, ofp_flow_removed)]),
+    ?assertMatch(meter_delete, Msg#ofp_flow_removed.reason).
 
 incompatible_value_mask_pair_in_match() ->
     FlowModAdd = ofp_v5_utils:flow_add(

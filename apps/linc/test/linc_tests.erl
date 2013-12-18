@@ -67,6 +67,7 @@ logic() ->
 
 setup() ->
     error_logger:tty(false),
+    ok = application:start(asn1),
     ok = application:start(public_key),
     ok = application:start(ssh),
     ok = application:start(xmerl),
@@ -83,6 +84,7 @@ teardown(_) ->
     ok = application:stop(xmerl),
     ok = application:stop(lager),
     ok = application:stop(public_key),
+    ok = application:stop(asn1),
     ok = application:stop(ssh).
 
 %% Helper functions ------------------------------------------------------------

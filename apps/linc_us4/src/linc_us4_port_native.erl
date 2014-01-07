@@ -67,6 +67,7 @@ eth(Interface) ->
                              {no_lookupnet, true},
                              %% for ethernet-only (without taps and bridges)
                              {filter_incoming, true},
+                             {verbose, 2},
                              {filter, ""}]),
     {Socket, IfIndex} = case os:type() of
                             {unix, darwin} ->

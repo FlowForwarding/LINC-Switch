@@ -2,6 +2,9 @@
 # -*- tab-width:4;indent-tabs-mode:nil -*-
 # ex: ts=4 sw=4 et
 
+RUN_ERL_LOG_MAXSIZE=1073741824
+export RUN_ERL_LOG_MAXSIZE
+
 RUNNER_SCRIPT_DIR=$(cd ${0%/*} && pwd)
 
 RUNNER_BASE_DIR=${RUNNER_SCRIPT_DIR%/*}

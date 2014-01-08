@@ -586,6 +586,9 @@ scenario(table_mod_config) ->
     [message(#ofp_table_mod{table_id = all, config = [eviction]}),
      message(#ofp_table_mod{table_id = all, config = [vacancy_events]})];
 
+scenario(queue_desc) ->
+    [message(#ofp_queue_desc_request{port_no = any, queue_id = all})];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

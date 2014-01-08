@@ -23,6 +23,7 @@
 -export([attach_all/4,
          detach_all/2,
          get_stats/2,
+         queue_desc/2,
          send/4,
          set_min_rate/4,
          set_max_rate/4,
@@ -107,7 +108,43 @@ detach_all(SwitchId, PortNo) ->
 -spec get_stats(integer(), ofp_queue_stats_request()) -> ofp_queue_stats_reply().
 get_stats(SwitchId, #ofp_queue_stats_request{port_no = PortNo,
                                              queue_id = QueueId}) ->
-    match_queue(SwitchId, PortNo, QueueId).
+    case match_queue(SwitchId, PortNo, QueueId) of
+        #ofp_error_msg{} = Error ->
+            Error;
+        Queues = [_|_] ->
+            QueueStats = queue_stats_convert(Queues),
+            #ofp_queue_stats_reply{body = QueueStats}
+    end.
+
+queue_desc(SwitchId, #ofp_queue_desc_request{port_no = PortNo,
+                                             queue_id = QueueId}) ->
+    case match_queue(SwitchId, PortNo, QueueId) of
+        #ofp_error_msg{} = Error ->
+            Error;
+        Queues = [_|_] ->
+            QueueDescs =
+                lists:map(
+                  fun(#linc_port_queue{key = {ThisPortNo, ThisQueueId},
+                                       properties = Properties}) ->
+                          #ofp_queue_desc{
+                             port_no = ThisPortNo,
+                             queue_id = ThisQueueId,
+                             properties =
+                                 lists:zf(
+                                   fun({min_rate, no_qos}) ->
+                                           false;
+                                      ({min_rate, MinRate}) ->
+                                           {true, #ofp_queue_desc_prop_min_rate{
+                                                     rate = MinRate}};
+                                      ({max_rate, no_max_rate}) ->
+                                           false;
+                                      ({max_rate, MaxRate}) ->
+                                           {true, #ofp_queue_desc_prop_max_rate{
+                                                     rate = MaxRate}}
+                                   end, Properties)}
+                  end, Queues),
+            #ofp_queue_desc_reply{queues = QueueDescs}
+    end.
 
 -spec send(integer(), ofp_port_no(), ofp_queue_id(), binary()) -> ok | bad_queue.
 send(SwitchId, PortNo, QueueId, Frame) ->
@@ -421,9 +458,7 @@ match_queue(SwitchId, PortNo, PortMatch, QueueMatch) ->
                            (_) ->
                                 true
                         end,
-                    Queues = lists:filter(F, L),
-                    QueueStats = queue_stats_convert(Queues),
-                    #ofp_queue_stats_reply{body = QueueStats}
+                    lists:filter(F, L)
             end
     end.
 

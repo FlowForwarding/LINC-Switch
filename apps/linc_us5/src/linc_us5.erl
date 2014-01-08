@@ -56,6 +56,7 @@
          ofp_group_desc_request/2,
          ofp_group_features_request/2,
          ofp_table_desc_request/2,
+         ofp_queue_desc_request/2,
          ofp_meter_mod/2,
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
@@ -394,6 +395,18 @@ ofp_table_desc_request(State, #ofp_table_desc_request{flags = Flags}) ->
              State};
         false ->
             {reply, linc_us5_flow:table_desc(), State}
+    end.
+
+ofp_queue_desc_request(State = #state{switch_id = SwitchId},
+                       Request = #ofp_queue_desc_request{flags = Flags}) ->
+    %% This request shouldn't span multiple packets.
+    case lists:member(more, Flags) of
+        true ->
+            {reply, #ofp_error_msg{type = bad_request,
+                                   code = multipart_buffer_overflow},
+             State};
+        false ->
+            {reply, linc_us5_queue:queue_desc(SwitchId, Request), State}
     end.
 
 %% Meters ----------------------------------------------------------------------

@@ -5,7 +5,8 @@
 -record(linc_port_queue, {
           key            :: {ofp_port_no(), ofp_queue_id()} | {'_', '_'} | '_',
           queue_pid      :: pid()                  | '_',
-          properties     :: [ofp_queue_property()] | '_',
+          properties     :: [{min_rate, non_neg_integer() | no_qos} |
+                             {max_rate, non_neg_integer() | no_max_rate}] | '_',
           tx_bytes   = 0 :: integer()              | '_',
           tx_packets = 0 :: integer()              | '_',
           tx_errors  = 0 :: integer()              | '_',

@@ -118,34 +118,48 @@ send(SwitchId, PortNo, QueueId, Frame) ->
             gen_server:cast(Pid, {send, Frame})
     end.
 
+update_queue_prop(SwitchId, QueueKey, K, V) ->
+    LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
+    case ets:lookup(LincPortQueue, QueueKey) of
+        [#linc_port_queue{properties = Prop}] ->
+            Prop2 = lists:keyreplace(K, 1, Prop, {K, V}),
+            ets:update_element(LincPortQueue, QueueKey,
+                               [{#linc_port_queue.properties, Prop2}])
+    end.
+
 -spec set_min_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) ->
                           ok |
                           bad_queue.
-set_min_rate(SwitchId, PortNo, QueueId, MinRate) ->
+set_min_rate(SwitchId, PortNo, QueueId, Rate) ->
     case get_queue_pid(SwitchId, PortNo, QueueId) of
         {error, bad_queue} ->
             bad_queue;
         Pid ->
-            gen_server:cast(Pid, {set_min_rate, MinRate})
+            gen_server:cast(Pid, {set_min_rate, Rate})
     end.
 
 -spec set_max_rate(integer(), ofp_port_no(), ofp_queue_id(), integer()) ->
                           ok |
                           bad_queue.
-set_max_rate(SwitchId, PortNo, QueueId, MinRate) ->
+set_max_rate(SwitchId, PortNo, QueueId, Rate) ->
     case get_queue_pid(SwitchId, PortNo, QueueId) of
         {error, bad_queue} ->
             bad_queue;
         Pid ->
-            gen_server:cast(Pid, {set_max_rate, MinRate})
+            gen_server:cast(Pid, {set_max_rate, Rate})
     end.
 
 -spec get_all_queues_state(integer(), ofp_port_no()) ->
                                   tuple(string(), integer(), integer(),
                                         integer(), integer()).
 get_all_queues_state(SwitchId, PortNo) ->
-    lists:map(fun(#linc_port_queue{queue_pid = Pid}) ->
-                      gen_server:call(Pid, get_state)
+    lists:map(fun(#linc_port_queue{queue_pid = Pid, properties=Prop}) ->
+                      {ResourceId, QueueId, PortNo, _, _} =
+                          gen_server:call(Pid, get_state),
+                      MinRate = proplists:get_value(min_rate, Prop, no_qos),
+                      MaxRate = proplists:get_value(max_rate, Prop,
+                                                    no_max_rate),
+                      {ResourceId, QueueId, PortNo, MinRate, MaxRate}
               end, get_queues(SwitchId, PortNo)).
 
 -spec is_valid(integer(), ofp_port_no(), ofp_queue_id()) -> boolean().
@@ -233,9 +247,9 @@ handle_call(detach, _From, #state{queue_key = QueueKey,
     {reply, ok, State};
 handle_call(get_state, _From, #state{resource_id = ResourceId,
                                      queue_key = {PortNo, QueueId},
-                                     min_rate_bps = MinRateBps,
-                                     max_rate_bps = MaxRateBps} = State) ->
-    Queue = {ResourceId, QueueId, PortNo, MinRateBps, MaxRateBps},
+                                     min_rate = MinRate,
+                                     max_rate = MaxRate} = State) ->
+    Queue = {ResourceId, QueueId, PortNo, MinRate, MaxRate},
     {reply, Queue, State}.
 
 handle_cast({send, Frame}, #state{queue_key = QueueKey,
@@ -249,23 +263,29 @@ handle_cast({send, Frame}, #state{queue_key = QueueKey,
                                 History, SendFun, Frame),
     update_queue_tx_counters(SwitchId, QueueKey, byte_size(Frame)),
     {noreply, State#state{history = NewHistory}};
-handle_cast({set_min_rate, MinRatePercent},
-            #state{queue_key = {_PortNo, QueueId},
+handle_cast({set_min_rate, MinRatePermil},
+            #state{queue_key = QueueKey,
+                   switch_id = SwitchId,
                    port_rate_bps = PortRateBps,
                    throttling_ets = ThrottlingETS} = State) ->
-    MinRateBps = get_min_rate_bps([{min_rate, MinRatePercent}], PortRateBps),
+    MinRateBps = get_min_rate_bps([{min_rate, MinRatePermil}], PortRateBps),
     MinRate = bps_to_bphistlen(MinRateBps),
+    {_PortNo, QueueId} = QueueKey,
     ets:update_element(ThrottlingETS, QueueId,
                        {#linc_queue_throttling.min_rate, MinRate}),
+    update_queue_prop(SwitchId, QueueKey, min_rate, MinRatePermil),
     {noreply, State#state{min_rate = MinRate}};
-handle_cast({set_max_rate, MaxRatePercent},
-            #state{queue_key = {_PortNo, QueueId},
+handle_cast({set_max_rate, MaxRatePermil},
+            #state{queue_key = QueueKey,
+                   switch_id = SwitchId,
                    port_rate_bps = PortRateBps,
                    throttling_ets = ThrottlingETS} = State) ->
-    MaxRateBps = get_max_rate_bps([{max_rate, MaxRatePercent}], PortRateBps),
+    MaxRateBps = get_max_rate_bps([{max_rate, MaxRatePermil}], PortRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
+    {_PortNo, QueueId} = QueueKey,
     ets:update_element(ThrottlingETS, QueueId,
                        {#linc_queue_throttling.max_rate, MaxRate}),
+    update_queue_prop(SwitchId, QueueKey, max_rate, MaxRatePermil),
     {noreply, State#state{max_rate = MaxRate}}.
 
 handle_info(_Info, State) ->

@@ -150,6 +150,16 @@ If you have any technical questions, problems or suggestions regarding LINC
 please send them to <linc-dev@flowforwarding.org> mailing list or create an
 Issue. Thanks.
 
+## Implementation notes
+
+### Flow entry eviction and vacancy
+
+Version 1.4 of the OpenFlow protocol introduced the flow entry
+eviction and vacancy event features, which are used to manage limited
+space in flow tables.  Since LINC currently doesn't limit the number
+of entries in flow tables, it rejects attempts to configure eviction
+through table_mod messages, and never sends flow vacancy events.
+
  [ovs]: http://openvswitch.org
  [ofp1]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.0.0.pdf
  [ofp2]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.1.0.pdf 

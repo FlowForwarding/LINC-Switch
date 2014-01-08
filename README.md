@@ -9,7 +9,8 @@ and testing of new OpenFlow features.
 
 ### Features
 
- * Support for [OpenFlow Protocol 1.2][ofp3] and [OpenFlow Protocol 1.3][ofp4],
+ * Support for [OpenFlow Protocol 1.2][ofp3], [OpenFlow Protocol 1.3][ofp4],
+   and [OpenFlow Protocol 1.4][ofp5],
  * OpenFlow Capable Switch - ability to run multiple logical switches,
  * Support for [OF-Config 1.1.1][ofc11] management protocol,
  * Modular architecture, easily extensible.
@@ -154,6 +155,7 @@ Issue. Thanks.
  [ofp2]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.1.0.pdf 
  [ofp3]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.2.pdf 
  [ofp4]: https://www.opennetworking.org/images/stories/downloads/specification/openflow-spec-v1.3.0.pdf 
+ [ofp5]: https://www.opennetworking.org/images/stories/downloads/sdn-resources/onf-specifications/openflow/openflow-spec-v1.4.0.pdf
  [ofc11]: https://www.opennetworking.org/images/stories/downloads/of-config/of-config-1.1.pdf
  [erlang-src]: http://www.erlang.org/download.html
  [erlang-bin]: http://www.erlang-solutions.com/section/132/download-erlang-otp

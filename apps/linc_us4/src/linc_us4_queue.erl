@@ -371,6 +371,7 @@ update_queue_tx_counters(SwitchId, {PortNum, Queue} = Key, Bytes) ->
             ?ERROR("Queue ~p for port ~p doesn't exist because: ~p:~p "
                    "cannot update queue stats", [Queue, PortNum, E1, E2])
     end.
+
 -spec get_queue_pid(integer(), ofp_port_no(), ofp_queue_id()) -> pid() |
                                                                  {error, bad_queue}.
 get_queue_pid(SwitchId, PortNo, QueueId) ->

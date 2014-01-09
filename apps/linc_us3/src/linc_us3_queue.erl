@@ -206,9 +206,10 @@ init([SwitchId, [{PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
     MinRateBps = get_min_rate_bps(QueueProps, PortRateBps),
     MaxRateBps = get_max_rate_bps(QueueProps, PortRateBps),
 
+    PortRate = bps_to_bphistlen(PortRateBps),
     MinRate = bps_to_bphistlen(MinRateBps),
     MaxRate = bps_to_bphistlen(MaxRateBps),
-    PortRate = bps_to_bphistlen(PortRateBps),
+
     LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
     ets:insert(LincPortQueue, #linc_port_queue{key = Key,
                                                properties = QueueProps,
@@ -369,6 +370,8 @@ update_queue_tx_counters(SwitchId, {PortNum, Queue} = Key, Bytes) ->
                    "cannot update queue stats", [Queue, PortNum, E1, E2])
     end.
 
+-spec get_queue_pid(integer(), ofp_port_no(), ofp_queue_id()) -> pid() |
+                                                                 {error, bad_queue}.
 get_queue_pid(SwitchId, PortNo, QueueId) ->
     LincPortQueue = linc:lookup(SwitchId, linc_port_queue),
     case ets:lookup(LincPortQueue, {PortNo, QueueId}) of

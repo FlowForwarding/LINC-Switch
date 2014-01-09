@@ -219,14 +219,14 @@ init([SwitchId, [{PortNo, QueueNo} = Key, PortRateDesc, ThrottlingETS,
                                                      max_rate = MaxRate,
                                                      rate = 0}),
     ResourceId =
-        "Switch" ++ integer_to_list(SwitchId) ++ "-" ++
+        "LogicalSwitch" ++ integer_to_list(SwitchId) ++ "-" ++
         "Port" ++ integer_to_list(PortNo) ++ "-" ++
         case QueueNo of
             default -> "DefaultQueue";
             _ -> "Queue" ++ integer_to_list(QueueNo)
         end,
     {ok, #state{queue_key = Key,
-                resource_id = list_to_binary(ResourceId),
+                resource_id = ResourceId,
                 port_rate_bps = PortRateBps,
                 min_rate_bps = MinRateBps,
                 max_rate_bps = MaxRateBps,

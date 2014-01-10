@@ -19,13 +19,13 @@ update-deps:
 	@./rebar update-deps
 
 test: compile
-	@./rebar skip_deps=true apps="linc,linc_us4" eunit
+	@./rebar skip_deps=true apps="linc,linc_us5" eunit
 
 test_us3: compile
 	@./rebar skip_deps=true apps="linc,linc_us3" eunit
 
-test_us5: compile
-	@./rebar skip_deps=true apps="linc,linc_us5" eunit
+test_us4: compile
+	@./rebar skip_deps=true apps="linc,linc_us4" eunit
 
 clean:
 	@./rebar clean

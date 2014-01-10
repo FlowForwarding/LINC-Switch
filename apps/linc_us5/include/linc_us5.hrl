@@ -157,6 +157,12 @@
           remove = infinity        :: infinity | non_neg_integer()
          }).
 
+-record(monitor_data, {
+          client_pid            :: pid(),        %% Client pid to send flow updates to
+          xid    = 0            :: integer(),    %% Xid of current command
+          reason = idle_timeout :: ofp_flow_removed_reason() %% used only for deletes
+         }).
+
 -record(flow_entry_counter, {
           id                   :: flow_id(),
           received_packets = 0 :: integer(),

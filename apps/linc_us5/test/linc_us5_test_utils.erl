@@ -35,7 +35,7 @@ mock([]) ->
 mock([flow | Rest]) ->
     ok = meck:new(linc_us5_flow),
     ok = meck:expect(linc_us5_flow, delete_where_group,
-                     fun(_, _) ->
+                     fun(_, _, _) ->
                              ok
                      end),
     ok = meck:expect(linc_us5_flow, initialize,
@@ -135,6 +135,21 @@ mock([sup | Rest]) ->
                   fun(_) ->
                           {ok, ok}
                   end),
+    mock(Rest);
+mock([monitor | Rest]) ->
+    ok = meck:new(linc_us5_monitor),
+    ok = meck:expect(linc_us5_monitor, monitor,
+                     fun(_, _, _, _, _) ->
+                             ok
+                     end),
+    ok = meck:expect(linc_us5_monitor, batch_start,
+                     fun(_, _, _) ->
+                             ok
+                     end),
+    ok = meck:expect(linc_us5_monitor, batch_end,
+                     fun(_) ->
+                             ok
+                     end),
     mock(Rest).
 
 unmock([]) ->
@@ -147,6 +162,9 @@ unmock([logic | Rest]) ->
     unmock(Rest);
 unmock([meter | Rest]) ->
     ok = meck:unload(linc_us5_meter),
+    unmock(Rest);
+unmock([monitor | Rest]) ->
+    ok = meck:unload(linc_us5_monitor),
     unmock(Rest);
 unmock([port | Rest]) ->
     ok = meck:unload(linc_us5_port),

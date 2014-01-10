@@ -30,7 +30,8 @@
 -export([is_port_valid/2,
          is_queue_valid/3,
          set_datapath_mac/2,
-         log_message_sent/1]).
+         log_message_sent/1,
+         set_monitor_data/3]).
 
 %% Handle all message types
 -export([ofp_features_request/2,
@@ -59,7 +60,8 @@
          ofp_meter_mod/2,
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
-         ofp_meter_features_request/2]).
+         ofp_meter_features_request/2,
+         ofp_flow_monitor_request/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
@@ -69,10 +71,11 @@
 -record(state, {
           flow_state,
           buffer_state,
-          switch_id :: integer(),
-          datapath_mac :: binary(),
+          switch_id      :: integer(),
+          datapath_mac   :: binary(),
           switch_config = [{flags, []}, {miss_send_len, no_buffer}] ::
-            [switch_config_opt()]
+            [switch_config_opt()],
+          monitor_data   :: #monitor_data{}
          }).
 -type state() :: #state{}.
 
@@ -146,6 +149,10 @@ log_message_sent(#ofp_message{body = Body} = Message)
 log_message_sent(Message) ->
     ?DEBUG("Sent message to controller: ~w~n", [Message]).
 
+-spec set_monitor_data(pid(), integer(), state()) -> state().
+set_monitor_data(ClientPid, Xid, State) ->
+    State#state{monitor_data = #monitor_data{client_pid = ClientPid, 
+                                             xid        = Xid}}.
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages
@@ -166,9 +173,13 @@ ofp_features_request(#state{switch_id = SwitchId,
 -spec ofp_flow_mod(state(), ofp_flow_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_flow_mod(#state{switch_id = SwitchId} = State,
+ofp_flow_mod(#state{switch_id = SwitchId,
+                    monitor_data = MonitorData} = State,
              #ofp_flow_mod{} = FlowMod) ->
-    case linc_us5_flow:modify(SwitchId, FlowMod) of
+    linc_us5_monitor:batch_start(SwitchId, FlowMod#ofp_flow_mod.command, MonitorData),
+    R = linc_us5_flow:modify(SwitchId, FlowMod, MonitorData),
+    linc_us5_monitor:batch_end(SwitchId),
+    case R of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -210,9 +221,10 @@ ofp_port_mod(#state{switch_id = SwitchId} = State,
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
                            {noreply, #state{}} |
                            {reply, ofp_message(), #state{}}.
-ofp_group_mod(#state{switch_id = SwitchId} = State,
+ofp_group_mod(#state{switch_id = SwitchId,
+                     monitor_data = MonitorData} = State,
               #ofp_group_mod{} = GroupMod) ->
-    case linc_us5_groups:modify(SwitchId, GroupMod) of
+    case linc_us5_groups:modify(SwitchId, GroupMod, MonitorData) of
         ok ->
             {noreply, State};
         {error, ErrorMsg} ->
@@ -273,7 +285,8 @@ ofp_set_config(State, #ofp_set_config{flags = Flags,
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
                                  {reply, ofp_barrier_reply(), #state{}}.
-ofp_barrier_request(State, #ofp_barrier_request{}) ->
+ofp_barrier_request(#state{switch_id = SwitchId} = State, #ofp_barrier_request{}) ->
+    linc_us5_monitor:sync(SwitchId),
     BarrierReply = #ofp_barrier_reply{},
     {reply, BarrierReply, State}.
 
@@ -327,9 +340,10 @@ ofp_table_stats_request(#state{switch_id = SwitchId} = State,
 -spec ofp_table_features_request(state(), #ofp_table_features_request{}) ->
                                         {reply, #ofp_table_features_reply{},
                                          #state{}}.
-ofp_table_features_request(#state{switch_id = SwitchId} = State,
+ofp_table_features_request(#state{switch_id = SwitchId,
+                                  monitor_data = MonitorData} = State,
                            #ofp_table_features_request{} = Request) ->
-    Reply = linc_us5_table_features:handle_req(SwitchId, Request),
+    Reply = linc_us5_table_features:handle_req(SwitchId, Request, MonitorData),
     {reply, Reply, State}.
 
 %% @doc Get port description.
@@ -396,11 +410,33 @@ ofp_table_desc_request(State, #ofp_table_desc_request{flags = Flags}) ->
             {reply, linc_us5_flow:table_desc(), State}
     end.
 
+ofp_flow_monitor_request(#state{switch_id = SwitchId,
+                                monitor_data = MData} = State, 
+                         #ofp_flow_monitor_request{monitor_id = MId,
+                                                   out_port   = Port,
+                                                   out_group  = Group,
+                                                   monitor_flags = Flags,
+                                                   table_id   = TableId,
+                                                   command    = Cmd,
+                                                   match      = Match} = R) ->
+    error_logger:info_msg("Received flow monitor request: ~p, sw: ~p, mdata: ~p", [R, SwitchId, MData]), 
+    ct:log("Received flow monitor request: ~p, sw: ~p, mdata: ~p", [R, SwitchId, MData]),
+    case linc_us5_monitor:manage(Cmd, SwitchId, MId, Port, Group, 
+                                 Flags, TableId, Match, MData) of
+        {ok, Reply} ->
+            {reply, Reply, State};
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {reply, ErrorMsg, State}
+    end.
+
 %% Meters ----------------------------------------------------------------------
 
-ofp_meter_mod(#state{switch_id = SwitchId} = State,
+ofp_meter_mod(#state{switch_id = SwitchId,
+                     monitor_data = MonitorData} = State,
               #ofp_meter_mod{} = MeterMod) ->
-    case linc_us5_meter:modify(SwitchId, MeterMod) of
+    case linc_us5_meter:modify(SwitchId, MeterMod, MonitorData) of
         noreply ->
             {noreply, State};
         {reply, Reply} ->

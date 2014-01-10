@@ -39,7 +39,7 @@ table_features_test_() ->
 
 get_table_features() ->
     Req = #ofp_table_features_request{body=[]},
-    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req)).
+    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req, #monitor_data{})).
 
 set_missing_feature() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -55,7 +55,7 @@ set_missing_feature() ->
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_argument },
-                 linc_us5_table_features:handle_req(0, Req)).
+                 linc_us5_table_features:handle_req(0, Req, #monitor_data{})).
 
 set_duplicate_feature() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -72,7 +72,7 @@ set_duplicate_feature() ->
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_argument },
-                 linc_us5_table_features:handle_req(0, Req)).
+                 linc_us5_table_features:handle_req(0, Req, #monitor_data{})).
 
 set_bad_table_id() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -88,7 +88,7 @@ set_bad_table_id() ->
              body=[#ofp_table_features{table_id=all,
                                        properties=FeaturesList}]},
     ?assertMatch(#ofp_error_msg{ type=table_features_failed, code=bad_table },
-                 linc_us5_table_features:handle_req(0, Req)).
+                 linc_us5_table_features:handle_req(0, Req, #monitor_data{})).
 
 set_features() ->
     FeaturesList = [#ofp_table_feature_prop_instructions{}
@@ -103,7 +103,7 @@ set_features() ->
     Req = #ofp_table_features_request{
              body=[#ofp_table_features{table_id=0,
                                        properties=FeaturesList}]},
-    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req)).
+    ?assertMatch(#ofp_table_features_reply{}, linc_us5_table_features:handle_req(0, Req, #monitor_data{})).
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->

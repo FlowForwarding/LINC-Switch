@@ -56,7 +56,10 @@ init(SwitchId) ->
     MeterSup = {linc_us5_meter_sup,
                 {linc_us5_meter_sup, start_link, [SwitchId]},
                 permanent, 5000, supervisor, [linc_us5_meter_sup]},
+    MonitorSup = {linc_us5_monitor,
+                  {linc_us5_monitor, start_link, [SwitchId]},
+                  permanent, 5000, worker, [linc_us5_monitor]},
     PortSup = {linc_us5_port_sup,
                {linc_us5_port_sup, start_link, [SwitchId]},
                permanent, 5000, supervisor, [linc_us5_port_sup]},
-    {ok, {{one_for_one, 5, 10}, [MeterSup, PortSup]}}.
+    {ok, {{one_for_one, 5, 10}, [MeterSup, MonitorSup, PortSup]}}.

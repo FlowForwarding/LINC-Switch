@@ -22,7 +22,7 @@
 %% API
 -export([initialize/1,
          terminate/1,
-         modify/2,
+         modify/3,
          apply/2,
          get_stats/2,
          get_desc/2,
@@ -121,11 +121,11 @@ apply(GroupId, #linc_pkt{switch_id = SwitchId} = Pkt) ->
     end.
 
 %%--------------------------------------------------------------------
--spec modify(integer(), #ofp_group_mod{}) -> ok |
+-spec modify(integer(), #ofp_group_mod{}, #monitor_data{}) -> ok |
                                              {error, Type :: atom(), Code :: atom()}.
 
 %%------ group_mod ADD GROUP
-modify(_SwitchId, #ofp_group_mod{ command = add, group_id = BadGroupId })
+modify(_SwitchId, #ofp_group_mod{ command = add, group_id = BadGroupId }, _MonitorData)
   when is_atom(BadGroupId); BadGroupId > ?OFPG_MAX ->
     %% Can't add a group with a reserved group id (represented as
     %% atoms here), or with a group id greater than the largest
@@ -134,7 +134,7 @@ modify(_SwitchId, #ofp_group_mod{ command = add, group_id = BadGroupId })
 modify(SwitchId, #ofp_group_mod{ command = add,
                                  group_id = Id,
                                  type = Type,
-                                 buckets = Buckets }) ->
+                                 buckets = Buckets }, _MonitorData) ->
     %% Add new entry to the group table, if entry with given group id is already
     %% present, then return error.
     OFSBuckets = wrap_buckets_into_linc_buckets(Id, Buckets),
@@ -165,7 +165,7 @@ modify(SwitchId, #ofp_group_mod{ command = add,
 modify(SwitchId, #ofp_group_mod{ command = modify,
                                  group_id = Id,
                                  type = Type,
-                                 buckets = Buckets }) ->
+                                 buckets = Buckets }, _MonitorData) ->
     %% Modify existing entry in the group table, if entry with given group id
     %% is not in the table, then return error.
     Entry = #linc_group{
@@ -195,7 +195,7 @@ modify(SwitchId, #ofp_group_mod{ command = modify,
 
 %%------ group_mod DELETE GROUP
 modify(SwitchId, #ofp_group_mod{ command = delete,
-                                 group_id = Id }) ->
+                                 group_id = Id }, MonitorData) ->
     %% Deletes existing entry in the group table, if entry with given group id
     %% is not in the table, no error is recorded. Flows containing given
     %% group id are removed along with it.
@@ -211,7 +211,7 @@ modify(SwitchId, #ofp_group_mod{ command = delete,
             %% TODO: Should we support this case at all?
             ok;
         Id ->
-            group_delete(SwitchId, Id)
+            group_delete(SwitchId, Id, MonitorData)
     end,
     ok.
 
@@ -618,16 +618,16 @@ group_enum_groups_2(GroupTable, K, Accum) ->
 %% @internal
 %% @doc Deletes a group by Id, also deletes all groups and flows referring
 %% to this group
-group_delete(SwitchId, Id) ->
-    group_delete_2(SwitchId, Id, ordsets:new()).
+group_delete(SwitchId, Id, MonitorData) ->
+    group_delete_2(SwitchId, Id, ordsets:new(), MonitorData).
 
 %% @internal
 %% @doc Does recursive deletion taking into account groups already processed to
 %% avoid infinite loops. Returns false o
 -spec group_delete_2(SwitchId :: integer(), Id :: integer(),
-                     ProcessedGroups :: ordsets:ordset()) ->
+                     ProcessedGroups :: ordsets:ordset(), #monitor_data{}) ->
                             ordsets:ordset().
-group_delete_2(SwitchId, Id, ProcessedGroups) ->
+group_delete_2(SwitchId, Id, ProcessedGroups, MonitorData) ->
     case ordsets:is_element(Id, ProcessedGroups) of
         true ->
             ProcessedGroups;
@@ -648,12 +648,14 @@ group_delete_2(SwitchId, Id, ProcessedGroups) ->
             ets:delete(GroupTable, Id),
 
             %% Remove flows containing given group along with it
-            linc_us5_flow:delete_where_group(SwitchId, Id),
+            linc_us5_flow:delete_where_group(SwitchId, Id, MonitorData),
 
             PG2 = ordsets:add_element(Id, ProcessedGroups),
 
             %% Remove referring groups
-            RFunc = fun(X, Accum) -> group_delete_2(SwitchId, X, Accum) end,
+            RFunc = fun(X, Accum) -> 
+                            group_delete_2(SwitchId, X, Accum, MonitorData) 
+                    end,
             lists:foldl(RFunc, PG2, ReferringGroups)
     end.
 

@@ -16,7 +16,7 @@
 
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
-%% @doc OF-Config module for userspace v4 backend.
+%% @doc OF-Config module for userspace v5 backend.
 -module(linc_us5_ofconfig).
 
 -export([%% Setters

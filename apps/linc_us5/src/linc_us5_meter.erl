@@ -22,7 +22,7 @@
 -behaviour(gen_server).
 
 %% API
--export([modify/2,
+-export([modify/3,
          apply/3,
          update_flow_count/3,
          get_stats/2,
@@ -86,9 +86,10 @@
 %%------------------------------------------------------------------------------
 
 %% @doc Add, modify or delete a meter.
--spec modify(integer(), #ofp_meter_mod{}) ->
+-spec modify(integer(), #ofp_meter_mod{}, #monitor_data{}) ->
                     noreply | {reply, Reply :: ofp_message_body()}.
-modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
+modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod, 
+       _MonitorData) ->
     case get_meter_pid(SwitchId, Id) of
         undefined ->
             case start(SwitchId, MeterMod) of
@@ -100,7 +101,8 @@ modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
         _Pid ->
             {reply, error_msg(meter_exists)}
     end;
-modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
+modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod, 
+       _MonitorData) ->
     case get_meter_pid(SwitchId, Id) of
         undefined ->
             {reply, error_msg(unknown_meter)};
@@ -113,8 +115,9 @@ modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
                     {reply, error_msg(Code)}
             end
     end;
-modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}) ->
-    linc_us5_flow:delete_where_meter(SwitchId, Id),
+modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}, 
+       MonitorData) ->
+    linc_us5_flow:delete_where_meter(SwitchId, Id, MonitorData),
     case get_meter_pid(SwitchId, Id) of
         undefined ->
             ok;

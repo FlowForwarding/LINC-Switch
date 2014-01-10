@@ -23,7 +23,7 @@
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc_us5/include/linc_us5.hrl").
 
--define(MOCKED, [logic,group,port,meter]).
+-define(MOCKED, [logic,group,port,meter,monitor]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -84,7 +84,7 @@ bad_table_id() ->
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flow
     ?assertEqual({error,{flow_mod_failed,bad_table_id}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 duplicate_field() ->
     %% Create flow_mod record
@@ -96,7 +96,7 @@ duplicate_field() ->
                    [{write_actions,[{output,15,1400}]}]),
     %% Add flow
     ?assertEqual({error,{bad_match,dup_field}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 prerequisite_field_present() ->
     FlowModAdd = #ofp_flow_mod{
@@ -121,7 +121,7 @@ prerequisite_field_present() ->
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     %% Add flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 prerequisite_field_present_bad_val() ->
     FlowModAdd = #ofp_flow_mod{
@@ -146,7 +146,7 @@ prerequisite_field_present_bad_val() ->
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     ?assertEqual({error,{bad_match,bad_prereq}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 prerequisite_field_missing() ->
     FlowModAdd = #ofp_flow_mod{
@@ -167,7 +167,7 @@ prerequisite_field_missing() ->
                                 [#ofp_action_output{port = 15,
                                                     max_len = 1400}]}]},
     ?assertEqual({error,{bad_match,bad_prereq}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 %% Goto a table with smaller table_id
 goto_backwards() ->
@@ -178,7 +178,7 @@ goto_backwards() ->
                    [{in_port,6}],
                    [{goto_table,2}]),
     ?assertEqual({error,{bad_action,bad_table_id}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 valid_out_port() ->
     %% Create flow_mod record
@@ -188,7 +188,7 @@ valid_out_port() ->
                     {flags,[]}],
                    [{in_port,6}],
                    [{write_actions,[{output,15,1400}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 invalid_out_port() ->
     %% Create flow_mod record
@@ -199,7 +199,7 @@ invalid_out_port() ->
                    [{in_port,6}],
                    [{write_actions,[{output,33,1400}]}]),
     ?assertEqual({error,{bad_action,bad_out_port}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 valid_out_group() ->
     %% Create flow_mod record
@@ -210,7 +210,7 @@ valid_out_group() ->
                    [{in_port,6}],
                    [{write_actions,[{group,1}]}]),
     ?assertEqual(ok,
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 invalid_out_group() ->
     %% Create flow_mod record
@@ -221,7 +221,7 @@ invalid_out_group() ->
                    [{in_port,6}],
                    [{write_actions,[{group,33}]}]),
     ?assertEqual({error,{bad_action,bad_out_group}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 invalid_meter() ->
     %% Create flow_mod record
@@ -232,7 +232,7 @@ invalid_meter() ->
                    [{in_port,6}],
                    [{meter,9}]),
     ?assertEqual({error,{bad_instruction,unsup_inst}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 valid_meter() ->
     %% Create flow_mod record
@@ -243,7 +243,7 @@ valid_meter() ->
                    [{in_port,6}],
                    [{meter,4}]),
     ?assertEqual(ok,
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 dupl_instruction() ->
     %% As of version 1.4 of the spec, a duplicate instruction causes a
@@ -256,7 +256,7 @@ dupl_instruction() ->
                    [{write_actions,[{set_field,tcp_dst,<<8,0>>}]},
                     {write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
     ?assertEqual({error,{bad_instruction, dup_inst}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 %% Match un UDP, but action tries to change a TCP field
 incompatible_set_field() ->
@@ -267,7 +267,7 @@ incompatible_set_field() ->
                    [{in_port,6},{eth_type,<<8,0>>},{udp_src,<<8,0>>}],
                    [{write_actions,[{set_field,tcp_dst,<<8,0>>}]}]),
     ?assertEqual({error,{bad_action,bad_argument}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 %% Add one flow, in an empty table, this should always succeed.
 add_flow(TableId, Flags) ->
@@ -279,7 +279,7 @@ add_flow(TableId, Flags) ->
                     {flags,Flags}],
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>,<<0,0,0,0,0,15>>}],
                    [{write_actions,[{output,15,1400}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})),
 
     %% Check if the flow was added correctly...
     #ofp_flow_mod{match=Match,
@@ -317,8 +317,8 @@ add_non_overlapping_flows(Flags) ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
                     [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
@@ -353,8 +353,8 @@ add_overlapping_flows() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>,<<0,0,0,0,0,31>>}],
                     [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
@@ -393,9 +393,9 @@ add_overlapping_flow_check_overlap() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,16#17>>,<<0,0,0,0,0,16#1F>>}],
                     [{write_actions,[{output,15,1400}]}]),
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     ?assertEqual({error,{flow_mod_failed,overlap}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check that flow_removed has not been sent
     %% FIXME: Cannot mock linc_logic module that belongs to another application
@@ -432,7 +432,7 @@ add_exact_flow(Flags) ->
                     Instructions2),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     [#flow_entry{id=FlowId1}] = linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                              TableId),
@@ -450,7 +450,7 @@ add_exact_flow(Flags) ->
         received_bytes=PacketSize}] = ets:lookup(FlowEntryCounters, FlowId1),
 
     %% Add second flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check that the the new flow has replaced the previous one
     #ofp_flow_mod{match=M1,
@@ -495,8 +495,8 @@ flow_priority_order() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
                     [{write_actions,[{output,5,1400}]}]),
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check if the flows were added correctly...
     #ofp_flow_mod{match=Match1,
@@ -536,7 +536,7 @@ modify_strict(Flags) ->
                                        Instructions2),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     [#flow_entry{id=FlowId}] = linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                             TableId),
@@ -555,7 +555,7 @@ modify_strict(Flags) ->
                  ets:lookup(FlowEntryCounters, FlowId)),
 
     %% Modify flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowMod)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowMod, #monitor_data{})),
 
     %% Check that the the new flow has replaced the previous one
     #ofp_flow_mod{match=M1, instructions=I1} = FlowMod,
@@ -597,12 +597,12 @@ modify_cookie_no_match() ->
                                        [{write_actions,[{output,32,1400}]}]),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Modify flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowMod)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowMod, #monitor_data{})),
 
     %% Check that the the flow was not modified
     #ofp_flow_mod{match=M1,
@@ -640,13 +640,13 @@ modify_cookie_match() ->
                     Instructions2),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
 
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Modify flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check that the the flow was modified
     #ofp_flow_mod{match=M,
@@ -677,11 +677,11 @@ delete_strict() ->
                 Match),
 
     %% Add flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Check that flow was added
     [#flow_entry{}] = linc_us5_flow:get_flow_table(?SWITCH_ID, TableId),
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
     %% Check that flow was deleted
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)).
 
@@ -711,13 +711,13 @@ delete_cookie_no_match() ->
                 Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was not deleted
     #ofp_flow_mod{match=M1,
@@ -753,13 +753,13 @@ delete_cookie_match() ->
                     Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)).
@@ -790,13 +790,13 @@ delete_send_flow_rem() ->
                     Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)).
@@ -828,12 +828,12 @@ delete_outport_no_match() ->
                 Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was not deleted
     #ofp_flow_mod{match=M1,
@@ -866,12 +866,12 @@ delete_outport_match() ->
                     Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)).
@@ -900,13 +900,13 @@ delete_outgroup_no_match() ->
                 Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was not deleted
     #ofp_flow_mod{match=M1, instructions=I1} = FlowModAdd1,
@@ -938,13 +938,13 @@ delete_outgroup_match() ->
                 Match),
 
     %% Add first flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     %% Get FlowId
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                                TableId)),
 
     %% Delete flow
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     %% Check that the the flow was deleted
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)).
@@ -962,8 +962,8 @@ delete_all_tables() ->
                     [{write_actions,[{output,15,1400}]}]),
 
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     %% Check if the flows were added correctly...
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID, 1)),
@@ -975,7 +975,7 @@ delete_all_tables() ->
                 [{table_id,all},
                  {flags,[]}],
                 []),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowDel, #monitor_data{})),
 
     ?assertEqual([],linc_us5_flow:get_flow_table(?SWITCH_ID, 1)),
     ?assertEqual([],linc_us5_flow:get_flow_table(?SWITCH_ID, 2)).
@@ -992,14 +992,14 @@ delete_where_group() ->
                     [{write_actions,[{group,4}]}]),
 
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
     %% Delete all referencing group 3
-    ?assertEqual(ok, linc_us5_flow:delete_where_group(?SWITCH_ID, 3)),
+    ?assertEqual(ok, linc_us5_flow:delete_where_group(?SWITCH_ID, 3, #monitor_data{})),
 
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
@@ -1017,14 +1017,14 @@ delete_where_meter() ->
                     [{meter,5}]),
 
     %% Add flows
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     #ofp_flow_mod{match=Match2,
                   instructions=Instructions2} = FlowModAdd2,
 
     %% Delete all referencing meter 4
-    ?assertEqual(ok, linc_us5_flow:delete_where_meter(?SWITCH_ID, 4)),
+    ?assertEqual(ok, linc_us5_flow:delete_where_meter(?SWITCH_ID, 4, #monitor_data{})),
 
     ?assertMatch([#flow_entry{match=Match2,
                               instructions=Instructions2}],
@@ -1037,9 +1037,9 @@ delete_where_meter_reason() ->
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,9>>}],
                     [{meter,4}]),
 
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})),
     %% Delete flows referencing meter 5
-    ?assertEqual(ok, linc_us5_flow:delete_where_meter(?SWITCH_ID, 4)),
+    ?assertEqual(ok, linc_us5_flow:delete_where_meter(?SWITCH_ID, 4, #monitor_data{})),
 
     %%timer:sleep(1000),
     Msgs = linc_us5_test_utils:check_output_to_controllers(),
@@ -1058,7 +1058,7 @@ incompatible_value_mask_pair_in_match() ->
                     {ipv4_src, <<10,0,0,7>>, <<10,0,0,6>>}],
                    [{write_actions,[{output,15,no_buffer}]}]),
     ?assertEqual({error, {bad_match, bad_wildcards}},
-                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)).
+                 linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})).
 
 statistics_test_() ->
     {setup, fun setup/0, fun teardown/1,
@@ -1092,7 +1092,7 @@ update_match_counter() ->
                    [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>,<<0,0,0,0,0,15>>}],
                    [{write_actions,[{output,15,1400}]}]),
 
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd, #monitor_data{})),
 
     [#flow_entry{id=FlowId}] = linc_us5_flow:get_flow_table(?SWITCH_ID,
                                                             TableId),
@@ -1132,12 +1132,12 @@ flow_stats_1_table() ->
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     FlowModAdd2 = ofp_v5_utils:flow_add(
                     [{table_id,1}],
                     [{in_port,2}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
     StatsReq = ofp_v5_utils:flow_stats(
                  [{table_id, 1}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
@@ -1149,12 +1149,12 @@ flow_stats_all_tables() ->
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     FlowModAdd2 = ofp_v5_utils:flow_add(
                     [{table_id,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
     StatsReq = ofp_v5_utils:flow_stats(
                  [{table_id, all}],
                  [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}]),
@@ -1177,12 +1177,12 @@ aggr_stats_1_table() ->
                     [{table_id,TableId}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     FlowModAdd2 = ofp_v5_utils:flow_add(
                     [{table_id,TableId}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,1,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     [#flow_entry{id=FlowId1},
      #flow_entry{id=FlowId2}] = linc_us5_flow:get_flow_table(?SWITCH_ID,
@@ -1212,12 +1212,12 @@ aggr_stats_all_tables() ->
                     [{table_id,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     FlowModAdd2 = ofp_v5_utils:flow_add(
                     [{table_id,2}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd2, #monitor_data{})),
 
     [#flow_entry{id=FlowId1}] = linc_us5_flow:get_flow_table(?SWITCH_ID, 1),
     [#flow_entry{id=FlowId2}] = linc_us5_flow:get_flow_table(?SWITCH_ID, 2),
@@ -1259,7 +1259,7 @@ idle_timeout() ->
                      {idle_timeout,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     [#flow_entry{id=FlowId}] = linc_us5_flow:get_flow_table(?SWITCH_ID, 1),
     timer:sleep(100),
     [#flow_entry{id=FlowId}] = linc_us5_flow:get_flow_table(?SWITCH_ID, 1),
@@ -1276,7 +1276,7 @@ hard_timeout() ->
                      {hard_timeout,1}],
                     [{in_port,6}, {eth_dst,<<0,0,0,0,0,8>>}],
                     [{write_actions,[{group,3}]}]),
-    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1)),
+    ?assertEqual(ok, linc_us5_flow:modify(?SWITCH_ID, FlowModAdd1, #monitor_data{})),
     ?assertMatch([#flow_entry{}], linc_us5_flow:get_flow_table(?SWITCH_ID, 1)),
     timer:sleep(2500),
     ?assertEqual([], linc_us5_flow:get_flow_table(?SWITCH_ID, 1)).

@@ -14,23 +14,27 @@ help() {
          "created and the sname parameter will be set to linc_s1."\
          "\nUsage: \n$1 {-c|-d} <RELEASE_SUFFIX>\n"\
          "-c\t copy base release to <RELEASE_SUFFIX>\n"\
-         "-d\t delete release <RELEASE_SUFFIX>"
+         "-d\t delete release <RELEASE_SUFFIX>\n"\
+         "-D\t delete all releases with a suffix"
 }
 
 parse_opts_and_run() {
-    if [ $# -ne 2 ]; then
+    if [ $# -lt 1 ]; then
         echo "Missing arguments"
         help $0
         exit 1
     fi
-    while getopts ":d:c:" OPT
+    while getopts ":c:d:D" OPT
     do
         case $OPT in
+            c)
+                copy_release $OPTARG
+                ;;
             d)
                 delete_release $OPTARG
                 ;;
-            c)
-                copy_release $OPTARG
+            D)
+                delete_all_releases
                 ;;
             \?)
                 echo "Invalid option: -$OPTARG"
@@ -83,6 +87,15 @@ delete_release() {
     else
         echo "Relese $REL_TO_DELETE does not exist"
         exit 2
+    fi
+}
+
+delete_all_releases() {
+    RELEASES=`find $REL_DIR -maxdepth 1 -type d -regex "$REL_DIR"/"$DEFAULT_REL"_.*`
+    if [ -z "$RELEASES" ]; then
+        echo "There are no releases to delete"
+    else
+        rm -rf $RELEASES
     fi
 }
 

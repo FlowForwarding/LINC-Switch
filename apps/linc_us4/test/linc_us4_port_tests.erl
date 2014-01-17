@@ -91,7 +91,7 @@ send_in_port() ->
 
 send_table() ->
     meck:new(linc_us4_routing),
-    meck:expect(linc_us4_routing, spawn_route, fun(_) -> ok end),
+    meck:expect(linc_us4_routing, maybe_spawn_route, fun(_) -> ok end),
     ?assertEqual(ok, linc_us4_port:send(pkt(), table)),
     meck:unload(linc_us4_routing).
 

@@ -19,7 +19,7 @@
 %% @doc Main module responsible for routing packets.
 -module(linc_us4_routing).
 
--export([spawn_route/1,
+-export([maybe_spawn_route/1,
          route/1]).
 
 -ifdef(TEST).
@@ -38,6 +38,21 @@
 
 -type route_result() :: {match, integer(), linc_pkt()}
                       | {table_miss, drop | controller}.
+
+-spec maybe_spawn_route(#linc_pkt{}) -> pid() | route_result().
+maybe_spawn_route(Pkt) ->
+    case application:get_env(linc, sync_routing) of
+	{ok, false} ->
+	    spawn_route(Pkt);
+	_ ->
+	    %% Default is not spawning a new process for each pkt
+	    try route(Pkt)
+	    catch Class:Reason ->
+		    ?ERROR("Routing failed for pkt ~p: ~p:~p",
+			   [Pkt, Class, Reason])
+	    end
+    end.
+
 
 -spec spawn_route(#linc_pkt{}) -> pid().
 spawn_route(Pkt) ->

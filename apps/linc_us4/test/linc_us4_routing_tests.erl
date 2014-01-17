@@ -53,7 +53,8 @@ routing_test_() ->
        {"Routing: table miss - send to controller", fun miss_controller/0},
        {"Routing: table miss - drop packet", fun miss_drop/0},
        {"Routing: match fields with masks", fun mask_match/0},
-       {"Routing: spawn new route process", fun spawn_route/0}
+       {"Routing: spawn new route process", fun spawn_route/0},
+       {"Routing: maybe spawn new route process", fun maybe_spawn_route/0}
       ]}}.
 
 %% @doc Test matching on VLAN tag in accordance to OF spec. v1.3.2 ch. 7.2.3.7.
@@ -228,7 +229,7 @@ mask_match() ->
                                        {<<7,7,7>>, <<7,7,8>>, <<1,1,0>>, true}
                                       ]].
 
-spawn_route() ->
+flow_table_and_pkt() ->
     Flow1 = 0,
     MatchFieldsFlow1 = [],
     TableId = 0,
@@ -237,8 +238,17 @@ spawn_route() ->
     flow_table(TableId, FlowEntries, TableConfig),
 
     MatchFieldsPkt = [],
-    Pkt = pkt(MatchFieldsPkt),
-    ?assert(is_pid(linc_us4_routing:spawn_route(Pkt))).
+    pkt(MatchFieldsPkt).
+
+spawn_route() ->
+    ?assert(is_pid(linc_us4_routing:spawn_route(flow_table_and_pkt()))).
+
+maybe_spawn_route() ->
+    Pkt = flow_table_and_pkt(), 
+    application:set_env(linc, sync_routing, false),
+    ?assert(is_pid(linc_us4_routing:maybe_spawn_route(Pkt))),
+    application:set_env(linc, sync_routing, true),
+    ?assertMatch({match, 0, _}, linc_us4_routing:maybe_spawn_route(Pkt)).
 
 match_with_and_without_vlan_tag() ->
     PktFields1 = create_ofp_fields([{vlan_vid, <<10:12>>}]),

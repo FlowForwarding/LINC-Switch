@@ -5,8 +5,16 @@ Mininet is a tool facilitating creation of realistic virtual networks. More you 
 
 Now LINC-Switch is shipped with Mininet and can be ran as a part of its virtual network. The aim of this integration is to provide easy to setup environment for testing different scenarios with LINC-Switch in the lead role. Particularly Mininet allows for creating topologies using python API. It will be very convenient to use python scripts as a mean of exchanging topologies and scenarios. In addition, Mininet has a power CLI that allows quickly run some simple test case.
 
-Installation
-------------
+## Table of Contents ##
+1. [Installation](#installation)
+2. [Getting started](#getting-started)
+  1. [Ping](#ping)
+  1. [Other controllers](#other-controllers)
+  1. [More advanced topologies](#more-advanced-topologies)
+  1. [Using dpctl](#using-dpctl)
+  1. [Further reading](#further-reading)
+
+## Installation ##
 
 Mininet has an installation script for Ubuntu and Debian. To install Mininet with LINC-Switch on board clone the [repository](https://github.com/FlowForwarding/mininet), enter mininet directory and run the following commands:  
 `util/install.sh -3nfxL`
@@ -20,8 +28,7 @@ This will install Mininet core, [NOX 1.3 Controller](https://github.com/CPqD/nox
 * erlang,
 * git-core.
 
-Getting started
----------------
+## Getting started ##
 
 ### Ping ###
 To warm up with the Mininet just try to run a simple ping example with LINC-Switch connected to the Mininet network and governed by our simple controller. Follow the steps below:
@@ -66,6 +73,21 @@ This topology is defined in the Mininet repository in [topo-2sw-2host.py](https:
 4. Optionally you can attach to switches' consoles (the commands has to be ran from separate terminals):  
 `sudo linc s3 attach`  
 `sudo linc s4 attach`
+
+### Using dpctl  ###
+
+A dpctl tool provides basic control over an OpenFlow switch that has passive listening port. LINC-Switch supports this feature. By default Mininet sets this port to `6634`, although it can be set through the command line option: `--listenport=<PORT>`. The tool can be used in two ways from the Mininet CLI:
+
+1. It can be run for each switch in the topology:  
+`mininet> dpctl <COMMAND> [<ARG>...]`  
+For example:  
+`mininet> dpctl get-config`
+1. It can be run per switch. Then the dpctl command is invoked like from the switch's shell:
+`mininet> dpctl <MININET_SWITCH_NAME> [<OPTIONS>] <SWITCH> <COMMAND> [<ARG>...]`  
+For example:  
+`mininet> s1 dpctl tcp:127.0.0.1:6634 features`
+
+To see description of the dpctl see output of `dpctl --help`.
 
 ### Further reading ###
 The best starting point to dive into the Mininet further is to follow the [Mininet Walkthrough](http://mininet.org/walkthrough/).

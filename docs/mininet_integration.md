@@ -3,7 +3,7 @@ LINC integration with Mininet
 
 Mininet is a tool facilitating creation of realistic virtual networks. More you can find on Mininet [official website](http://mininet.org/).
 
-Now LINC-Switch is shipped with Mininet and can be ran as a part of its virtual network. The aim of this integration is to provide easy to setup environment for testing different scenarios with LINC-Switch in the lead role. Particularly Mininet allows for creating topologies using python API. It will be very convenient to use python scripts as a mean of exchanging topologies and scenarios. In addition, Mininet has a power CLI that allows quickly run some simple test case.
+Now LINC-Switch is shipped with Mininet and can be ran as a part of its virtual network. The aim of this integration is to provide easy to setup environment for testing different scenarios with LINC-Switch in the leading role. Particularly Mininet allows for creating topologies using python API. It will be very convenient to use python scripts as a mean of exchanging topologies and scenarios. In addition, Mininet has a power CLI that allows quickly run some simple test case.
 
 ## Table of Contents ##
 1. [Installation](#installation)

@@ -36,7 +36,8 @@ To warm up with the Mininet just try to run a simple ping example with LINC-Swit
 1. Start the Mininet with LINC-Switch, two hosts and the remote controller:  
 `sudo bin/mn --controller=remote --switch=linc`
 1. In another console attach to the LINC-Switch console to see that it really works:  
-`sudo linc attach`
+`sudo linc <SWITCH_NAME> attach`
+Switch name is assigned by Mininet. Usually the first switch is named `s1`.
 1. In yet another console run the controller:  
 `cd LINC-Switch/scripts`      
 `sudo ./of_controller_v4.sh -p 6633 -d -s table_miss`  
@@ -47,7 +48,7 @@ Optionally you can install Wireshark with [OpenFlow 1.3 dissector](https://githu
 
 ### Other controllers ###
 You can use other controllers to experiment with LINC on Mininet. To make LINC connect to a remote controller use below syntax:  
-`sudo bin/mn --controller=remote,ip=<CONTROLLER IP>>,port=<CONTROLLER PORT> --switch=linc`
+`sudo bin/mn --controller=remote,ip=<CONTROLLER IP>,port=<CONTROLLER PORT> --switch=linc`
 
 For example you can utilize [NOX 1.3 controller](https://github.com/CPqD/nox13oflib) that is shipped with Mininet.
 Good starting point is running NOX with switch backend. To achieve this setup run NOX controller (by default NOX is installed in the same directory as Mininet):  
@@ -64,7 +65,7 @@ Mininet allows to create more complex topologies through its python API. You can
 This topology is defined in the Mininet repository in [topo-2sw-2host.py](https://github.com/mininet/mininet/blob/master/custom/topo-2sw-2host.py). To get started follow the  instructions below:
 
 1. Start the Mininet with LINC-Switch and the custom topology:  
-`sudo bin/mn --controller=remote --switch=linc --custom custom/topo-3sw-2host.py --topo mytopo`
+`sudo bin/mn --controller=remote --switch=linc --custom custom/topo-2sw-2host.py --topo mytopo`
 1. In another console run the controller with a prepared scenario:  
 `cd LINC-Switch/scripts`      
 `sudo ./of_controller_v4.sh -p 6633 -d -s mininet_mytopo`  
@@ -74,20 +75,22 @@ This topology is defined in the Mininet repository in [topo-2sw-2host.py](https:
 `sudo linc s3 attach`  
 `sudo linc s4 attach`
 
+> Note that the `s3` and `s3` names are defined in the file with the topology: `topo-2sw-2host.py`.
+
 ### Using dpctl  ###
 
-A dpctl tool provides basic control over an OpenFlow switch that has passive listening port. LINC-Switch supports this feature. By default Mininet sets this port to `6634`, although it can be set through the command line option: `--listenport=<PORT>`. The tool can be used in two ways from the Mininet CLI:
+A dpctl tool provides basic control over an OpenFlow switch that has a passive listening port. LINC-Switch supports this feature. By default Mininet sets this port to `6634`, although it can be set through the command line option: `--listenport=<PORT>`. The tool can be used in two ways from the Mininet CLI:
 
 1. It can be run for each switch in the topology:  
 `mininet> dpctl <COMMAND> [<ARG>...]`  
 For example:  
 `mininet> dpctl get-config`
 1. It can be run per switch. Then the dpctl command is invoked like from the switch's shell:
-`mininet> dpctl <MININET_SWITCH_NAME> [<OPTIONS>] <SWITCH> <COMMAND> [<ARG>...]`  
+`mininet> <SWITCH_NAME> dpctl [<OPTIONS>] <SWITCH> <COMMAND> [<ARG>...]`  
 For example:  
 `mininet> s1 dpctl tcp:127.0.0.1:6634 features`
 
-To see description of the dpctl see output of `dpctl --help`.
+To get description of the dpctl see output of `dpctl --help`.
 
 ### Further reading ###
 The best starting point to dive into the Mininet further is to follow the [Mininet Walkthrough](http://mininet.org/walkthrough/).

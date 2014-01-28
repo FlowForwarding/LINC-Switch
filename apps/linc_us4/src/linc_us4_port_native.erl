@@ -185,5 +185,5 @@ add_epcap_env_options(Options, [{buffer_size, Value} = Opt | Rest])
     add_epcap_env_options([Opt | Options], Rest);
 add_epcap_env_options(Options, []) ->
     Options;
-add_epcap_env_options(Optins, [_UnknowOption | Rest]) ->
-    add_epcap_env_options(Optins, Rest).
+add_epcap_env_options(Options, [_UnknownOption | Rest]) ->
+    add_epcap_env_options(Options, Rest).

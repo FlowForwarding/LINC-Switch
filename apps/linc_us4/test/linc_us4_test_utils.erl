@@ -99,17 +99,6 @@ mock([port_native | Rest]) ->
                              ok
                      end),
     mock(Rest);
-mock([port_native_sockets | Rest]) ->
-    ok = meck:new(linc_us4_port_native, [passthrough]),
-    ok = meck:expect(linc_us4_port_native, bpf_raw_socket,
-                    fun(_) ->
-                            ok
-                    end),
-    ok = meck:expect(linc_us4_port_native, linux_raw_socket,
-                    fun(_) ->
-                            ok
-                    end),
-    mock(Rest);
 mock([group | Rest]) ->
     ok = meck:new(linc_us4_groups),
     ok = meck:expect(linc_us4_groups, apply,
@@ -147,10 +136,6 @@ mock([sup | Rest]) ->
     mock(Rest);
 mock([packet | Rest]) ->
     ok = meck:new(packet),
-    mock(Rest);
-mock([epcap | Rest]) ->
-    ok = meck:new(epcap),
-    ok = meck:expect(epcap, start, 1, {ok, list_to_pid("<0.0.1>")}),
     mock(Rest).
 
 unmock([]) ->
@@ -170,9 +155,6 @@ unmock([port | Rest]) ->
 unmock([port_native | Rest]) ->
     ok = meck:unload(linc_us4_port_native),
     unmock(Rest);
-unmock([port_native_sockets | Rest]) ->
-    ok = meck:unload(linc_us4_port_native),
-    unmock(Rest);
 unmock([group | Rest]) ->
     ok = meck:unload(linc_us4_groups),
     unmock(Rest);
@@ -184,9 +166,6 @@ unmock([sup | Rest]) ->
     unmock(Rest);
 unmock([packet | Rest]) ->
     ok = meck:unload(packet),
-    unmock(Rest);
-unmock([epcap | Rest]) ->
-    ok = meck:unload(epcap),
     unmock(Rest).
 
 mock_reset([]) ->

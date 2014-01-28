@@ -25,8 +25,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(MOCKED, [epcap, port_native_sockets]).
--define(INTERFACE, "eth0").
+-define(INTERFACE, "dummy0").
 -define(CUSTOM_BUFFER_SIZE, 20*1024*1024).
 -define(PRINTING_STATS_INTERVAL_IN_SEC, 10).
 -define(EPCAP_NORMAL_START_OPTS(Interface), [{no_register, true},
@@ -46,79 +45,65 @@
 %% Generators ------------------------------------------------------------------
 
 epcap_start_test_() ->
-    {setup,
-     fun epcap_start_setup/0,
-     fun epcap_start_teardown/1,
-     [{"Test epcap start options", fun epcap_normal_start/0},
-      {"Test epcap start options in verbose mode", fun epcap_verbose_start/0},
+    [{"Test epcap start options", fun epcap_normal_start_opts/0},
+      {"Test epcap start options in verbose mode",
+       fun epcap_verbose_start_opts/0},
       {"Test epcap start options for unknown value of verbose option",
-       fun epcap_unknown_verbose_value_start/0},
+       fun epcap_unknown_verbose_value_start_opts/0},
       {"Test epcap start options with custom buffer size",
-       fun epcap_custom_buffer_size_start/0},
-      {"Test epcap start options for unknown value for buffer size",
-       fun epcap_unknown_custom_buffer_value_start/0},
+       fun epcap_custom_buffer_size_start_opts/0},
       {"Test epcap start options with printing statistics interval",
-       fun epcap_stats_interval_start/0},
-     {"Test epcap start options for unknown value for stats interval",
-      fun epcap_unknown_stats_interval_start/0}]}.
+       fun epcap_stats_interval_start_opts/0},
+      {"Test epcap start options for unknown value for stats interval",
+       fun epcap_unknown_stats_interval_start_opts/0},
+      {"Test epcap start options for unknown value for buffer size",
+       fun epcap_unknown_custom_buffer_value_start_opts/0}].
 
 %% Tests -----------------------------------------------------------------------
 
-epcap_normal_start() ->
-    expect_epcap_start_options(?EPCAP_NORMAL_START_OPTS(?INTERFACE)),
-    linc_us4_port_native:eth(?INTERFACE),
-    ?assert(meck:validate(epcap)).
+epcap_normal_start_opts() ->
+    ExpectedOpts = ?EPCAP_NORMAL_START_OPTS(?INTERFACE),
+    ActualOpts = linc_us4_port_native:epcap_options(?INTERFACE),
+    expect_epcap_options(ExpectedOpts, ActualOpts).
 
-epcap_verbose_start() ->
+epcap_verbose_start_opts() ->
     application:set_env(epcap, verbose, true),
-    expect_epcap_start_options(?EPCAP_VERBOSE_START_OPTS(?INTERFACE)),
-    linc_us4_port_native:eth(?INTERFACE),
-    ?assert(meck:validate(epcap)).
+    ExpectedOpts = ?EPCAP_VERBOSE_START_OPTS(?INTERFACE),
+    ActualOpts = linc_us4_port_native:epcap_options(?INTERFACE),
+    expect_epcap_options(ExpectedOpts, ActualOpts).
 
-epcap_unknown_verbose_value_start() ->
+epcap_unknown_verbose_value_start_opts() ->
     application:set_env(epcap, verbose, dummy),
-    epcap_normal_start().
+    epcap_normal_start_opts().
 
-epcap_stats_interval_start() ->
+epcap_stats_interval_start_opts() ->
     application:set_env(epcap, stats_interval, ?PRINTING_STATS_INTERVAL_IN_SEC),
-    expect_epcap_start_options(
-      ?EPCAP_STATS_INTERVAL_START_OPTS(?INTERFACE,
-                                       ?PRINTING_STATS_INTERVAL_IN_SEC)),
-    linc_us4_port_native:eth(?INTERFACE),
-    ?assert(meck:validate(epcap)).
+    ExpectedOpts = ?EPCAP_STATS_INTERVAL_START_OPTS(
+                      ?INTERFACE,
+                      ?PRINTING_STATS_INTERVAL_IN_SEC),
+    ActualOpts = linc_us4_port_native:epcap_options(?INTERFACE),
+    expect_epcap_options(ExpectedOpts, ActualOpts).
 
-epcap_unknown_stats_interval_start() ->
+epcap_unknown_stats_interval_start_opts() ->
     application:set_env(epcap, stast_interval, dummy),
-    epcap_normal_start().
+    epcap_normal_start_opts().
 
-epcap_custom_buffer_size_start() ->
+epcap_custom_buffer_size_start_opts() ->
     application:set_env(epcap, buffer_size, ?CUSTOM_BUFFER_SIZE),
-    expect_epcap_start_options(
-      ?EPCAP_CUSTOM_BUFFER_SIZE_START_OPTS(?INTERFACE, ?CUSTOM_BUFFER_SIZE)),
-    linc_us4_port_native:eth(?INTERFACE),
-    ?assert(meck:validate(epcap)).
+    ExpectedOpts = ?EPCAP_CUSTOM_BUFFER_SIZE_START_OPTS(?INTERFACE,
+                                                        ?CUSTOM_BUFFER_SIZE),
+    ActualOpts = linc_us4_port_native:epcap_options(?INTERFACE),
+    expect_epcap_options(ExpectedOpts, ActualOpts).
 
-epcap_unknown_custom_buffer_value_start() ->
+epcap_unknown_custom_buffer_value_start_opts() ->
     application:set_env(epcap, buffer_size, dummy),
-    epcap_normal_start().
+    epcap_normal_start_opts().
 
-%% Fixtures --------------------------------------------------------------------
-
-epcap_start_setup() ->
-    mock(?MOCKED).
-
-epcap_start_teardown(_) ->
-    unmock(?MOCKED).
 
 %% Helpers ---------------------------------------------------------------------
 
-expect_epcap_start_options(ExpectedOptions) ->
-    meck:expect(epcap, start,
-                fun(ActualOpts) ->
-                        [?assert(hasOptionSet(ActualOpts, Option))
-                         || Option <- ExpectedOptions],
-                        {ok, list_to_pid("<0.0.1>")}
-                end).
+expect_epcap_options(ExpectedOptions, ActualOpts) ->
+    [?assert(isOptionSet(ActualOpts, Option)) || Option <- ExpectedOptions].
 
-hasOptionSet(OptionsList, Option) ->
+isOptionSet(OptionsList, Option) ->
     lists:member(Option, OptionsList).

@@ -6,6 +6,11 @@
    %% Allowed values: 'enabled' | 'disabled'
    {of_config, enabled},
 
+   %% Following setting enables or disables spawning a new process for each
+   %% packet to be routed. If it's set to false a new process will be spawned, 
+   %% if it's set to true (or not defined) it will stay in the parent process
+   {sync_routing, true},
+
    %% Configure ports available to the switch when using the
    %% userspace backend according to your system setup.
    %% * Under Linux all TAP interfaces must be set up beforehand

@@ -46,6 +46,10 @@
          get_all_queues_state/1,
          is_valid/2]).
 
+-ifdef(TEST).
+-compile([export_all]).
+-endif.
+
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -324,8 +328,16 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     SwitchName = "LogicalSwitch" ++ integer_to_list(SwitchId),
     ResourceId =  SwitchName ++ "-" ++ PortName,
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
+    %% Use sync routing unless explicitly disabled in the configuration
+    SyncRouting = case application:get_env(linc, sync_routing) of
+                      {ok, false} ->
+                          false;
+                      _ ->
+                          true
+                  end,
     State = #state{resource_id = ResourceId, interface = Interface, port = Port,
-                   queues = QueuesState, switch_id = SwitchId},
+                   queues = QueuesState, switch_id = SwitchId,
+                   sync_routing = SyncRouting},
     Type = case lists:keyfind(type, 1, PortOpts) of
         {type, Type1} ->
             Type1;
@@ -493,14 +505,16 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
             #state{port = #ofp_port{port_no = PortNo,
                                     config = PortConfig},
-                   switch_id = SwitchId} = State) ->
-    handle_frame(Frame, SwitchId, PortNo, PortConfig),
+                   switch_id = SwitchId,
+                   sync_routing = SyncRouting} = State) ->
+    handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting),
     {noreply, State};
 handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
                                                            config = PortConfig},
                                           erlang_port = Port,
-                                          switch_id = SwitchId} = State) ->
-    handle_frame(Frame, SwitchId, PortNo, PortConfig),
+                                          switch_id = SwitchId,
+                                          sync_routing = SyncRouting} = State) ->
+    handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting),
     {noreply, State};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
@@ -562,18 +576,25 @@ remove(SwitchId, PortNo) ->
             ok = supervisor:terminate_child(Sup, Pid)
     end.
 
-handle_frame(Frame, SwitchId, PortNo, PortConfig) ->
+handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting) ->
     case check_port_config(no_recv, PortConfig) of
         true ->
             drop;
         false ->
             LincPkt = linc_us4_packet:binary_to_record(Frame, SwitchId, PortNo),
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
-            case check_port_config(no_packet_in, PortConfig) of
-                false ->
-                    linc_us4_routing:maybe_spawn_route(LincPkt);
+            NewLincPkt =
+                case check_port_config(no_packet_in, PortConfig) of
+                    false ->
+                        LincPkt;
+                    true ->
+                        LincPkt#linc_pkt{no_packet_in = true}
+                end,
+            case SyncRouting of
                 true ->
-                    linc_us4_routing:maybe_spawn_route(LincPkt#linc_pkt{no_packet_in = true})
+                    linc_us4_routing:route(NewLincPkt);
+                false ->
+                    linc_us4_routing:spawn_route(NewLincPkt)
             end
     end.
 

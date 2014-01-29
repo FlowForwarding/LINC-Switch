@@ -133,6 +133,9 @@ mock([sup | Rest]) ->
                   fun(_) ->
                           {ok, ok}
                   end),
+    mock(Rest);
+mock([packet | Rest]) ->
+    ok = meck:new(packet),
     mock(Rest).
 
 unmock([]) ->
@@ -160,6 +163,9 @@ unmock([instructions | Rest]) ->
     unmock(Rest);
 unmock([sup | Rest]) ->
     ok = meck:unload(linc_us4_sup),
+    unmock(Rest);
+unmock([packet | Rest]) ->
+    ok = meck:unload(packet),
     unmock(Rest).
 
 mock_reset([]) ->

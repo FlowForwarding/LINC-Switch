@@ -91,6 +91,7 @@ generate_sys_config(ParsedConfig) ->
      {linc,
       [
        {of_config, enabled},
+       {sync_routing, true},
        {capable_switch_ports, generate_ports(PortsMap)},
        {capable_switch_queues, []},
        {logical_switches,

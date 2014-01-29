@@ -124,7 +124,7 @@ modify(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
 send(#linc_pkt{in_port = InPort} = Pkt, in_port) ->
     send(Pkt, InPort);
 send(#linc_pkt{} = Pkt, table) ->
-    linc_us4_routing:spawn_route(Pkt),
+    linc_us4_routing:maybe_spawn_route(Pkt),
     ok;
 send(#linc_pkt{}, normal) ->
     %% Normal port represents traditional non-OpenFlow pipeline of the switch
@@ -571,9 +571,9 @@ handle_frame(Frame, SwitchId, PortNo, PortConfig) ->
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
             case check_port_config(no_packet_in, PortConfig) of
                 false ->
-                    linc_us4_routing:spawn_route(LincPkt);
+                    linc_us4_routing:maybe_spawn_route(LincPkt);
                 true ->
-                    linc_us4_routing:spawn_route(LincPkt#linc_pkt{no_packet_in = true})
+                    linc_us4_routing:maybe_spawn_route(LincPkt#linc_pkt{no_packet_in = true})
             end
     end.
 

@@ -20,6 +20,7 @@
 -module(linc_us4_routing).
 
 -export([maybe_spawn_route/1,
+         spawn_route/1,
          route/1]).
 
 -ifdef(TEST).

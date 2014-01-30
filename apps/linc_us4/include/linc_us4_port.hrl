@@ -18,6 +18,7 @@
 
 -record(state, {
           resource_id        :: string(),
+          sync_routing = true :: boolean(),
           %% Common state of tap and eth interfaces
           interface          :: string(),
           type = physical    :: linc_port_type(),

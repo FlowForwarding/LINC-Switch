@@ -283,7 +283,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
-    PortName = list_to_binary(["Port", integer_to_list(PortNo)]),
+    PortName = "Port" ++ integer_to_list(PortNo),
     Advertised = case lists:keyfind(features, 1, PortOpts) of
                      {features, undefined} ->
                          ?FEATURES;

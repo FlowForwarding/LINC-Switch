@@ -57,7 +57,7 @@ switch_config_request_reply_test_() ->
 no_ofconfig() ->
     load_linc_with_default_env(),
     [begin
-         ?assertEqual(ok, element(1, application:ensure_all_started(linc))),
+         ?assertEqual(ok, application:start(linc)),
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
@@ -71,8 +71,8 @@ with_ofconfig() ->
     application:set_env(linc, backend, linc_us5),
 
     [begin
-         case application:ensure_all_started(linc) of
-             {ok, _} ->
+         case application:start(linc) of
+             ok ->
                  ok;
              {error, Error} ->
                  ?debugFmt("Cannot start linc: ~p~n", [Error]),
@@ -90,7 +90,7 @@ with_controllers_listener() ->
                          {controllers_listener, {"127.0.0.1", 6653, tcp}}),
     application:set_env(linc, logical_switches, [{switch, 0, NewConfig}]),
     [begin
-         ?assertEqual(ok, element(1, application:ensure_all_started(linc))),
+         ?assertEqual(ok, application:start(linc)),
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].

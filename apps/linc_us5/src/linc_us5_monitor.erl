@@ -574,14 +574,12 @@ flow_update_full(Event, SwitchId, TableId, ShowInstructions, Reason, Flow) ->
 
 flow_update_abbrev(Xid) ->
     #ofp_flow_update_abbrev{
-                    length = 8,
                     event = abbrev,
                     xid = Xid}.
 
 flow_update_paused(Event) when Event =:= paused; 
                                Event =:= resumed ->
-    #ofp_flow_update_paused{length = 8,
-                            event = Event}.
+    #ofp_flow_update_paused{event = Event}.
 
 calc_remaining(TsTimeout, Now) ->
     max(timer:now_diff(TsTimeout, Now) div 1000000, 0).

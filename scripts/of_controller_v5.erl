@@ -64,6 +64,7 @@
          flow_mod_issue153/0,
          table_features_keep_table_0/0
          ]).
+-export([flow_add/3]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
@@ -589,9 +590,26 @@ scenario(table_mod_config) ->
 scenario(queue_desc) ->
     [message(#ofp_queue_desc_request{port_no = any, queue_id = all})];
 
+%% Testing task #261 (https://github.com/FlowForwarding/LINC-Switch/issues/261):
+%% Implement Flow Monitoring 
+scenario(flow_monitor) ->
+    [message(#ofp_flow_monitor_request{
+                flags      = [], 
+                monitor_id = 1,
+                out_port   = any,
+                out_group  = any,
+                monitor_flags = [initial, add, removed, modify, 
+                                 instructions, no_abbrev, only_own],
+                table_id   = 0,
+                command    = add,
+                match      = #ofp_match{fields = []}
+               })];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->
+    [];
+scenario(idle) ->
     [];
 scenario(_Unknown) ->
     lager:debug("Unknown controller's scenario. Running `all_messages` one."),
@@ -609,7 +627,7 @@ loop(Connections, Scenario) ->
                                [Socket, Address, Port]);
                 active ->
                     lager:info(
-                      "Connected to listening swtich through ~p {~p,~p}",
+                      "Connected to listening switch through ~p {~p,~p}",
                       [Socket, Address, Port])
             end,
             [begin
@@ -627,13 +645,28 @@ loop(Connections, Scenario) ->
             NewConnections = filter_connections(Connections),
             do_send(NewConnections, AddressPort, Message),
             loop(NewConnections, Scenario);
+        {call, wait_for_message, _AddressPort, Ref, ReplyPid, Timeout} ->
+            NewConnections = filter_connections(Connections),
+            receive
+                {message, #ofp_message{xid = 0,
+                                       type = Type} = Update} when Type =/= hello ->
+                    lager:info("update received: ~p", [Update]),
+                    ReplyPid ! {reply, Ref, {update, Update}}
+            after Timeout ->
+                    ReplyPid ! {reply, Ref, {error, timeout}}
+            end,
+            loop(NewConnections, Scenario);
         {call, #ofp_message{xid = Xid} = Message,
          AddressPort, Ref, ReplyPid, Timeout} ->
             NewConnections = filter_connections(Connections),
             do_send(NewConnections, AddressPort, Message),
             receive
                 {message, #ofp_message{xid = Xid} = Reply} ->
-                    ReplyPid ! {reply, Ref, {reply, Reply}}
+                    ReplyPid ! {reply, Ref, {reply, Reply}};
+                {message, #ofp_message{xid = 0,
+                                       type = Type} = Update} when Type =/= hello ->
+                    lager:info("update received: ~p", [Update]),
+                    ReplyPid ! {reply, Ref, {update, Update}}
             after Timeout ->
                     ReplyPid ! {reply, Ref, {error, timeout}}
             end,
@@ -642,6 +675,7 @@ loop(Connections, Scenario) ->
             Pid ! {connections, Ref, [AP || {AP,_,_} <- Connections]},
             loop(Connections, Scenario);
         stop ->
+            lager:info("controller ~p stopped", [self()]),
             ok
     end.
 
@@ -1295,7 +1329,7 @@ call(Pid, To, Message, Timeout) ->
 do_send(Connections, {Address, Port}, Message) ->
     case lists:keyfind({Address, Port}, 1, Connections) of
         false ->
-            lager:error("Sending message failed");
+            lager:error("Sending message failed: ~p not found in ~p", [{Address, Port}, Connections]);
         {{Address, Port}, Socket, _} ->
             do_send(Socket, Message)
     end.

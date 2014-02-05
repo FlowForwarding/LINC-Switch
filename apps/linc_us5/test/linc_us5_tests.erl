@@ -20,6 +20,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
+-include("include/linc_us5.hrl").
 
 %% Tests -----------------------------------------------------------------------
 
@@ -31,11 +32,11 @@ switch_setup_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      {"Start/stop LINC v4 switch backend w/o OF-Config subsystem",
+      {"Start/stop LINC v5 switch backend w/o OF-Config subsystem",
        fun no_ofconfig/0},
-      {"Start/stop LINC v4 switch backend with OF-Config subsystem",
+      {"Start/stop LINC v5 switch backend with OF-Config subsystem",
        fun with_ofconfig/0},
-      {"Start/stop LINC v4 switch backend with controllers listener enabled",
+      {"Start/stop LINC v5 switch backend with controllers listener enabled",
        fun with_controllers_listener/0}
      ]}.
 
@@ -56,7 +57,7 @@ switch_config_request_reply_test_() ->
 no_ofconfig() ->
     load_linc_with_default_env(),
     [begin
-         ?assertEqual(ok, application:start(linc)),
+         ?assertEqual(ok, element(1, application:ensure_all_started(linc))),
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
@@ -70,8 +71,8 @@ with_ofconfig() ->
     application:set_env(linc, backend, linc_us5),
 
     [begin
-         case application:start(linc) of
-             ok ->
+         case application:ensure_all_started(linc) of
+             {ok, _} ->
                  ok;
              {error, Error} ->
                  ?debugFmt("Cannot start linc: ~p~n", [Error]),
@@ -89,7 +90,7 @@ with_controllers_listener() ->
                          {controllers_listener, {"127.0.0.1", 6653, tcp}}),
     application:set_env(linc, logical_switches, [{switch, 0, NewConfig}]),
     [begin
-         ?assertEqual(ok, application:start(linc)),
+         ?assertEqual(ok, element(1, application:ensure_all_started(linc))),
          timer:sleep(?TIMEOUT),
          ?assertEqual(ok, application:stop(linc))
      end || _ <- [lists:seq(1,10)]].
@@ -175,7 +176,7 @@ config_request_reply_teardown(_) ->
     meck:unload(linc_buffer).
 
 mocked_us5_backend_setup() ->
-    DummyBackendOpts = [ {Opt, dummy} || Opt <- [switch_id,
+    DummyBackendOpts = [ {Opt, #monitor_data{}} || Opt <- [switch_id,
                                                  datapath_mac,
                                                  config] ],
     {ok, 5, State} = linc_us5:start(DummyBackendOpts),

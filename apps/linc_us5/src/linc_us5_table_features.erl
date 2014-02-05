@@ -19,7 +19,7 @@
 %% @doc Userspace implementation of the OpenFlow Switch logic.
 -module(linc_us5_table_features).
 
--export([handle_req/2]).
+-export([handle_req/3]).
 
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc_us5/include/linc_us5.hrl").
@@ -40,20 +40,24 @@
                               write_setfield_miss,
                               apply_setfield_miss]).
 
-handle_req(_SwitchId, #ofp_table_features_request{body=[]}) ->
+handle_req(_SwitchId, #ofp_table_features_request{body=[]}, _MonitorData) ->
     %% Read request
     #ofp_table_features_reply{body = get_all_features()};
-handle_req(SwitchId, #ofp_table_features_request{body=[_TF|_]=TableFeaturesList}) ->
+handle_req(SwitchId, #ofp_table_features_request{body=[_TF|_]=TableFeaturesList},
+          MonitorData) ->
     %% SetRequest
     case validate_config(TableFeaturesList) of
         ok ->
+            
             %% When a table is "deleted" by not being present in the
             %% list of tables in the request, we should remove all
             %% flow entries.
+            linc_us5_monitor:batch_start(SwitchId, removed, MonitorData),
             DeletedTables = lists:seq(0, ?OFPTT_MAX) --
                 [TableId || #ofp_table_features{table_id = TableId} <- TableFeaturesList],
-            [linc_us5_flow:clear_table_flows(SwitchId, TableId)
+            [linc_us5_flow:clear_table_flows(SwitchId, TableId, MonitorData)
              || TableId <- DeletedTables],
+            linc_us5_monitor:batch_end(SwitchId),
             %% Currently we have no concept of deleted tables, though,
             %% so we report them all as existing.
             #ofp_table_features_reply{body = get_all_features()};

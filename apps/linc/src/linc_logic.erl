@@ -318,11 +318,13 @@ handle_info(timeout, #state{backend_mod = BackendMod,
             {stop, {backend_failed, Reason}, State}
     end;
 
-handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
+handle_info({ofp_message, Pid, #ofp_message{body = MessageBody, 
+                                            xid = Xid} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
     ?DEBUG("Received message from the controller: ~p", [Message]),
-    NewBState = case Backend:handle_message(MessageBody, BackendState) of
+    BState2 = Backend:set_monitor_data(Pid, Xid, BackendState),
+    NewBState = case Backend:handle_message(MessageBody, BState2) of
                     {noreply, NewState} ->
                         NewState;
                     {reply, ReplyBody, NewState} ->

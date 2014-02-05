@@ -26,7 +26,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("linc_us5.hrl").
 
--define(MOCKED, [flow, port]).
+-define(MOCKED, [flow, port, monitor]).
 -define(SWITCH_ID, 0).
 
 %%%
@@ -276,7 +276,7 @@ call_group_mod(Command, GroupId, Type, Buckets) ->
     linc_us5_groups:modify(?SWITCH_ID, #ofp_group_mod{
                                           command = Command, group_id = GroupId,
                                           type = Type, buckets = Buckets
-                                         }).
+                                         }, #monitor_data{}).
 
 %% @doc In #ofp_group_stats_reply{} searches for reply with a given GroupId,
 %% and returns a field Key from it.

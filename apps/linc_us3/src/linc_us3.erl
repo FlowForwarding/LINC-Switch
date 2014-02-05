@@ -30,7 +30,8 @@
 -export([is_port_valid/2,
          is_queue_valid/3,
          set_datapath_mac/2,
-         log_message_sent/1]).
+         log_message_sent/1,
+         set_monitor_data/3]).
 
 %% Handle all message types
 -export([ofp_features_request/2,
@@ -126,6 +127,10 @@ log_message_sent(#ofp_message{body = Body} = Message)
     ?DEBUG("[OF_ERROR] Sent message to controller: ~w~n", [Message]);
 log_message_sent(Message) ->
     ?DEBUG("Sent message to controller: ~w~n", [Message]).
+
+-spec set_monitor_data(pid(), integer(), state()) -> state().
+set_monitor_data(_ClientPid, _Xid, State) ->
+    State.
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages

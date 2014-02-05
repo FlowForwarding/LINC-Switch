@@ -71,6 +71,7 @@ with_ofconfig() ->
 setup() ->
     linc_us3_test_utils:add_logic_path(),
     error_logger:tty(false),
+    ok = application:start(ssh),
     ok = application:start(xmerl),
     ok = application:start(mnesia),
     ok = application:start(syntax_tools),
@@ -83,4 +84,5 @@ teardown(_) ->
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
-    ok = application:stop(lager).
+    ok = application:stop(lager),
+    ok = application:stop(ssh).

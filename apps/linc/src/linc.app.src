@@ -7,7 +7,7 @@
                   mnesia]},
   {mod, {linc, []}},
   {env, [{capable_switch_id, "CapableSwitch0"},
-         {supported_versions, [3, 4]},
+         {supported_versions, [3, 4, 5]},
          {of_config, enabled},
          {manufacturer_desc, <<"FlowForwarding.org">>},
          {hardware_desc, <<"Unknown">>},

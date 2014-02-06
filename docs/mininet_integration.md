@@ -39,8 +39,7 @@ To warm up with the Mininet just try to run a simple ping example with LINC-Swit
 `sudo linc <SWITCH_NAME> attach`
 Switch name is assigned by Mininet. Usually the first switch is named `s1`.
 1. In yet another console run the controller:  
-`cd LINC-Switch/scripts`      
-`sudo ./of_controller_v4.sh -p 6633 -d -s table_miss`  
+`sudo linc_controller -p 6633 -d -s table_miss`  
 The controller will connect to the switch and sends it a flow modification message making the switch send all unmatched packets to the controller.
 1. From the mininet CLI send a ping from one host to the other:  
 `h1 ping -c 3 h2`  
@@ -67,8 +66,7 @@ This topology is defined in the Mininet repository in [topo-2sw-2host.py](https:
 1. Start the Mininet with LINC-Switch and the custom topology:  
 `sudo bin/mn --controller=remote --switch=linc --custom custom/topo-2sw-2host.py --topo mytopo`
 1. In another console run the controller with a prepared scenario:  
-`cd LINC-Switch/scripts`      
-`sudo ./of_controller_v4.sh -p 6633 -d -s mininet_mytopo`  
+`sudo linc_controller -p 6633 -d -s mininet_mytopo`  
 3. Ping the hosts from the Mininet CLI:  
 `pingall`  
 4. Optionally you can attach to switches' consoles (the commands has to be ran from separate terminals):  

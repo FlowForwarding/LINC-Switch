@@ -144,7 +144,7 @@ match_miss() ->
     Pkt = pkt(MatchFieldsPkt),
     ?assertEqual({match, FlowMiss, Pkt#linc_pkt{table_id = TableId,
                                                cookie = cookie,
-                                               packet_in_reason = no_match}},
+                                               packet_in_reason = table_miss}},
                  linc_us5_routing:route(Pkt)).
 
 match_miss_goto() ->
@@ -168,7 +168,7 @@ match_miss_goto() ->
     Pkt = pkt(MatchFieldsPkt),
     ?assertEqual({match, Flow2, Pkt#linc_pkt{table_id = TableId2,
                                             cookie = <<0:64>>,
-                                            packet_in_reason = no_match}},
+                                            packet_in_reason = table_miss}},
                  linc_us5_routing:route(Pkt)).
 
 goto() ->

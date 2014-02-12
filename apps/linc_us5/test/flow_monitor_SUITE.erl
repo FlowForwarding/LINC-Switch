@@ -12,9 +12,12 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
 
-%% HI_IMPORTANCE was introduced in R15B02
+%% HI_IMPORTANCE and LOW_IMPORTANCE were introduced in R15B02
 -ifndef(HI_IMPORTANCE).
 -define(HI_IMPORTANCE,  75).
+-endif.
+-ifndef(LOW_IMPORTANCE).
+-define(LOW_IMPORTANCE, 25).
 -endif.
 
 -type config() :: proplists:proplist().

@@ -262,13 +262,20 @@ setup() ->
     mock(?MOCKED),
     linc:create(?SWITCH_ID),
     linc_us5_test_utils:add_logic_path(),
-    {ok, _Pid} = linc_us5_sup:start_link(?SWITCH_ID),
+    {ok, Pid} = linc_us5_sup:start_link(?SWITCH_ID),
     Config = ports_without_queues(),
     application:load(linc),
-    application:set_env(linc, logical_switches, Config).
+    application:set_env(linc, logical_switches, Config),
+    Pid.
 
-teardown(_) ->
+teardown(Pid) ->
     linc:delete(?SWITCH_ID),
+
+    unlink(Pid),
+    Ref = monitor(process, Pid),
+    exit(Pid, shutdown),
+    receive {'DOWN', Ref, _, _, _} -> ok end,
+
     unmock(?MOCKED).
 
 foreach_setup() ->

@@ -163,7 +163,12 @@ start_link(SwitchId) ->
 
 init([SwitchId]) ->
     create_table(SwitchId),
-     QLimit = application:get_env(linc, monitor_buffer_limit, ?QUEUE_LIMIT),
+    case application:get_env(linc, monitor_buffer_limit) of
+        {ok, QLimit} ->
+            ok;
+        undefined ->
+            QLimit = ?QUEUE_LIMIT
+    end,
     ?INFO("Flow monitor started for switch ~p as ~p", [SwitchId, self()]),
     {ok, #state{switch_id = SwitchId,
                 buffer = queue:new(),

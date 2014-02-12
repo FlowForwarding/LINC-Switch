@@ -80,10 +80,8 @@ actions_test_() ->
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
       [%% Required actions
        {"Action Output", fun action_output/0},
-       {"Action Output: controller with reason 'action'",
-        fun action_output_controller_action/0},
-       {"Action Output: controller with reason 'no_match'",
-        fun action_output_controller_nomatch/0},
+       {"Action Output: controller with reason 'table_miss'",
+        fun action_output_controller_tablemiss/0},
        {"Action Group", fun action_group/0},
        {"Action Experimenter", fun action_experimenter/0},
        %% Optional actions
@@ -116,18 +114,10 @@ action_output() ->
     ?assert(check_if_called({linc_us5_port, send, 2})),
     ?assertEqual([{Pkt, Port}], check_output_on_ports()).
 
-action_output_controller_action() ->
-    Pkt = #linc_pkt{},
-    Port = controller,
-    Action = #ofp_action_output{port = Port},
-    ?assertEqual({Pkt, [{output, Port, Pkt}]},
-                 linc_us5_actions:apply_list(Pkt, [Action])),
-    ?assert(check_if_called({linc_us5_port, send, 2})),
-    ?assertEqual([{Pkt#linc_pkt{packet_in_reason = action}, Port}],
-                 check_output_on_ports()).
-
-action_output_controller_nomatch() ->
-    Pkt = #linc_pkt{packet_in_reason = no_match},
+action_output_controller_tablemiss() ->
+    %% The apply_list function doesn't change the packet_in_reason
+    %% field.
+    Pkt = #linc_pkt{packet_in_reason = table_miss},
     Port = controller,
     Action = #ofp_action_output{port = Port},
     ?assertEqual({Pkt, [{output, Port, Pkt}]},

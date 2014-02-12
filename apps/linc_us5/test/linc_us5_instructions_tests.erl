@@ -63,7 +63,7 @@ meter() ->
 apply_actions() ->
     Pkt = #linc_pkt{},
     ApplyActions = #ofp_instruction_apply_actions{actions = []},
-    ?assertEqual({stop, Pkt},
+    ?assertEqual({stop, Pkt#linc_pkt{packet_in_reason = apply_action}},
                  linc_us5_instructions:apply(Pkt, [ApplyActions])).
 
 clear_actions() ->

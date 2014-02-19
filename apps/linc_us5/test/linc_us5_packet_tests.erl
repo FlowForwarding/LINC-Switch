@@ -256,6 +256,9 @@ encode(Packet = #ndp_ns{}) ->
 encode(_Packet = #sctp{}) ->
     %% pkt.erl cannot encode SCTP packets
     ignore;
+encode(Udp = #udp{}) ->
+    Ipv4 = #ipv4{saddr = <<0:32>>, daddr = <<0:32>>},
+    pkt:encapsulate([Ipv4, Udp]);
 encode(Packet) when is_tuple(Packet) ->
     Type = element(1, Packet),
     pkt:Type(Packet).

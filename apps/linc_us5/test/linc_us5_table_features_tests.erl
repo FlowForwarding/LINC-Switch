@@ -18,7 +18,7 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us5_table_features_tests).
 
-%% -include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("linc_us5/include/linc_us5.hrl").

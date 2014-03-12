@@ -19,6 +19,7 @@
 -module(linc_us5_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include("include/linc_us5.hrl").
 

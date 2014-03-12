@@ -19,6 +19,8 @@
 %% @doc Module for handling flows.
 -module(linc_us5_flow).
 
+-behaviour(gen_server).
+
 %% API
 -export([initialize/1,
          terminate/1,
@@ -37,6 +39,15 @@
          update_lookup_counter/2,
          update_match_counters/4,
          reset_idle_timeout/2]).
+
+%% gen_server exports
+-export([start_link/1,
+         init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
 
 %% Internal exports
 -export([check_timers/1,
@@ -142,123 +153,10 @@ table_desc() ->
 %% This may add/modify/delete one or more flows.
 -spec modify(integer(), #ofp_flow_mod{}, {pid(), integer()}) ->
                     ok | {error, {Type :: atom(), Code :: atom()}}.
-modify(_SwitchId, #ofp_flow_mod{command = Cmd, table_id = all}, _MonitorData)
-  when Cmd == add orelse Cmd == modify orelse Cmd == modify_strict ->
-    {error, {flow_mod_failed, bad_table_id}};
-modify(SwitchId, #ofp_flow_mod{command = Cmd, buffer_id = BufferId} = FlowMod, MonitorData)
-  when (Cmd == add orelse Cmd == modify orelse Cmd == modify_strict)
-       andalso BufferId /= no_buffer ->
-    %% A buffer_id is provided, we have to first do the flow_mod
-    %% and then a packet_out to OFPP_TABLE. This actually means to first
-    %% perform the flow_mod and then restart the processing of the buffered
-    %% packet starting in flow_table=0.
-    case modify(SwitchId, FlowMod#ofp_flow_mod{buffer_id = no_buffer}, MonitorData) of
-        ok ->
-            case linc_buffer:get_buffer(SwitchId, BufferId) of
-                #linc_pkt{} = OfsPkt ->
-                    Action = #ofp_action_output{port = table},
-                    linc_us5_actions:apply_list(OfsPkt, [Action]);
-                not_found ->
-                    %% Buffer has been dropped, ignore
-                    ok
-            end;
-        Error ->
-            Error
-    end;
-modify(SwitchId, #ofp_flow_mod{command = add,
-                               table_id = TableId,
-                               priority = Priority,
-                               flags = Flags,
-                               match = #ofp_match{fields = Match},
-                               instructions = Instructions} = FlowMod, MonitorData) ->
-    case validate_match_and_instructions(SwitchId, TableId,
-                                         Match, Instructions) of
-        ok ->
-            case lists:member(check_overlap, Flags) of
-                true ->
-                    %% Check that there are no overlapping flows.
-                    case check_overlap(SwitchId, TableId, Priority, Match) of
-                        true ->
-                            {error, {flow_mod_failed, overlap}};
-                        false ->
-                            add_new_flow(SwitchId, TableId, FlowMod, MonitorData)
-                    end;
-                false ->
-                    %% Check if there is any entry with the exact same 
-                    %% priority and match
-                    case find_exact_match(SwitchId, TableId,
-                                          Priority, Match) of
-                        #flow_entry{} = Matching ->
-                            replace_existing_flow(SwitchId, TableId, FlowMod,
-                                                  Matching, Flags, MonitorData);
-                        no_match ->
-                            add_new_flow(SwitchId, TableId, FlowMod, MonitorData)
-                    end
-            end;
-        Error ->
-            Error
-    end;
-modify(SwitchId, #ofp_flow_mod{command = modify,
-                               cookie = Cookie,
-                               cookie_mask = CookieMask,
-                               table_id = TableId,
-                               flags = Flags,
-                               match = #ofp_match{fields = Match},
-                               instructions = Instructions}, MonitorData) ->
-    case validate_match_and_instructions(SwitchId, TableId,
-                                         Match, Instructions) of
-        ok ->
-            modify_matching_flows(SwitchId, TableId, Cookie, CookieMask,
-                                  Match, Instructions, Flags, MonitorData),
-            ok;
-        Error ->
-            Error
-    end;
-modify(SwitchId, #ofp_flow_mod{command = modify_strict,
-                               table_id = TableId,
-                               priority = Priority,
-                               flags = Flags,
-                               match = #ofp_match{fields = Match},
-                               instructions = Instructions}, MonitorData) ->
-    case validate_match_and_instructions(SwitchId, TableId,
-                                         Match, Instructions) of
-        ok ->
-            case find_exact_match(SwitchId, TableId, Priority, Match) of
-                #flow_entry{} = Flow ->
-                    modify_flow(SwitchId, TableId, Flow, Instructions, Flags, MonitorData);
-                no_match ->
-                    %% Do nothing
-                    ok
-            end;
-        Error ->
-            Error
-    end;
-modify(SwitchId, #ofp_flow_mod{command = Cmd, table_id = all} = FlowMod, MonitorData)
-  when Cmd == delete; Cmd == delete_strict ->
-    [modify(SwitchId, FlowMod#ofp_flow_mod{table_id = Id}, MonitorData)
-     || Id <- lists:seq(0, ?OFPTT_MAX)],
-    ok;
-modify(SwitchId, #ofp_flow_mod{command = delete,
-                               table_id = TableId,
-                               cookie = Cookie,
-                               cookie_mask = CookieMask,
-                               out_port = OutPort,
-                               out_group = OutGroup,
-                               match = #ofp_match{fields = Match}}, MonitorData) ->
-    delete_matching_flows(SwitchId, TableId, Cookie, CookieMask,
-                          Match, OutPort, OutGroup, MonitorData),
-    ok;
-modify(SwitchId, #ofp_flow_mod{command = delete_strict,
-                                table_id = TableId,
-                                priority = Priority,
-                                match = #ofp_match{fields = Match}}, MonitorData) ->
-    case find_exact_match(SwitchId, TableId, Priority, Match) of
-        #flow_entry{} = FlowEntry ->
-            delete_flow(SwitchId, TableId, FlowEntry, delete, MonitorData);
-        _ ->
-            %% Do nothing
-            ok
-    end.
+modify(SwitchId, #ofp_flow_mod{} = FlowMod, MonitorData) ->
+    %% All modifications are serialised.
+    Pid = linc:lookup(SwitchId, ?MODULE),
+    gen_server:call(Pid, {modify, SwitchId, FlowMod, MonitorData}, infinity).
 
 %% @doc Get all entries in one flow table.
 -spec get_flow_table(integer(), integer()) -> [FlowTableEntryRepr :: term()].
@@ -284,9 +182,8 @@ delete_where_meter(SwitchId, MeterId, MonitorData) ->
 %% `ofp_flow_removed' events are not sent.
 -spec clear_table_flows(integer(), 0..?OFPTT_MAX, #monitor_data{}) -> ok.
 clear_table_flows(SwitchId, TableId, MonitorData) ->
-    ets:foldl(fun(#flow_entry{} = FlowEntry, _Acc) ->
-                      delete_flow(SwitchId, TableId, FlowEntry, no_event, MonitorData)
-              end, ok, flow_table_ets(SwitchId, TableId)).
+    Pid = linc:lookup(SwitchId, ?MODULE),
+    gen_server:call(Pid, {clear_table_flows, SwitchId, TableId, MonitorData}, infinity).
 
 %% @doc Get flow statistics.
 -spec get_stats(integer(), #ofp_flow_stats_request{}) -> #ofp_flow_stats_reply{}.
@@ -408,6 +305,157 @@ reset_idle_timeout(SwitchId, FlowId) ->
             true = ets:update_element(linc:lookup(SwitchId, flow_timers),
                                       FlowId,
                                       {#flow_timer.expire, Next}),
+            ok
+    end.
+
+%%=============================================================================
+%% gen_server callback functions
+
+start_link(SwitchId) ->
+    gen_server:start_link(?MODULE, SwitchId, []).
+
+init(SwitchId) ->
+    linc:register(SwitchId, linc_us5_flow, self()),
+    {ok, {}}.
+
+handle_call({modify, SwitchId, FlowMod, MonitorData}, _From, State) ->
+    %% Serialise instructions that modify flow tables.
+    Reply = do_modify(SwitchId, FlowMod, MonitorData),
+    {reply, Reply, State};
+handle_call({clear_table_flows, SwitchId, TableId, MonitorData}, _From, State) ->
+    ets:foldl(fun(#flow_entry{} = FlowEntry, _Acc) ->
+                      delete_flow(SwitchId, TableId, FlowEntry, no_event, MonitorData)
+              end, ok, flow_table_ets(SwitchId, TableId)),
+    {reply, ok, State}.
+
+handle_cast(_, State) ->
+    {noreply, State}.
+
+handle_info(_, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+
+do_modify(_SwitchId, #ofp_flow_mod{command = Cmd, table_id = all}, _MonitorData)
+  when Cmd == add orelse Cmd == modify orelse Cmd == modify_strict ->
+    {error, {flow_mod_failed, bad_table_id}};
+do_modify(SwitchId, #ofp_flow_mod{command = Cmd, buffer_id = BufferId} = FlowMod, MonitorData)
+  when (Cmd == add orelse Cmd == modify orelse Cmd == modify_strict)
+       andalso BufferId /= no_buffer ->
+    %% A buffer_id is provided, we have to first do the flow_mod
+    %% and then a packet_out to OFPP_TABLE. This actually means to first
+    %% perform the flow_mod and then restart the processing of the buffered
+    %% packet starting in flow_table=0.
+    case do_modify(SwitchId, FlowMod#ofp_flow_mod{buffer_id = no_buffer}, MonitorData) of
+        ok ->
+            case linc_buffer:get_buffer(SwitchId, BufferId) of
+                #linc_pkt{} = OfsPkt ->
+                    Action = #ofp_action_output{port = table},
+                    linc_us5_actions:apply_list(OfsPkt, [Action]);
+                not_found ->
+                    %% Buffer has been dropped, ignore
+                    ok
+            end;
+        Error ->
+            Error
+    end;
+do_modify(SwitchId, #ofp_flow_mod{command = add,
+                               table_id = TableId,
+                               priority = Priority,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions} = FlowMod, MonitorData) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
+        ok ->
+            case lists:member(check_overlap, Flags) of
+                true ->
+                    %% Check that there are no overlapping flows.
+                    case check_overlap(SwitchId, TableId, Priority, Match) of
+                        true ->
+                            {error, {flow_mod_failed, overlap}};
+                        false ->
+                            add_new_flow(SwitchId, TableId, FlowMod, MonitorData)
+                    end;
+                false ->
+                    %% Check if there is any entry with the exact same 
+                    %% priority and match
+                    case find_exact_match(SwitchId, TableId,
+                                          Priority, Match) of
+                        #flow_entry{} = Matching ->
+                            replace_existing_flow(SwitchId, TableId, FlowMod,
+                                                  Matching, Flags, MonitorData);
+                        no_match ->
+                            add_new_flow(SwitchId, TableId, FlowMod, MonitorData)
+                    end
+            end;
+        Error ->
+            Error
+    end;
+do_modify(SwitchId, #ofp_flow_mod{command = modify,
+                               cookie = Cookie,
+                               cookie_mask = CookieMask,
+                               table_id = TableId,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions}, MonitorData) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
+        ok ->
+            modify_matching_flows(SwitchId, TableId, Cookie, CookieMask,
+                                  Match, Instructions, Flags, MonitorData),
+            ok;
+        Error ->
+            Error
+    end;
+do_modify(SwitchId, #ofp_flow_mod{command = modify_strict,
+                               table_id = TableId,
+                               priority = Priority,
+                               flags = Flags,
+                               match = #ofp_match{fields = Match},
+                               instructions = Instructions}, MonitorData) ->
+    case validate_match_and_instructions(SwitchId, TableId,
+                                         Match, Instructions) of
+        ok ->
+            case find_exact_match(SwitchId, TableId, Priority, Match) of
+                #flow_entry{} = Flow ->
+                    modify_flow(SwitchId, TableId, Flow, Instructions, Flags, MonitorData);
+                no_match ->
+                    %% Do nothing
+                    ok
+            end;
+        Error ->
+            Error
+    end;
+do_modify(SwitchId, #ofp_flow_mod{command = Cmd, table_id = all} = FlowMod, MonitorData)
+  when Cmd == delete; Cmd == delete_strict ->
+    [do_modify(SwitchId, FlowMod#ofp_flow_mod{table_id = Id}, MonitorData)
+     || Id <- lists:seq(0, ?OFPTT_MAX)],
+    ok;
+do_modify(SwitchId, #ofp_flow_mod{command = delete,
+                               table_id = TableId,
+                               cookie = Cookie,
+                               cookie_mask = CookieMask,
+                               out_port = OutPort,
+                               out_group = OutGroup,
+                               match = #ofp_match{fields = Match}}, MonitorData) ->
+    delete_matching_flows(SwitchId, TableId, Cookie, CookieMask,
+                          Match, OutPort, OutGroup, MonitorData),
+    ok;
+do_modify(SwitchId, #ofp_flow_mod{command = delete_strict,
+                                table_id = TableId,
+                                priority = Priority,
+                                match = #ofp_match{fields = Match}}, MonitorData) ->
+    case find_exact_match(SwitchId, TableId, Priority, Match) of
+        #flow_entry{} = FlowEntry ->
+            delete_flow(SwitchId, TableId, FlowEntry, delete, MonitorData);
+        _ ->
+            %% Do nothing
             ok
     end.
 

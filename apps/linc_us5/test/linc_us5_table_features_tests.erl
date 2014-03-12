@@ -107,17 +107,20 @@ set_features() ->
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->
-    ets:new(linc_switch_0, [named_table]),
+    ets:new(linc_switch_0, [named_table, public]),
     [
      ets:insert(linc_switch_0,
                 {list_to_atom("flow_table_" ++ integer_to_list(Table)),
                  ets:new(flow_table, [])})
      || Table <- lists:seq(0, ?OFPTT_MAX)
     ],
-    ok.
+    {ok, Pid} = linc_us5_flow:start_link(0),
+    Pid.
 
-teardown(_State) ->
-    ets:foldl(fun({_, Tid}, _) -> ets:delete(Tid) end, ignored, linc_switch_0),
+teardown(Pid) ->
+    unlink(Pid),
+    exit(Pid, kill),
+    ets:foldl(fun({_, Tid}, _) -> is_integer(Tid) andalso ets:delete(Tid) end, ignored, linc_switch_0),
     ets:delete(linc_switch_0),
     ok.
 

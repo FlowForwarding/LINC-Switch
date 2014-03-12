@@ -1285,9 +1285,13 @@ hard_timeout() ->
 setup() ->
     linc_us5_test_utils:add_logic_path(),
     linc:create(?SWITCH_ID),
-    linc_us5_test_utils:mock(?MOCKED).
+    linc_us5_test_utils:mock(?MOCKED),
+    {ok, Pid} = linc_us5_flow:start_link(?SWITCH_ID),
+    Pid.
 
-teardown(_) ->
+teardown(Pid) ->
+    unlink(Pid),
+    exit(Pid, kill),
     linc:delete(?SWITCH_ID),
     linc_us5_test_utils:unmock(?MOCKED).
 

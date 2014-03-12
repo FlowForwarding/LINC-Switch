@@ -53,6 +53,9 @@ start_backend_sup(SwitchId) ->
 
 init(SwitchId) ->
     linc:register(SwitchId, linc_us5_sup, self()),
+    Flow = {linc_us5_flow,
+            {linc_us5_flow, start_link, [SwitchId]},
+            permanent, 5000, worker, [linc_us5_flow]},
     MeterSup = {linc_us5_meter_sup,
                 {linc_us5_meter_sup, start_link, [SwitchId]},
                 permanent, 5000, supervisor, [linc_us5_meter_sup]},
@@ -62,4 +65,4 @@ init(SwitchId) ->
     PortSup = {linc_us5_port_sup,
                {linc_us5_port_sup, start_link, [SwitchId]},
                permanent, 5000, supervisor, [linc_us5_port_sup]},
-    {ok, {{one_for_one, 5, 10}, [MeterSup, MonitorSup, PortSup]}}.
+    {ok, {{one_for_one, 5, 10}, [Flow, MeterSup, MonitorSup, PortSup]}}.

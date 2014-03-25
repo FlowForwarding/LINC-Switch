@@ -171,9 +171,11 @@ send(#linc_pkt{}, any) ->
     %% Can not be used as an ingress port nor as an output port.
     bad_port;
 send(#linc_pkt{switch_id = SwitchId} = Pkt, PortNo) when is_integer(PortNo) ->
-    case get_port_pid(SwitchId, PortNo) of
+    case get_port_pid_if_ready_to_send(SwitchId, PortNo) of
         {error, _} ->
             bad_port;
+        port_overloaded ->
+            drop;
         Pid ->
             gen_server:cast(Pid, {send, Pkt})
     end.
@@ -351,6 +353,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                     eth
             end
     end,
+    State2 = setup_load_control(SwitchId, PortNo, State),
     case Type of
         %% When switch connects to a tap interface, erlang receives file
         %% descriptor to read/write ethernet frames directly from the
@@ -376,7 +379,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                             linc_us4_queue:attach_all(SwitchId, PortNo,
                                                       SendFun, QueuesConfig)
                     end,
-                    {ok, State#state{erlang_port = ErlangPort,
+                    {ok, State2#state{erlang_port = ErlangPort,
                                      port_ref = Pid,
                                      port = Port#ofp_port{hw_addr = HwAddr}}}
             end;
@@ -407,7 +410,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
             ets:insert(linc:lookup(SwitchId, linc_port_stats),
                        #ofp_port_stats{port_no = PortNo,
                                        duration_sec = erlang:now()}),
-            {ok, State#state{socket = Socket,
+            {ok, State2#state{socket = Socket,
                              ifindex = IfIndex,
                              epcap_pid = EpcapPid,
                              port = Port#ofp_port{hw_addr = HwAddr}}}
@@ -506,27 +509,35 @@ handle_info({packet, _DataLinkType, _Time, _Length, Frame},
             #state{port = #ofp_port{port_no = PortNo,
                                     config = PortConfig},
                    switch_id = SwitchId,
+                   overload_protection = Protection,
                    sync_routing = SyncRouting} = State) ->
-    handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting),
+    [handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting)
+     || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
 handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
                                                            config = PortConfig},
                                           erlang_port = Port,
                                           switch_id = SwitchId,
+                                          overload_protection = Protection,
                                           sync_routing = SyncRouting} = State) ->
-    handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting),
+    [handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting)
+     || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
+
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
     ?ERROR("Port for interface ~p exited abnormally",
            [Interface]),
     {stop, normal, State};
+handle_info(#load_control_message{} = Msg, State) ->
+    {noreply, linc_us4_port_load_regulator:limit_load_if_necessary(Msg, State)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
 terminate(_Reason, #state{port = #ofp_port{port_no = PortNo},
-                          switch_id = SwitchId} = State) ->
+                          switch_id = SwitchId,
+                          periodic_load_checker_ref = LoadCheckerRef} = State) ->
     case queues_enabled(SwitchId) of
         true ->
             linc_us4_queue:detach_all(SwitchId, PortNo);
@@ -535,6 +546,7 @@ terminate(_Reason, #state{port = #ofp_port{port_no = PortNo},
     end,
     true = ets:delete(linc:lookup(SwitchId, linc_ports), PortNo),
     true = ets:delete(linc:lookup(SwitchId, linc_port_stats), PortNo),
+    ok = linc_us4_port_load_regulator:cancel_periodic_check(LoadCheckerRef),
     linc_us4_port_native:close(State).
 
 %% @private
@@ -610,15 +622,38 @@ update_port_tx_counters(SwitchId, PortNum, Bytes) ->
                        [{#ofp_port_stats.tx_packets, 1},
                         {#ofp_port_stats.tx_bytes, Bytes}]).
 
--spec get_port_pid(integer(), ofp_port_no()) -> pid() | {error, invalid | nonexistent}.
-get_port_pid(_SwitchId, PortNo) when is_atom(PortNo); PortNo > ?OFPP_MAX ->
-    {error, invalid};
+-spec get_port_pid(integer(), ofp_port_no()) -> pid() |
+                                                {error, invalid | nonexistent}.
 get_port_pid(SwitchId, PortNo) ->
+    case get_linc_port(SwitchId, PortNo) of
+        #linc_port{pid = Pid} ->
+            Pid;
+        Error ->
+            Error
+    end.
+
+-spec get_port_pid_if_ready_to_send(integer(), ofp_port_no()) ->
+                                           pid() |
+                                           {error, invalid | nonexistent} |
+                                           port_overloaded.
+get_port_pid_if_ready_to_send(SwitchId, PortNo) ->
+    case get_linc_port(SwitchId, PortNo) of
+        #linc_port{pid = Pid, drop_tx = false} ->
+            Pid;
+        #linc_port{drop_tx = true} ->
+            port_overloaded;
+        Error ->
+            Error
+    end.
+
+get_linc_port(_SwitchId, PortNo) when is_atom(PortNo); PortNo > ?OFPP_MAX ->
+    {error, invalid};
+get_linc_port(SwitchId, PortNo) ->
     case ets:lookup(linc:lookup(SwitchId, linc_ports), PortNo) of
         [] ->
             {error, nonexistent};
-        [#linc_port{pid = Pid}] ->
-            Pid
+        [#linc_port{} = Port] ->
+            Port
     end.
 
 -spec convert_duration(list(#ofp_port_stats{})) -> list(#ofp_port_stats{}).
@@ -707,3 +742,8 @@ ports_for_switch(SwitchId, Config) ->
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).
+
+setup_load_control(SwitchId, PortNo, State) ->
+    CheckerReference =
+        linc_us4_port_load_regulator:schedule_periodic_check(SwitchId, PortNo),
+    State#state{periodic_load_checker_ref = CheckerReference}.

@@ -31,6 +31,7 @@
 -export([start_link/2,
          initialize/2,
          terminate/1,
+         validate/2,
          modify/2,
          send/2,
          get_desc/1,
@@ -115,6 +116,20 @@ modify(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
             {error, {bad_request, bad_port}};
         Pid ->
             gen_server:call(Pid, {port_mod, PortMod})
+    end.
+
+%% @doc Check whether the given port mod command is valid.
+%% The return value is the same as for {@link modify/2}, but no
+%% changes are actually made.
+-spec validate(integer(), ofp_port_mod()) -> ok |
+                                           {error, {Type :: atom(),
+                                                    Code :: atom()}}.
+validate(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
+    case get_port_pid(SwitchId, PortNo) of
+        bad_port ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, {validate_port_mod, PortMod})
     end.
 
 %% @doc Send OF packet to the OF port.
@@ -406,33 +421,26 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     end.
 
 %% @private
-handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
-                                     config = Config,
+handle_call({validate_port_mod, #ofp_port_mod{} = PortMod}, _From,
+            #state{port = #ofp_port{} = Port} = State) ->
+    {reply, validate_port_mod(Port, PortMod), State};
+handle_call({port_mod, #ofp_port_mod{config = Config,
                                      mask = _Mask,
-                                     properties = PMProperties}}, _From,
-            #state{port = #ofp_port{hw_addr = HWAddr, properties = Properties} = Port} = State) ->
-    {Reply, NewPort} = case PMHwAddr == HWAddr of
-                           true ->
-                               case PMProperties of
-                                   %% Ensure there is one single property, for Ethernet...
-                                   [#ofp_port_mod_prop_ethernet{advertise = Advertise}] ->
-                                       {value, Ethernet} =
-                                           lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
-                                       NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{
-                                                       advertised = Advertise},
-                                       NewProperties =
-                                           lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
-                                                            NewEthernet),
-                                       {ok, Port#ofp_port{config = Config,
-                                                          properties = NewProperties}};
-                                   %% ...otherwise reject the message.
-                                   _ ->
-                                       {{error, {port_mod_failed, bad_config}}, Port}
-                               end;
-                           false ->
-                               {{error, {port_mod_failed, bad_hw_addr}}, Port}
-                       end,
-    {reply, Reply, State#state{port = NewPort}};
+                                     properties = PMProperties} = PortMod}, _From,
+            #state{port = #ofp_port{properties = Properties} = Port} = State) ->
+    case validate_port_mod(Port, PortMod) of
+        ok ->
+            %% validate_port_mod checks that there is one single property, for Ethernet.
+            [#ofp_port_mod_prop_ethernet{advertise = Advertise}] = PMProperties,
+            {value, Ethernet} = lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+            %% Update the Ethernet property, and everything that contains it:
+            NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{advertised = Advertise},
+            NewProperties = lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties, NewEthernet),
+            NewPort = Port#ofp_port{config = Config, properties = NewProperties},
+            {reply, ok, State#state{port = NewPort}};
+        {error, _} = Error ->
+            {reply, Error, State}
+    end;
 handle_call(get_port, _From, #state{port = Port} = State) ->
     {reply, Port, State};
 handle_call(get_port_state, _From,
@@ -711,3 +719,16 @@ ports_for_switch(SwitchId, Config) ->
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).
+
+validate_port_mod(#ofp_port{hw_addr = HWAddr},
+                  #ofp_port_mod{hw_addr = PMHwAddr}) when HWAddr =/= PMHwAddr ->
+    {error, {port_mod_failed, bad_hw_addr}};
+validate_port_mod(#ofp_port{}, #ofp_port_mod{properties = PMProperties}) ->
+    case PMProperties of
+        %% Ensure there is one single property, for Ethernet...
+        [#ofp_port_mod_prop_ethernet{}] ->
+            ok;
+        %% ...otherwise reject the message.
+        _ ->
+            {error, {port_mod_failed, bad_config}}
+    end.

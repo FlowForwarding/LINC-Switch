@@ -66,11 +66,14 @@ port_mod() ->
     BadPort = 999,
     PortMod1 = #ofp_port_mod{port_no = BadPort},
     Error1 = {error, {bad_request, bad_port}},
+    ?assertEqual(Error1, linc_us5_port:validate(?SWITCH_ID, PortMod1)),
     ?assertEqual(Error1, linc_us5_port:modify(?SWITCH_ID, PortMod1)),
 
     Port = 1,
     BadHwAddr = <<2,2,2,2,2,2>>,
     PortMod2 = #ofp_port_mod{port_no = Port, hw_addr = BadHwAddr},
+    ?assertEqual({error, {port_mod_failed, bad_hw_addr}},
+                 linc_us5_port:validate(?SWITCH_ID, PortMod2)),
     ?assertEqual({error, {port_mod_failed, bad_hw_addr}},
                  linc_us5_port:modify(?SWITCH_ID, PortMod2)),
 
@@ -79,12 +82,15 @@ port_mod() ->
                              config = [], mask = [],
                              properties = [#ofp_port_mod_prop_ethernet{
                                               advertise = [copper, autoneg]}]},
+    ?assertEqual(ok, linc_us5_port:validate(?SWITCH_ID, PortMod3)),
     ?assertEqual(ok, linc_us5_port:modify(?SWITCH_ID, PortMod3)),
 
     %% missing ethernet property
     PortMod4 = #ofp_port_mod{port_no = Port, hw_addr = HwAddr,
                              config = [], mask = [],
                              properties = []},
+    ?assertEqual({error, {port_mod_failed, bad_config}},
+                 linc_us5_port:validate(?SWITCH_ID, PortMod4)),
     ?assertEqual({error, {port_mod_failed, bad_config}},
                  linc_us5_port:modify(?SWITCH_ID, PortMod4)),
 
@@ -97,6 +103,8 @@ port_mod() ->
                                              fl_offset = 0,
                                              grid_span = 0,
                                              tx_pwr = 0}]},
+    ?assertEqual({error, {port_mod_failed, bad_config}},
+                 linc_us5_port:validate(?SWITCH_ID, PortMod5)),
     ?assertEqual({error, {port_mod_failed, bad_config}},
                  linc_us5_port:modify(?SWITCH_ID, PortMod5)).
 

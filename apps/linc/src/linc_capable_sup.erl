@@ -51,7 +51,7 @@ start_link() ->
                                                startup)]),
                      C;
                  _ ->
-                     linc_ofconfig:get_linc_logical_switches()
+                     linc_ofconfig:get_startup_without_ofconfig()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])

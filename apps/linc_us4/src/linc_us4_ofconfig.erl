@@ -149,13 +149,13 @@ get_port_features(SwitchId, PortNo) ->
 
 -spec get_queues(integer()) -> list(#queue{}).
 get_queues(SwitchId) ->
-    lists:map(fun({ResourceId, QueueId, PortNo, MinRateBps, MaxRateBps}) ->
+    lists:map(fun({ResourceId, QueueId, PortNo, MinRate, MaxRate}) ->
                       #queue{resource_id = ResourceId,
                              id = QueueId,
                              port = PortNo,
                              properties = #queue_properties{
-                                             min_rate = MinRateBps,
-                                             max_rate = MaxRateBps,
+                                             min_rate = MinRate,
+                                             max_rate = MaxRate,
                                              experimenters = []
                                             }}
               end, linc_us4_port:get_all_queues_state(SwitchId)).

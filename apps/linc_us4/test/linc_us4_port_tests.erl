@@ -30,13 +30,14 @@
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4.hrl").
 
--define(MOCKED, [logic, port_native]).
+-define(MOCKED, [logic, port_native, packet]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
 
 port_test_() ->
     {setup, fun setup/0, fun teardown/1,
+    [
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
       [
        {"Port: port_mod", fun port_mod/0},
@@ -59,13 +60,22 @@ port_test_() ->
        {"Port state: link_down", fun state_link_down/0},
        {"Port state: blocked", fun state_blocked/0},
        {"Port state: live", fun state_live/0},
-       {"Port features: change advertised features", fun advertised_features/0}
-      ]}}.
+       {"Port features: change advertised features", fun advertised_features/0},
+       {"Port routing strategy: default synchronous routing",
+         fun sync_routing_as_default/0}
+      ]},
+     {setup, fun sync_routing_setup/0, fun foreach_teardown/1,
+      {"Port routing strategy: explicit synchronous routing",
+       fun sync_routing_explicitly_set/0}},
+     {setup, fun async_routing_setup/0, fun foreach_teardown/1,
+      {"Port routing strategy: explicit asynchronous routing",
+       fun async_routing_explicitly_set/0}}
+    ]}.
 
 port_mod() ->
     BadPort = 999,
     PortMod1 = #ofp_port_mod{port_no = BadPort},
-    Error1 = {error, {bad_request, bad_port}},
+    Error1 = {error, {port_mod_failed, bad_port}},
     ?assertEqual(Error1, linc_us4_port:modify(?SWITCH_ID, PortMod1)),
 
     Port = 1,
@@ -91,7 +101,7 @@ send_in_port() ->
 
 send_table() ->
     meck:new(linc_us4_routing),
-    meck:expect(linc_us4_routing, spawn_route, fun(_) -> ok end),
+    meck:expect(linc_us4_routing, maybe_spawn_route, fun(_) -> ok end),
     ?assertEqual(ok, linc_us4_port:send(pkt(), table)),
     meck:unload(linc_us4_routing).
 
@@ -219,6 +229,27 @@ advertised_features() ->
     ?assertEqual(FeatureSet2,
                  linc_us4_port:get_advertised_features(?SWITCH_ID, 1)).
 
+sync_routing_as_default() ->
+    ?assertNotEqual({ok, false}, application:get_env(linc, sync_routing)),
+    routing_fun_invoked_test(route).
+
+sync_routing_explicitly_set() ->
+    ?assertEqual({ok, true}, application:get_env(linc, sync_routing)),
+    routing_fun_invoked_test(route).
+
+async_routing_explicitly_set() ->
+    ?assertEqual({ok, false}, application:get_env(linc, sync_routing)),
+    routing_fun_invoked_test(spawn_route).
+
+routing_fun_invoked_test(ExpectedRoutingFun) ->
+    MockMsg = mock_routing_module_and_expect_routing_fun(ExpectedRoutingFun),
+    ?assertEqual(ok, send_frame_to_routing_module_and_wait_for_mock_message(
+                       MockMsg)),
+    ?assert(meck:validate(linc_us4_routing)),
+    ?assertEqual(1, meck:num_calls(linc_us4_routing, ExpectedRoutingFun, '_')),
+    unmock_routing_module().
+
+
 %% Fixtures --------------------------------------------------------------------
 
 ports() ->
@@ -257,6 +288,14 @@ foreach_setup() ->
     {ok, Switches} = application:get_env(linc, logical_switches),
     ok = linc_us4_port:initialize(?SWITCH_ID, Switches).
 
+sync_routing_setup() ->
+    application:set_env(linc, sync_routing, true),
+    foreach_setup().
+
+async_routing_setup() ->
+    application:set_env(linc, sync_routing, false),
+    foreach_setup().
+
 foreach_teardown(_) ->
     ok = linc_us4_port:terminate(?SWITCH_ID).
 
@@ -268,3 +307,26 @@ pkt(Port) ->
 
 pkt(controller=Port,Reason) ->
     #linc_pkt{in_port = Port, packet_in_reason=Reason, packet = [<<>>]}.
+
+mock_routing_module_and_expect_routing_fun(RoutingFun) ->
+    ok = meck:new(linc_us4_routing),
+    Pid = self(),
+    AfterInvocationMsg = processed,
+    meck:expect(linc_us4_routing, RoutingFun, fun(_) ->
+                                                      Pid ! AfterInvocationMsg
+                                              end),
+    AfterInvocationMsg.
+
+send_frame_to_routing_module_and_wait_for_mock_message(MockMsg) ->
+    PortPid = linc_us4_port:get_port_pid(?SWITCH_ID, 1),
+    PortPid ! {packet, dummy, dummy, dummy, <<>>},
+    receive
+        MockMsg ->
+            ok
+    after
+        5000 ->
+            mock_message_not_received
+    end.
+
+unmock_routing_module() ->
+    ok = meck:unload(linc_us4_routing).

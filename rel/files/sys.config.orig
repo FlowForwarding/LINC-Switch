@@ -6,6 +6,11 @@
    %% Allowed values: 'enabled' | 'disabled'
    {of_config, enabled},
 
+   %% Following setting enables or disables spawning a new process for each
+   %% packet to be routed. If it's set to false a new process will be spawned, 
+   %% if it's set to true (or not defined) it will stay in the parent process
+   {sync_routing, true},
+
    %% Configure ports available to the switch when using the
    %% userspace backend according to your system setup.
    %% * Under Linux all TAP interfaces must be set up beforehand
@@ -113,6 +118,27 @@
    %%   {rsa_private_key, ""}
   ]},
 
+ {epcap,
+  %% epcap is a LINC dependency that reads packets from the eth interfaces (not
+  %% tap interfaces). It's a wrapper for pcap.
+  [
+   %% Setting this option to true will enable logging in libpcap. The log
+   %% messages will be printed to:
+   %%    a. rel/linc/log/erlang.log.N file when started as daemon (more
+   %%       information here: http://www.erlang.org/doc/man/run_erl.html under
+   %%       "Notes concerning the log files"),
+   %%    b. the application console when started in console mode.
+   {verbose, false},
+   %% This options sets interval of printing pcap statistics. The value is in
+   %% seconds.
+   %% NOTE: This option will have effect ONLY if verbose is set to true.
+   {stats_interval, 10}
+   %% This option allows manipulating internal buffer size of pcap. By
+   %% increasing this buffer dropping packet can be mitigated. The value is in
+   %% bytes.
+   %% , {buffer_size, 73400320}
+  ]},
+
  {enetconf,
   [
    {capabilities, [{base, {1, 0}},
@@ -159,5 +185,5 @@
    %% as it does not support reloading.
    {excluded_modules, [procket]}
   ]}
- 
+
 ].

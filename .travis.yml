@@ -1,8 +1,7 @@
 language: erlang
 otp_release:
    - R15B02
-   - R15B01
-   - R15B
+   - R16B02
 
 before_script:
   - sudo apt-get install libpcap-dev

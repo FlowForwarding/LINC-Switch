@@ -88,6 +88,9 @@
 %% @doc Add, modify or delete a meter.
 -spec modify(integer(), #ofp_meter_mod{}) ->
                     noreply | {reply, Reply :: ofp_message_body()}.
+modify(_SwitchId, #ofp_meter_mod{command = add, meter_id = BadId})
+  when is_atom(BadId); BadId > ?OFPM_MAX ->
+    {reply, error_msg(invalid_meter)};
 modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
     case get_meter_pid(SwitchId, Id) of
         undefined ->
@@ -100,6 +103,9 @@ modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod) ->
         _Pid ->
             {reply, error_msg(meter_exists)}
     end;
+modify(_SwitchId, #ofp_meter_mod{command = modify, meter_id = BadId})
+  when is_atom(BadId); BadId > ?OFPM_MAX ->
+    {reply, error_msg(unknown_meter)};
 modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
     case get_meter_pid(SwitchId, Id) of
         undefined ->
@@ -113,6 +119,12 @@ modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod) ->
                     {reply, error_msg(Code)}
             end
     end;
+modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = all} = MeterMod) ->
+    TId = linc:lookup(SwitchId, linc_meter_ets),
+    Entries = ets:tab2list(TId),
+    [modify(SwitchId, MeterMod#ofp_meter_mod{meter_id = Id})
+     || {Id, _Pid} <- Entries],
+    noreply;
 modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}) ->
     linc_us4_flow:delete_where_meter(SwitchId, Id),
     case get_meter_pid(SwitchId, Id) of

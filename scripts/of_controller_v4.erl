@@ -291,9 +291,10 @@ scenario(equal_controller) ->
     [role_request(equal, generation_id()),
      flow_mod_delete_all_flows(),
      async_config({[no_match], []}, {[], []}, {[], []}),
-     flow_mod_output_to_port(1, 2, undefined),
+     flow_add([], [{in_port, <<1:32>>}], [{apply_actions,
+                                           [{output,controller,no_buffer},
+                                            {output,2, no_buffer}]}]),
      flow_mod_output_to_port(2, 1, undefined),
-     flow_mod_output_to_port(1, controller, no_buffer),
      flow_mod_table_miss()];
 %% Scenario for slave controller:
 %% 1. Request slave role.
@@ -539,6 +540,19 @@ scenario(group_mod_modify_group) ->
      flow_add([],
               [{in_port, <<1:32>>}],
               [{write_actions, [{group, GroupId}]}])];
+
+%% This scenario is intended for LINC running on Mininet simple topology that can
+%% be found in MININET_ROOT/custom/mininet/topo-2sw-2host.py. This topology
+%% represents two directly connected switches plus a host for each switch:
+%%
+%% host --- switch --- switch --- host
+%%
+%% So the forwarding tables for two switches are identical.
+scenario(mininet_mytopo) ->
+    [flow_mod_delete_all_flows(),
+     flow_mod_output_to_port(1, 2, undefined),
+     flow_mod_output_to_port(2, 1, undefined)];
+
 
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.

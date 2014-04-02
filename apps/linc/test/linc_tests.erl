@@ -84,8 +84,8 @@ teardown(_) ->
     ok = application:stop(xmerl),
     ok = application:stop(lager),
     ok = application:stop(public_key),
-    ok = application:stop(ssh),
-    ok = application:stop(asn1).
+    ok = application:stop(asn1),
+    ok = application:stop(ssh).
 
 %% Helper functions ------------------------------------------------------------
 

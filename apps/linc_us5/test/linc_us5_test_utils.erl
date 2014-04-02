@@ -154,6 +154,9 @@ mock([monitor | Rest]) ->
 mock([bundle | Rest]) ->
     ok = meck:new(linc_us5_bundle),
     ok = meck:expect(linc_us5_bundle, initialize, 1, ok),
+    mock(Rest);
+mock([packet | Rest]) ->
+    ok = meck:new(packet),
     mock(Rest).
 
 unmock([]) ->
@@ -187,6 +190,9 @@ unmock([sup | Rest]) ->
     unmock(Rest);
 unmock([bundle | Rest]) ->
     ok = meck:unload(linc_us5_bundle),
+    unmock(Rest);
+unmock([packet | Rest]) ->
+    ok = meck:unload(packet),
     unmock(Rest).
 
 mock_reset([]) ->

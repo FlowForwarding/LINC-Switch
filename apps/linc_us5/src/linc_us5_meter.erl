@@ -89,6 +89,10 @@
 %% @doc Add, modify or delete a meter.
 -spec modify(integer(), #ofp_meter_mod{}, #monitor_data{}) ->
                     noreply | {reply, Reply :: ofp_message_body()}.
+modify(_SwitchId, #ofp_meter_mod{command = add, meter_id = BadId},
+       _MonitorData)
+  when is_atom(BadId); BadId > ?OFPM_MAX ->
+    {reply, error_msg(invalid_meter)};
 modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod, 
        _MonitorData) ->
     case get_meter_pid(SwitchId, Id) of
@@ -102,6 +106,10 @@ modify(SwitchId, #ofp_meter_mod{command = add, meter_id = Id} = MeterMod,
         _Pid ->
             {reply, error_msg(meter_exists)}
     end;
+modify(_SwitchId, #ofp_meter_mod{command = modify, meter_id = BadId},
+       _MonitorData)
+  when is_atom(BadId); BadId > ?OFPM_MAX ->
+    {reply, error_msg(unknown_meter)};
 modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod, 
        _MonitorData) ->
     case get_meter_pid(SwitchId, Id) of
@@ -116,6 +124,13 @@ modify(SwitchId, #ofp_meter_mod{command = modify, meter_id = Id} = MeterMod,
                     {reply, error_msg(Code)}
             end
     end;
+modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = all} = MeterMod,
+       MonitorData) ->
+    TId = linc:lookup(SwitchId, linc_meter_ets),
+    Entries = ets:tab2list(TId),
+    [modify(SwitchId, MeterMod#ofp_meter_mod{meter_id = Id}, MonitorData)
+     || {Id, _Pid} <- Entries],
+    noreply;
 modify(SwitchId, #ofp_meter_mod{command = delete, meter_id = Id}, 
        MonitorData) ->
     linc_us5_flow:delete_where_meter(SwitchId, Id, MonitorData),

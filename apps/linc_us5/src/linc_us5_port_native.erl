@@ -23,6 +23,10 @@
          send/3,
          close/1]).
 
+-ifdef(TEST).
+-compile([export_all]).
+-endif.
+
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc/include/linc_logger.hrl").
@@ -60,14 +64,7 @@ tap(Interface, PortOpts) ->
     end.
 
 eth(Interface) ->
-    {ok, Pid} = epcap:start([{no_register, true},
-                             {promiscuous, true},
-                             {interface, Interface},
-                             %% to work on ipv4-less interfaces
-                             {no_lookupnet, true},
-                             %% for ethernet-only (without taps and bridges)
-                             {filter_incoming, true},
-                             {filter, ""}]),
+    {ok, Pid} = epcap:start(epcap_options(Interface)),
     {Socket, IfIndex} = case os:type() of
                             {unix, darwin} ->
                                 bpf_raw_socket(Interface);
@@ -158,3 +155,35 @@ get_hw_addr(Interface) ->
                     list_to_binary(MAC)
             end
     end.
+
+-spec epcap_options(string()) -> list(tuple()).
+epcap_options(Interface) ->
+    DefaultOptions = [{no_register, true},
+                      {promiscuous, true},
+                      {interface, Interface},
+                      %% to work on ipv4-less interfaces
+                      {no_lookupnet, true},
+                      %% for ethernet-only (without taps and bridges)
+                      {filter_incoming, true},
+                      {filter, ""}],
+    add_epcap_env_options(DefaultOptions).
+
+-spec add_epcap_env_options(list(tuple())) -> list(tuple()).
+add_epcap_env_options(Options) ->
+    EpcapEnv = application:get_all_env(epcap),
+    add_epcap_env_options(Options, EpcapEnv).
+
+-spec add_epcap_env_options(list(tuple()), list(tuple())) ->
+                                                 list(tuple()).
+add_epcap_env_options(Options, [{verbose, true} | Rest]) ->
+    add_epcap_env_options([{verbose, 2} | Options], Rest);
+add_epcap_env_options(Options, [{stats_interval, Value} = Opt | Rest])
+  when is_integer(Value) ->
+    add_epcap_env_options([Opt | Options], Rest);
+add_epcap_env_options(Options, [{buffer_size, Value} = Opt | Rest])
+  when is_integer(Value) ->
+    add_epcap_env_options([Opt | Options], Rest);
+add_epcap_env_options(Options, []) ->
+    Options;
+add_epcap_env_options(Options, [_UnknownOption | Rest]) ->
+    add_epcap_env_options(Options, Rest).

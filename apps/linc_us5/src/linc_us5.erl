@@ -62,7 +62,9 @@
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
          ofp_meter_features_request/2,
-         ofp_flow_monitor_request/2]).
+         ofp_flow_monitor_request/2,
+         ofp_bundle_ctrl_msg/2,
+         ofp_bundle_add_msg/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
@@ -99,6 +101,7 @@ start(BackendOpts) ->
         linc_us5_groups:initialize(SwitchId),
         FlowState = linc_us5_flow:initialize(SwitchId),
         linc_us5_port:initialize(SwitchId, Config),
+        linc_us5_bundle:initialize(SwitchId),
         {ok, ?VERSION, #state{flow_state = FlowState,
                               buffer_state = BufferState,
                               switch_id = SwitchId,
@@ -466,6 +469,43 @@ ofp_meter_config_request(#state{switch_id = SwitchId} = State,
 
 ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
     {reply, linc_us5_meter:get_features(), State}.
+
+%% Bundle messages -------------------------------------------------------------
+
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                    #ofp_bundle_ctrl_msg{type = open_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:open(SwitchId, {BundleId, ClientPid}, Flags), State};
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                    #ofp_bundle_ctrl_msg{type = close_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:close(SwitchId, {BundleId, ClientPid}, Flags), State};
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid} = MonitorData} = State,
+                    #ofp_bundle_ctrl_msg{type = commit_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:commit(SwitchId, {BundleId, ClientPid}, Flags, MonitorData), State};
+ofp_bundle_ctrl_msg(State, #ofp_bundle_ctrl_msg{}) ->
+    {reply, #ofp_error_msg{type = bundle_failed,
+                           code = bad_type},
+     State}.
+
+ofp_bundle_add_msg(#state{switch_id = SwitchId,
+                          monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                   #ofp_bundle_add_msg{bundle_id = BundleId,
+                                       message = Message,
+                                       flags = Flags}) ->
+    case linc_us5_bundle:add(SwitchId, {BundleId, ClientPid}, Message, Flags) of
+        noreply ->
+            {noreply, State};
+        Reply ->
+            {reply, Reply, State}
+    end.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

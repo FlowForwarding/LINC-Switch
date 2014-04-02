@@ -18,6 +18,10 @@
 %% @copyright 2012 FlowForwarding.org
 -module(linc_us5_flow_tests).
 
+-ifdef(EQC).
+-include_lib("eqc/include/eqc.hrl").
+-endif.
+
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v5.hrl").
@@ -1302,3 +1306,380 @@ foreach_teardown(State) ->
     linc_us5_flow:terminate(State).
 
 %% Helpers ---------------------------------------------------------------------
+
+%% Quickcheck properties -------------------------------------------------------
+-ifdef(EQC).
+bundle_equivalent_test_() ->
+    {timeout, 600, ?_assertEqual(true, eqc:counterexample(prop_bundle_equivalent()))}.
+
+%% Test that sending flow mods one by one is equivalent to sending
+%% them in a bundle.
+prop_bundle_equivalent() ->
+    ?FORALL(
+       FlowMods, list(flow_mod()),
+       begin
+           Pid1 = setup(),
+           State1 = foreach_setup(),
+           Ref1 = monitor(process, Pid1),
+           unlink(Pid1),
+           Result1 = (catch modify_individually(FlowMods)),
+           foreach_teardown(State1),
+
+           State2 = foreach_setup(),
+           Result2 = (catch modify_bundle(FlowMods)),
+           foreach_teardown(State2),
+           teardown(Pid1),
+           receive {'DOWN', Ref1, _, _, Reason} -> ok end,
+
+           conjunction(
+             [{no_crash, equals(killed, Reason)},
+              {flow_tables, compare_flow_tables(Result1, Result2)}])
+       end).
+
+modify_individually([]) ->
+    [begin
+         ?assertNotEqual({TableId, undefined}, {TableId, linc_us5_flow:flow_table_ets(?SWITCH_ID, TableId)}),
+         catch linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)
+     end
+     || TableId <- lists:seq(0, ?OFPTT_MAX)];
+modify_individually([FlowMod | Rest]) ->
+    case linc_us5_flow:modify(?SWITCH_ID, FlowMod, #monitor_data{}) of
+        ok ->
+            modify_individually(Rest);
+        {error, _} = Error ->
+            Error
+    end.
+
+modify_bundle(FlowMods) ->
+    Messages = [#ofp_message{body = FlowMod} || FlowMod <- FlowMods],
+    case linc_us5_flow:bundle(?SWITCH_ID, Messages, #monitor_data{}) of
+        ok ->
+            [linc_us5_flow:get_flow_table(?SWITCH_ID, TableId)
+             || TableId <- lists:seq(0, ?OFPTT_MAX)];
+        {error, [#ofp_message{body = #ofp_error_msg{type = Type, code = Code}} | _]} ->
+            %% Ignore errors beyond the first
+            {error, {Type, Code}}
+    end.
+
+compare_flow_tables({error, Error1}, {error, Error2}) ->
+    equals(Error1, Error2);
+compare_flow_tables([_|_] = Tables1, [_|_] = Tables2) ->
+    conjunction(
+      lists:zipwith3(
+        fun(TableId, Flows1, Flows2) ->
+                {list_to_atom(integer_to_list(TableId)),
+                 compare_flow_entries(Flows1, Flows2)}
+        end, lists:seq(0, ?OFPTT_MAX), Tables1, Tables2));
+compare_flow_tables(A, B) ->
+    %% different types
+    equals(A, B).
+
+compare_flow_entries(Flows1, Flows2) ->
+    ?WHENFAIL(
+       io:format("~p~n /=~n~p~n", [Flows1, Flows2]),
+       length(Flows1) =:= length(Flows2) andalso
+       lists:all(fun compare_flow_entry_pair/1, lists:zip(Flows1, Flows2))).
+
+compare_flow_entry_pair({#flow_entry{
+                            priority = Priority,
+                            match = Match,
+                            cookie = Cookie,
+                            flags = Flags,
+                            instructions = Instructions},
+                         #flow_entry{
+                            priority = Priority,
+                            match = Match,
+                            cookie = Cookie,
+                            flags = Flags,
+                            instructions = Instructions}}) ->
+    true;
+compare_flow_entry_pair({#flow_entry{}, #flow_entry{}}) ->
+    false.
+
+%%% Flow mod generation
+flow_mod() ->
+    #ofp_flow_mod{cookie = default(<<"cookie01">>, nbinary(8)),
+                  cookie_mask = default(<<-1:64>>, nbinary(8)),
+                  table_id = default(0, table_id()),
+                  command = flow_mod_command(),
+                  idle_timeout = uint16(),
+                  hard_timeout = uint16(),
+                  priority = uint16(),
+                  buffer_id = uint32(),
+                  out_port = port_no(),
+                  out_group = group_id(),
+                  flags = ulist(flow_mod_flag()),
+                  match = match(),
+                  instructions = ulist(instruction())}.
+
+flow_mod_command() ->
+    frequency([{10, add},
+               {1, modify},
+               {1, modify_strict},
+               {1, delete},
+               {1, delete_strict}]).
+
+flow_mod_flag() ->
+    oneof([send_flow_rem,
+           check_overlap,
+           reset_counts,
+           no_pkt_counts,
+           no_byt_counts]).
+
+%%% Instruction generation
+instruction() ->
+    oneof([instruction_goto_table(),
+           instruction_write_metadata(),
+           instruction_write_actions(),
+           instruction_apply_actions(),
+           instruction_clear_actions(),
+           instruction_meter(),
+           instruction_experimenter()]).
+
+instruction_goto_table() ->
+    #ofp_instruction_goto_table{table_id = uint8()}.
+
+instruction_write_metadata() ->
+    #ofp_instruction_write_metadata{metadata = nbinary(8),
+                                    metadata_mask = nbinary(8)}.
+
+instruction_write_actions() ->
+    #ofp_instruction_write_actions{actions = ulist(action())}.
+
+instruction_apply_actions() ->
+    #ofp_instruction_apply_actions{actions = ulist(action())}.
+
+instruction_clear_actions() ->
+    #ofp_instruction_clear_actions{}.
+
+instruction_meter() ->
+    #ofp_instruction_meter{meter_id = meter_id()}.
+
+instruction_experimenter() ->
+    #ofp_instruction_experimenter{experimenter = uint32(),
+                                  data = binary()}.
+
+%%% Match generation
+match() ->
+    #ofp_match{fields = ukeylist(#ofp_field.name, field())}.
+
+field() ->
+    ?LET(Class, field_class(),
+         ?LET(Name, field_name(Class),
+              ?LET(LengthInBits, field_length(Class, Name),
+                   ?LET(HasMask, field_has_mask(Class, Name),
+                        #ofp_field{class = Class,
+                                   name = Name,
+                                   has_mask = HasMask,
+                                   value = nbitstring(LengthInBits),
+                                   mask = field_mask(HasMask, LengthInBits)})))).
+
+field_class() ->
+    openflow_basic.
+
+field_name(openflow_basic) ->
+    oneof([in_port,
+               in_phy_port,
+               metadata,
+               eth_dst,
+               eth_src,
+               eth_type,
+               vlan_vid,
+               vlan_pcp,
+               ip_dscp,
+               ip_ecn,
+               ip_proto,
+               ipv4_src,
+               ipv4_dst,
+               tcp_src,
+               tcp_dst,
+               udp_src,
+               udp_dst,
+               sctp_src,
+               sctp_dst,
+               icmpv4_type,
+               icmpv4_code,
+               arp_op,
+               arp_spa,
+               arp_tpa,
+               arp_sha,
+               arp_tha,
+               ipv6_src,
+               ipv6_dst,
+               ipv6_flabel,
+               icmpv6_type,
+               icmpv6_code,
+               ipv6_nd_target,
+               ipv6_nd_sll,
+               ipv6_nd_tll,
+               mpls_label,
+               mpls_tc,
+               mpls_bos,
+               pbb_isid,
+               tunnel_id,
+               ipv6_exthdr,
+               pbb_uca]);
+field_name(_) ->
+    bad_name.
+
+field_length(openflow_basic, Field) when Field =/= bad_name ->
+    ofp_v5_map:tlv_length(Field);
+field_length(_, _) ->
+    choose(0, 64).
+
+field_has_mask(openflow_basic, Field) when Field == metadata;
+                                           Field == eth_dst;
+                                           Field == eth_src;
+                                           Field == vlan_vid;
+                                           Field == ipv4_src;
+                                           Field == ipv4_dst;
+                                           Field == arp_spa;
+                                           Field == arp_tpa;
+                                           Field == arp_sha;
+                                           Field == arp_tha;
+                                           Field == ipv6_src;
+                                           Field == ipv6_dst;
+                                           Field == ipv6_flabel;
+                                           Field == pbb_isid;
+                                           Field == tunnel_id;
+                                           Field == ipv6_exthdr ->
+    bool();
+field_has_mask(openflow_basic, _) ->
+    false;
+field_has_mask(_, _) ->
+    bool().
+
+field_mask(true, LengthInBits) ->
+    nbitstring(LengthInBits);
+field_mask(false, _) ->
+    undefined.
+
+%%% Action generation
+action() ->
+    oneof([action_output(),
+           action_copy_ttl_out(),
+           action_copy_ttl_in(),
+           action_set_mpls_ttl(),
+           action_dec_mpls_ttl(),
+           action_push_vlan(),
+           action_pop_vlan(),
+           action_push_mpls(),
+           action_pop_mpls(),
+           action_set_queue(),
+           action_group(),
+           action_set_nw_ttl(),
+           action_dec_nw_ttl(),
+           action_set_field(),
+           %% These don't validate:
+           %% action_push_pbb(),
+           %% action_pop_pbb(),
+           action_experimenter()]).
+
+action_output() ->
+    #ofp_action_output{port = port_no(),
+                       max_len = controller_max_length()}.
+
+action_copy_ttl_out() ->
+    #ofp_action_copy_ttl_out{}.
+
+action_copy_ttl_in() ->
+    #ofp_action_copy_ttl_in{}.
+
+action_set_mpls_ttl() ->
+    #ofp_action_set_mpls_ttl{mpls_ttl = uint8()}.
+
+action_dec_mpls_ttl() ->
+    #ofp_action_dec_mpls_ttl{}.
+
+action_push_vlan() ->
+    #ofp_action_push_vlan{ethertype = uint16()}.
+
+action_pop_vlan() ->
+    #ofp_action_pop_vlan{}.
+
+action_push_mpls() ->
+    #ofp_action_push_mpls{ethertype = uint16()}.
+
+action_pop_mpls() ->
+    #ofp_action_pop_mpls{ethertype = uint16()}.
+
+action_set_queue() ->
+    #ofp_action_set_queue{queue_id = queue_id()}.
+
+action_group() ->
+    #ofp_action_group{group_id = group_id()}.
+
+action_set_nw_ttl() ->
+    #ofp_action_set_nw_ttl{nw_ttl = uint8()}.
+
+action_dec_nw_ttl() ->
+    #ofp_action_dec_nw_ttl{}.
+
+action_set_field() ->
+    #ofp_action_set_field{field = field()}.
+
+%% action_push_pbb() ->
+%%     #ofp_action_push_pbb{ethertype = uint16()}.
+
+%% action_pop_pbb() ->
+%%     #ofp_action_pop_pbb{}.
+
+action_experimenter() ->
+    #ofp_action_experimenter{experimenter = uint32()}.
+
+%%% Miscellaneous
+port_no() ->
+    frequency([{8, uint32()},
+               {2, oneof([in_port,
+                          table,
+                          normal,
+                          flood,
+                          all,
+                          controller,
+                          local,
+                          any])}]).
+
+table_id() ->
+    frequency([{4, choose(0, ?OFPTT_MAX)},
+               {1, oneof([all])}]).
+
+group_id() ->
+    frequency([{19, uint32()},
+               {1, oneof([any,
+                          all])}]).
+
+queue_id() ->
+    frequency([{4, uint32()},
+               {1, oneof([all])}]).
+
+meter_id() ->
+    frequency([{4, uint32()},
+               {1, oneof([all])}]).
+
+controller_max_length() ->
+    frequency([{19, uint16()},
+               {1, oneof([no_buffer])}]).
+
+%%% Basic data types
+uint8() ->
+    choose(0, 255).
+
+uint16() ->
+    choose(0, 65535).
+
+uint32() ->
+    choose(0, 4294967295).
+
+nbinary(ByteSize) ->
+    noshrink(binary(ByteSize)).
+
+nbitstring(BitSize) ->
+    noshrink(bitstring(BitSize)).
+
+ulist(Gen) ->
+    ?LET(List, list(Gen), lists:usort(List)).
+
+ukeylist(KeyPos, Gen) ->
+    ?LET(List, list(Gen), lists:ukeysort(KeyPos, List)).
+
+-endif.

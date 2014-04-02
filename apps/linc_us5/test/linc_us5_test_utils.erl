@@ -150,6 +150,10 @@ mock([monitor | Rest]) ->
                      fun(_) ->
                              ok
                      end),
+    mock(Rest);
+mock([bundle | Rest]) ->
+    ok = meck:new(linc_us5_bundle),
+    ok = meck:expect(linc_us5_bundle, initialize, 1, ok),
     mock(Rest).
 
 unmock([]) ->
@@ -180,6 +184,9 @@ unmock([instructions | Rest]) ->
     unmock(Rest);
 unmock([sup | Rest]) ->
     ok = meck:unload(linc_us5_sup),
+    unmock(Rest);
+unmock([bundle | Rest]) ->
+    ok = meck:unload(linc_us5_bundle),
     unmock(Rest).
 
 mock_reset([]) ->

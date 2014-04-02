@@ -26,7 +26,7 @@
 %% Tests -----------------------------------------------------------------------
 
 -define(TIMEOUT, 300).
--define(MOCKED, [sup, group, flow, port]).
+-define(MOCKED, [sup, group, flow, port, bundle]).
 
 switch_setup_test_() ->
     {setup,

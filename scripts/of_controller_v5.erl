@@ -605,6 +605,98 @@ scenario(flow_monitor) ->
                 match      = #ofp_match{fields = []}
                })];
 
+scenario(bundle) ->
+    Cookie1 = <<"cookie01">>,
+    Cookie2 = <<"cookie02">>,
+
+    [flow_mod_delete_all_flows(),
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = flow_add(
+                            [{table_id, 1},
+                             {cookie, Cookie1}],
+                            [{eth_type, <<(16#0800):16>>},
+                             {ip_proto, <<?IPPROTO_SCTP:8>>}],
+                            [{write_actions, [{output, controller, no_buffer}]}])}),
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = flow_add(
+                            [{table_id, 1},
+                             {cookie, Cookie2}],
+                            [{eth_type, <<(16#0800):16>>},
+                             {ip_proto, <<?IPPROTO_UDP:8>>}],
+                            [{write_actions, [{output, controller, no_buffer}]}])}),
+     %% Should be empty so far
+     flow_stats_request,
+     message(#ofp_bundle_ctrl_msg{bundle_id = 1, type = commit_request}),
+     %% Should show two entries
+     flow_stats_request];
+
+scenario(bundle_modify) ->
+    Cookie1 = <<"cookie01">>,
+
+    [flow_mod_delete_all_flows(),
+     flow_add(
+       [{table_id, 1},
+        {cookie, Cookie1}],
+       [{eth_type, <<(16#0800):16>>},
+        {ip_proto, <<?IPPROTO_SCTP:8>>}],
+       [{write_actions, [{output, controller, no_buffer}]}]),
+     %% Should show one entry, outputting to controller
+     flow_stats_request,
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = message(ofp_v5_utils:flow_modify(
+                                    modify,
+                                    [{table_id, 1},
+                                     {cookie, Cookie1},
+                                     {cookie_mask, <<-1:64>>}],
+                                    [],
+                                    [{write_actions, [{output, 1, no_buffer}]}]))}),
+     %% Should show the same as above
+     flow_stats_request,
+     message(#ofp_bundle_ctrl_msg{bundle_id = 1, type = commit_request}),
+     %% Should show one entry, outputting to port 1
+     flow_stats_request];
+
+scenario(bundle_error) ->
+    Cookie1 = <<"cookie01">>,
+    Cookie2 = <<"cookie02">>,
+
+    [flow_mod_delete_all_flows(),
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = flow_add(
+                            [{table_id, 1},
+                             {cookie, Cookie1}],
+                            [{eth_type, <<(16#0800):16>>},
+                             {ip_proto, <<?IPPROTO_SCTP:8>>}],
+                            [{write_actions, [{output, controller, no_buffer}]}])}),
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = flow_add(
+                            [{table_id, 1},
+                             {cookie, Cookie2}],
+                            [{eth_type, <<(16#0800):16>>},
+                             {ip_proto, <<?IPPROTO_UDP:8>>}],
+                            [{write_actions, [{output, controller, no_buffer}]}])}),
+     %% Add an invalid flow_mod message at the end of the bundle
+     message(#ofp_bundle_add_msg{
+                bundle_id = 1,
+                message = flow_add(
+                            [{table_id, 1}],
+                            %% Match packets that are _both_ IPv4 and IPv6 - an
+                            %% impossible match.
+                            [{eth_type, <<(16#0800):16>>},
+                             {eth_type, <<(16#86DD):16>>}],
+                            [])}),
+     %% Should be empty so far
+     flow_stats_request,
+     %% This should generate two error messages
+     message(#ofp_bundle_ctrl_msg{bundle_id = 1, type = commit_request}),
+     %% Should still be empty
+     flow_stats_request];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->

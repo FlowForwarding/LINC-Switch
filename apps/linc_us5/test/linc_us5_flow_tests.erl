@@ -1479,7 +1479,8 @@ field_class() ->
 
 field_name(openflow_basic) ->
     oneof([in_port,
-               in_phy_port,
+%%% Validation fails for in_phy_port:
+%%%               in_phy_port,
                metadata,
                eth_dst,
                eth_src,

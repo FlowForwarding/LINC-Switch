@@ -17,7 +17,7 @@
 %% @author Erlang Solutions Ltd. <openflow@erlang-solutions.com>
 %% @copyright 2012 FlowForwarding.org
 %% @doc Userspace implementation of the OpenFlow Switch logic.
--module(linc_us4).
+-module(linc_us5).
 
 -behaviour(gen_switch).
 
@@ -56,23 +56,29 @@
          ofp_group_stats_request/2,
          ofp_group_desc_request/2,
          ofp_group_features_request/2,
+         ofp_table_desc_request/2,
+         ofp_queue_desc_request/2,
          ofp_meter_mod/2,
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
-         ofp_meter_features_request/2]).
+         ofp_meter_features_request/2,
+         ofp_flow_monitor_request/2,
+         ofp_bundle_ctrl_msg/2,
+         ofp_bundle_add_msg/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc/include/linc_logger.hrl").
--include("linc_us4.hrl").
+-include("linc_us5.hrl").
 
 -record(state, {
           flow_state,
           buffer_state,
-          switch_id :: integer(),
-          datapath_mac :: binary(),
+          switch_id      :: integer(),
+          datapath_mac   :: binary(),
           switch_config = [{flags, []}, {miss_send_len, no_buffer}] ::
-            [switch_config_opt()]
+            [switch_config_opt()],
+          monitor_data   :: #monitor_data{}
          }).
 -type state() :: #state{}.
 
@@ -84,21 +90,22 @@
 %%%-----------------------------------------------------------------------------
 
 %% @doc Start the switch.
--spec start(any()) -> {ok, Version :: 4, state()}.
+-spec start(any()) -> {ok, Version :: ?VERSION, state()}.
 start(BackendOpts) ->
     try
         {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
         {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
         {config, Config} = lists:keyfind(config, 1, BackendOpts),
         BufferState = linc_buffer:initialize(SwitchId),
-        {ok, _Pid} = linc_us4_sup:start_backend_sup(SwitchId),
-        linc_us4_groups:initialize(SwitchId),
-        FlowState = linc_us4_flow:initialize(SwitchId),
-        linc_us4_port:initialize(SwitchId, Config),
-        {ok, 4, #state{flow_state = FlowState,
-                       buffer_state = BufferState,
-                       switch_id = SwitchId,
-                       datapath_mac = DatapathMac}}
+        {ok, _Pid} = linc_us5_sup:start_backend_sup(SwitchId),
+        linc_us5_groups:initialize(SwitchId),
+        FlowState = linc_us5_flow:initialize(SwitchId),
+        linc_us5_port:initialize(SwitchId, Config),
+        linc_us5_bundle:initialize(SwitchId),
+        {ok, ?VERSION, #state{flow_state = FlowState,
+                              buffer_state = BufferState,
+                              switch_id = SwitchId,
+                              datapath_mac = DatapathMac}}
     catch
         _:Error ->
             {error, Error}
@@ -109,9 +116,9 @@ start(BackendOpts) ->
 stop(#state{flow_state = FlowState,
             buffer_state = BufferState,
             switch_id = SwitchId}) ->
-    linc_us4_port:terminate(SwitchId),
-    linc_us4_flow:terminate(FlowState),
-    linc_us4_groups:terminate(SwitchId),
+    linc_us5_port:terminate(SwitchId),
+    linc_us5_flow:terminate(FlowState),
+    linc_us5_groups:terminate(SwitchId),
     linc_buffer:terminate(BufferState),
     ok;
 stop([]) ->
@@ -130,11 +137,11 @@ handle_message(MessageBody, State) ->
 
 -spec is_port_valid(integer(), ofp_port_no()) -> boolean().
 is_port_valid(SwitchId, PortNo) ->
-    linc_us4_port:is_valid(SwitchId, PortNo).
+    linc_us5_port:is_valid(SwitchId, PortNo).
 
 -spec is_queue_valid(integer(), ofp_port_no(), ofp_queue_id()) -> boolean().
 is_queue_valid(SwitchId, PortNo, QueueId) ->
-    linc_us4_queue:is_valid(SwitchId, PortNo, QueueId).
+    linc_us5_queue:is_valid(SwitchId, PortNo, QueueId).
 
 set_datapath_mac(State, NewMac) ->
     State#state{datapath_mac = NewMac}.
@@ -147,9 +154,9 @@ log_message_sent(Message) ->
     ?DEBUG("Sent message to controller: ~w~n", [Message]).
 
 -spec set_monitor_data(pid(), integer(), state()) -> state().
-set_monitor_data(_ClientPid, _Xid, State) ->
-    State.
-
+set_monitor_data(ClientPid, Xid, State) ->
+    State#state{monitor_data = #monitor_data{client_pid = ClientPid, 
+                                             xid        = Xid}}.
 
 %%%-----------------------------------------------------------------------------
 %%% Handling of messages
@@ -170,9 +177,13 @@ ofp_features_request(#state{switch_id = SwitchId,
 -spec ofp_flow_mod(state(), ofp_flow_mod()) ->
                           {noreply, #state{}} |
                           {reply, ofp_message(), #state{}}.
-ofp_flow_mod(#state{switch_id = SwitchId} = State,
+ofp_flow_mod(#state{switch_id = SwitchId,
+                    monitor_data = MonitorData} = State,
              #ofp_flow_mod{} = FlowMod) ->
-    case linc_us4_flow:modify(SwitchId, FlowMod) of
+    linc_us5_monitor:batch_start(SwitchId, FlowMod#ofp_flow_mod.command, MonitorData),
+    R = linc_us5_flow:modify(SwitchId, FlowMod, MonitorData),
+    linc_us5_monitor:batch_end(SwitchId),
+    case R of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -186,7 +197,7 @@ ofp_flow_mod(#state{switch_id = SwitchId} = State,
                            {noreply, #state{}} |
                            {reply, ofp_message(), #state{}}.
 ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
-    case linc_us4_flow:table_mod(TableMod) of
+    case linc_us5_flow:table_mod(TableMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -201,7 +212,7 @@ ofp_table_mod(State, #ofp_table_mod{} = TableMod) ->
                           {reply, ofp_message(), #state{}}.
 ofp_port_mod(#state{switch_id = SwitchId} = State,
              #ofp_port_mod{} = PortMod) ->
-    case linc_us4_port:modify(SwitchId, PortMod) of
+    case linc_us5_port:modify(SwitchId, PortMod) of
         ok ->
             {noreply, State};
         {error, {Type, Code}} ->
@@ -214,9 +225,10 @@ ofp_port_mod(#state{switch_id = SwitchId} = State,
 -spec ofp_group_mod(state(), ofp_group_mod()) ->
                            {noreply, #state{}} |
                            {reply, ofp_message(), #state{}}.
-ofp_group_mod(#state{switch_id = SwitchId} = State,
+ofp_group_mod(#state{switch_id = SwitchId,
+                     monitor_data = MonitorData} = State,
               #ofp_group_mod{} = GroupMod) ->
-    case linc_us4_groups:modify(SwitchId, GroupMod) of
+    case linc_us5_groups:modify(SwitchId, GroupMod, MonitorData) of
         ok ->
             {noreply, State};
         {error, ErrorMsg} ->
@@ -232,15 +244,15 @@ ofp_packet_out(#state{switch_id = SwitchId} = State,
                                actions = Actions,
                                in_port = InPort,
                                data = Data}) ->
-    Pkt = linc_us4_packet:binary_to_record(Data, SwitchId, InPort),
-    linc_us4_actions:apply_list(Pkt, Actions),
+    Pkt = linc_us5_packet:binary_to_record(Data, SwitchId, InPort),
+    linc_us5_actions:apply_list(Pkt#linc_pkt{packet_in_reason = packet_out}, Actions),
     {noreply, State};
 ofp_packet_out(#state{switch_id = SwitchId} = State,
                #ofp_packet_out{buffer_id = BufferId,
                                actions = Actions}) ->
     case linc_buffer:get_buffer(SwitchId, BufferId) of
         #linc_pkt{} = Pkt ->
-            linc_us4_actions:apply_list(Pkt, Actions);
+            linc_us5_actions:apply_list(Pkt#linc_pkt{packet_in_reason = packet_out}, Actions);
         not_found ->
             %% Buffer has been dropped, ignore
             ok
@@ -277,7 +289,8 @@ ofp_set_config(State, #ofp_set_config{flags = Flags,
 %% @doc Reply to barrier request.
 -spec ofp_barrier_request(state(), ofp_barrier_request()) ->
                                  {reply, ofp_barrier_reply(), #state{}}.
-ofp_barrier_request(State, #ofp_barrier_request{}) ->
+ofp_barrier_request(#state{switch_id = SwitchId} = State, #ofp_barrier_request{}) ->
+    linc_us5_monitor:sync(SwitchId),
     BarrierReply = #ofp_barrier_reply{},
     {reply, BarrierReply, State}.
 
@@ -308,7 +321,7 @@ ofp_desc_request(State, #ofp_desc_request{}) ->
                                     {reply, ofp_flow_stats_reply(), #state{}}.
 ofp_flow_stats_request(#state{switch_id = SwitchId} = State,
                        #ofp_flow_stats_request{} = Request) ->
-    Reply = linc_us4_flow:get_stats(SwitchId, Request),
+    Reply = linc_us5_flow:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get aggregated flow statistics.
@@ -317,7 +330,7 @@ ofp_flow_stats_request(#state{switch_id = SwitchId} = State,
                                           #state{}}.
 ofp_aggregate_stats_request(#state{switch_id = SwitchId} = State,
                             #ofp_aggregate_stats_request{} = Request) ->
-    Reply = linc_us4_flow:get_aggregate_stats(SwitchId, Request),
+    Reply = linc_us5_flow:get_aggregate_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get flow table statistics.
@@ -325,15 +338,16 @@ ofp_aggregate_stats_request(#state{switch_id = SwitchId} = State,
                                      {reply, ofp_table_stats_reply(), #state{}}.
 ofp_table_stats_request(#state{switch_id = SwitchId} = State,
                         #ofp_table_stats_request{} = Request) ->
-    Reply = linc_us4_flow:get_table_stats(SwitchId, Request),
+    Reply = linc_us5_flow:get_table_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 -spec ofp_table_features_request(state(), #ofp_table_features_request{}) ->
                                         {reply, #ofp_table_features_reply{},
                                          #state{}}.
-ofp_table_features_request(#state{switch_id = SwitchId} = State,
+ofp_table_features_request(#state{switch_id = SwitchId,
+                                  monitor_data = MonitorData} = State,
                            #ofp_table_features_request{} = Request) ->
-    Reply = linc_us4_table_features:handle_req(SwitchId, Request),
+    Reply = linc_us5_table_features:handle_req(SwitchId, Request, MonitorData),
     {reply, Reply, State}.
 
 %% @doc Get port description.
@@ -341,7 +355,7 @@ ofp_table_features_request(#state{switch_id = SwitchId} = State,
                                    {reply, ofp_port_desc_reply(), #state{}}.
 ofp_port_desc_request(#state{switch_id = SwitchId} = State,
                       #ofp_port_desc_request{}) ->
-    Reply = linc_us4_port:get_desc(SwitchId),
+    Reply = linc_us5_port:get_desc(SwitchId),
     {reply, Reply, State}.
 
 %% @doc Get port statistics.
@@ -349,7 +363,7 @@ ofp_port_desc_request(#state{switch_id = SwitchId} = State,
                                     {reply, ofp_port_stats_reply(), #state{}}.
 ofp_port_stats_request(#state{switch_id = SwitchId} = State,
                        #ofp_port_stats_request{} = Request) ->
-    Reply = linc_us4_port:get_stats(SwitchId, Request),
+    Reply = linc_us5_port:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get queue statistics.
@@ -357,7 +371,7 @@ ofp_port_stats_request(#state{switch_id = SwitchId} = State,
                                      {reply, ofp_queue_stats_reply(), #state{}}.
 ofp_queue_stats_request(#state{switch_id = SwitchId} = State,
                         #ofp_queue_stats_request{} = Request) ->
-    Reply = linc_us4_queue:get_stats(SwitchId, Request),
+    Reply = linc_us5_queue:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group statistics.
@@ -365,7 +379,7 @@ ofp_queue_stats_request(#state{switch_id = SwitchId} = State,
                                      {reply, ofp_group_stats_reply(), #state{}}.
 ofp_group_stats_request(#state{switch_id = SwitchId} = State,
                         #ofp_group_stats_request{} = Request) ->
-    Reply = linc_us4_groups:get_stats(SwitchId, Request),
+    Reply = linc_us5_groups:get_stats(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group description statistics.
@@ -373,7 +387,7 @@ ofp_group_stats_request(#state{switch_id = SwitchId} = State,
                                     {reply, ofp_group_desc_reply(), #state{}}.
 ofp_group_desc_request(#state{switch_id = SwitchId} = State,
                        #ofp_group_desc_request{} = Request) ->
-    Reply = linc_us4_groups:get_desc(SwitchId, Request),
+    Reply = linc_us5_groups:get_desc(SwitchId, Request),
     {reply, Reply, State}.
 
 %% @doc Get group features statistics.
@@ -383,14 +397,62 @@ ofp_group_desc_request(#state{switch_id = SwitchId} = State,
                                          #state{}}.
 ofp_group_features_request(State,
                            #ofp_group_features_request{} = Request) ->
-    Reply = linc_us4_groups:get_features(Request),
+    Reply = linc_us5_groups:get_features(Request),
     {reply, Reply, State}.
+
+-spec ofp_table_desc_request(state(), ofp_table_desc_request()) ->
+                                    {reply, ofp_table_desc_reply() | ofp_error_msg(),
+                                     state()}.
+ofp_table_desc_request(State, #ofp_table_desc_request{flags = Flags}) ->
+    %% This request shouldn't span multiple packets.
+    case lists:member(more, Flags) of
+        true ->
+            {reply, #ofp_error_msg{type = bad_request,
+                                   code = multipart_buffer_overflow},
+             State};
+        false ->
+            {reply, linc_us5_flow:table_desc(), State}
+    end.
+
+ofp_queue_desc_request(State = #state{switch_id = SwitchId},
+                       Request = #ofp_queue_desc_request{flags = Flags}) ->
+    %% This request shouldn't span multiple packets.
+    case lists:member(more, Flags) of
+        true ->
+            {reply, #ofp_error_msg{type = bad_request,
+                                   code = multipart_buffer_overflow},
+             State};
+        false ->
+            {reply, linc_us5_queue:queue_desc(SwitchId, Request), State}
+    end.
+
+ofp_flow_monitor_request(#state{switch_id = SwitchId,
+                                monitor_data = MData} = State, 
+                         #ofp_flow_monitor_request{monitor_id = MId,
+                                                   out_port   = Port,
+                                                   out_group  = Group,
+                                                   monitor_flags = Flags,
+                                                   table_id   = TableId,
+                                                   command    = Cmd,
+                                                   match      = Match} = R) ->
+    error_logger:info_msg("Received flow monitor request: ~p, sw: ~p, mdata: ~p", [R, SwitchId, MData]), 
+    ct:log("Received flow monitor request: ~p, sw: ~p, mdata: ~p", [R, SwitchId, MData]),
+    case linc_us5_monitor:manage(Cmd, SwitchId, MId, Port, Group, 
+                                 Flags, TableId, Match, MData) of
+        {ok, Reply} ->
+            {reply, Reply, State};
+        {error, {Type, Code}} ->
+            ErrorMsg = #ofp_error_msg{type = Type,
+                                      code = Code},
+            {reply, ErrorMsg, State}
+    end.
 
 %% Meters ----------------------------------------------------------------------
 
-ofp_meter_mod(#state{switch_id = SwitchId} = State,
+ofp_meter_mod(#state{switch_id = SwitchId,
+                     monitor_data = MonitorData} = State,
               #ofp_meter_mod{} = MeterMod) ->
-    case linc_us4_meter:modify(SwitchId, MeterMod) of
+    case linc_us5_meter:modify(SwitchId, MeterMod, MonitorData) of
         noreply ->
             {noreply, State};
         {reply, Reply} ->
@@ -399,14 +461,51 @@ ofp_meter_mod(#state{switch_id = SwitchId} = State,
 
 ofp_meter_stats_request(#state{switch_id = SwitchId} = State,
                         #ofp_meter_stats_request{meter_id = Id}) ->
-    {reply, linc_us4_meter:get_stats(SwitchId, Id), State}.
+    {reply, linc_us5_meter:get_stats(SwitchId, Id), State}.
 
 ofp_meter_config_request(#state{switch_id = SwitchId} = State,
                          #ofp_meter_config_request{meter_id = Id}) ->
-    {reply, linc_us4_meter:get_config(SwitchId, Id), State}.
+    {reply, linc_us5_meter:get_config(SwitchId, Id), State}.
 
 ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
-    {reply, linc_us4_meter:get_features(), State}.
+    {reply, linc_us5_meter:get_features(), State}.
+
+%% Bundle messages -------------------------------------------------------------
+
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                    #ofp_bundle_ctrl_msg{type = open_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:open(SwitchId, {BundleId, ClientPid}, Flags), State};
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                    #ofp_bundle_ctrl_msg{type = close_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:close(SwitchId, {BundleId, ClientPid}, Flags), State};
+ofp_bundle_ctrl_msg(#state{switch_id = SwitchId,
+                           monitor_data = #monitor_data{client_pid = ClientPid} = MonitorData} = State,
+                    #ofp_bundle_ctrl_msg{type = commit_request,
+                                         bundle_id = BundleId,
+                                         flags = Flags}) ->
+    {reply, linc_us5_bundle:commit(SwitchId, {BundleId, ClientPid}, Flags, MonitorData), State};
+ofp_bundle_ctrl_msg(State, #ofp_bundle_ctrl_msg{}) ->
+    {reply, #ofp_error_msg{type = bundle_failed,
+                           code = bad_type},
+     State}.
+
+ofp_bundle_add_msg(#state{switch_id = SwitchId,
+                          monitor_data = #monitor_data{client_pid = ClientPid}} = State,
+                   #ofp_bundle_add_msg{bundle_id = BundleId,
+                                       message = Message,
+                                       flags = Flags}) ->
+    case linc_us5_bundle:add(SwitchId, {BundleId, ClientPid}, Message, Flags) of
+        noreply ->
+            {noreply, State};
+        Reply ->
+            {reply, Reply, State}
+    end.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

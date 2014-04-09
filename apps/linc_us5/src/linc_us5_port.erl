@@ -23,7 +23,7 @@
 %% It allows to create and attach queues to given ports and supports queue
 %% statistics as well. OpenFlow ports can be programatically started and
 %% stopped by utilizing API provided by this module.
--module(linc_us4_port).
+-module(linc_us5_port).
 
 -behaviour(gen_server).
 
@@ -31,6 +31,7 @@
 -export([start_link/2,
          initialize/2,
          terminate/1,
+         validate/2,
          modify/2,
          send/2,
          get_desc/1,
@@ -52,10 +53,10 @@
 
 -include_lib("of_config/include/of_config.hrl").
 -include_lib("of_protocol/include/of_protocol.hrl").
--include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("of_protocol/include/ofp_v5.hrl").
 -include_lib("linc/include/linc_logger.hrl").
--include("linc_us4.hrl").
--include("linc_us4_port.hrl").
+-include("linc_us5.hrl").
+-include("linc_us5_port.hrl").
 
 %% gen_server callbacks
 -export([init/1,
@@ -89,7 +90,7 @@ initialize(SwitchId, Config) ->
     linc:register(SwitchId, linc_port_stats, LincPortStats),
     case queues_enabled(SwitchId) of
         true ->
-            linc_us4_queue:initialize(SwitchId);
+            linc_us5_queue:initialize(SwitchId);
         false ->
             ok
     end,
@@ -104,7 +105,7 @@ terminate(SwitchId) ->
     true = ets:delete(linc:lookup(SwitchId, linc_port_stats)),
     case queues_enabled(SwitchId) of
         true ->
-            linc_us4_queue:terminate(SwitchId);
+            linc_us5_queue:terminate(SwitchId);
         false ->
             ok
     end.
@@ -123,12 +124,28 @@ modify(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
             gen_server:call(Pid, {port_mod, PortMod})
     end.
 
+%% @doc Check whether the given port mod command is valid.
+%% The return value is the same as for {@link modify/2}, but no
+%% changes are actually made.
+-spec validate(integer(), ofp_port_mod()) -> ok |
+                                           {error, {Type :: atom(),
+                                                    Code :: atom()}}.
+validate(SwitchId, #ofp_port_mod{port_no = PortNo} = PortMod) ->
+    case get_port_pid(SwitchId, PortNo) of
+        {error, invalid} ->
+            {error, {bad_request, bad_port}};
+        {error, nonexistent} ->
+            {error, {port_mod_failed, bad_port}};
+        Pid ->
+            gen_server:call(Pid, {validate_port_mod, PortMod})
+    end.
+
 %% @doc Send OF packet to the OF port.
 -spec send(linc_pkt(), ofp_port_no()) -> ok | bad_port | bad_queue | no_fwd.
 send(#linc_pkt{in_port = InPort} = Pkt, in_port) ->
     send(Pkt, InPort);
 send(#linc_pkt{} = Pkt, table) ->
-    linc_us4_routing:maybe_spawn_route(Pkt),
+    linc_us5_routing:maybe_spawn_route(Pkt),
     ok;
 send(#linc_pkt{}, normal) ->
     %% Normal port represents traditional non-OpenFlow pipeline of the switch
@@ -279,7 +296,7 @@ get_all_ports_state(SwitchId) ->
                                                     integer(), integer())).
 get_all_queues_state(SwitchId) ->
     lists:flatmap(fun(PortNo) ->
-                          linc_us4_queue:get_all_queues_state(SwitchId, PortNo)
+                          linc_us5_queue:get_all_queues_state(SwitchId, PortNo)
                   end, get_all_port_no(SwitchId)).
 
 %% @doc Test if a port exists.
@@ -319,10 +336,12 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                      name = PortName,
                      config = PortConfig,
                      state = [live],
-                     curr = ?FEATURES,
-                     advertised = Advertised,
-                     supported = ?FEATURES, peer = ?FEATURES,
-                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
+                     properties =
+                         [#ofp_port_desc_prop_ethernet{
+                             curr = ?FEATURES,
+                             advertised = Advertised,
+                             supported = ?FEATURES, peer = ?FEATURES,
+                             curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}]},
     QueuesState = case queues_enabled(SwitchId) of
                       false ->
                           disabled;
@@ -361,7 +380,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %% desired /dev/tapX character device. No socket communication
         %% is involved.
         tap ->
-            case linc_us4_port_native:tap(Interface, PortOpts) of
+            case linc_us5_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
                 {ErlangPort, Pid, HwAddr} ->
@@ -377,7 +396,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                             SendFun = fun(Frame) ->
                                               port_command(ErlangPort, Frame)
                                       end,
-                            linc_us4_queue:attach_all(SwitchId, PortNo,
+                            linc_us5_queue:attach_all(SwitchId, PortNo,
                                                       SendFun, QueuesConfig)
                     end,
                     {ok, State#state{erlang_port = ErlangPort,
@@ -393,17 +412,17 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %%   Handling of RAW sockets differs between OSes.
         eth ->
             {Socket, IfIndex, EpcapPid, HwAddr} =
-                linc_us4_port_native:eth(Interface),
+                linc_us5_port_native:eth(Interface),
             case queues_config(SwitchId, PortOpts) of
                 disabled ->
                     disabled;
                 QueuesConfig ->
                     SendFun = fun(Frame) ->
-                                      linc_us4_port_native:send(Socket,
+                                      linc_us5_port_native:send(Socket,
                                                                 IfIndex,
                                                                 Frame)
                               end,
-                    linc_us4_queue:attach_all(SwitchId, PortNo,
+                    linc_us5_queue:attach_all(SwitchId, PortNo,
                                               SendFun, QueuesConfig)
             end,
             ets:insert(linc:lookup(SwitchId, linc_ports),
@@ -418,19 +437,26 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     end.
 
 %% @private
-handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
-                                     config = Config,
+handle_call({validate_port_mod, #ofp_port_mod{} = PortMod}, _From,
+            #state{port = #ofp_port{} = Port} = State) ->
+    {reply, validate_port_mod(Port, PortMod), State};
+handle_call({port_mod, #ofp_port_mod{config = Config,
                                      mask = _Mask,
-                                     advertise = Advertise}}, _From,
-            #state{port = #ofp_port{hw_addr = HWAddr} = Port} = State) ->
-    {Reply, NewPort} = case PMHwAddr == HWAddr of
-                           true ->
-                               {ok, Port#ofp_port{config = Config,
-                                                  advertised = Advertise}};
-                           false ->
-                               {{error, {port_mod_failed, bad_hw_addr}}, Port}
-                       end,
-    {reply, Reply, State#state{port = NewPort}};
+                                     properties = PMProperties} = PortMod}, _From,
+            #state{port = #ofp_port{properties = Properties} = Port} = State) ->
+    case validate_port_mod(Port, PortMod) of
+        ok ->
+            %% validate_port_mod checks that there is one single property, for Ethernet.
+            [#ofp_port_mod_prop_ethernet{advertise = Advertise}] = PMProperties,
+            {value, Ethernet} = lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+            %% Update the Ethernet property, and everything that contains it:
+            NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{advertised = Advertise},
+            NewProperties = lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties, NewEthernet),
+            NewPort = Port#ofp_port{config = Config, properties = NewProperties},
+            {reply, ok, State#state{port = NewPort}};
+        {error, _} = Error ->
+            {reply, Error, State}
+    end;
 handle_call(get_port, _From, #state{port = Port} = State) ->
     {reply, Port, State};
 handle_call(get_port_state, _From,
@@ -455,19 +481,28 @@ handle_call({set_port_config, NewPortConfig}, _From,
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
-                             curr = CurrentFeatures,
-                             advertised = AdvertisedFeatures,
-                             supported = SupportedFeatures,
-                             peer  = PeerFeatures
+                             properties = Properties
                             }} = State) ->
+    #ofp_port_desc_prop_ethernet{
+       curr = CurrentFeatures,
+       advertised = AdvertisedFeatures,
+       supported = SupportedFeatures,
+       peer = PeerFeatures} = lists:keyfind(ofp_port_desc_prop_ethernet, 1, Properties),
     {reply, {CurrentFeatures, AdvertisedFeatures,
              SupportedFeatures, PeerFeatures}, State};
 handle_call(get_advertised_features, _From,
-            #state{port = #ofp_port{advertised = AdvertisedFeatures}} = State) ->
+            #state{port = #ofp_port{properties = Properties}} = State) ->
+    #ofp_port_desc_prop_ethernet{advertised = AdvertisedFeatures} =
+        lists:keyfind(ofp_port_desc_prop_ethernet, 1, Properties),
     {reply, AdvertisedFeatures, State};
 handle_call({set_advertised_features, AdvertisedFeatures}, _From,
-            #state{port = Port, switch_id = SwitchId} = State) ->
-    NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
+            #state{port = Port = #ofp_port{properties = Properties}, switch_id = SwitchId} = State) ->
+    {value, Ethernet} =
+        lists:keysearch(ofp_port_desc_prop_ethernet, 1, Properties),
+    NewEthernet = Ethernet#ofp_port_desc_prop_ethernet{advertised = AdvertisedFeatures},
+    NewProperties = lists:keyreplace(ofp_port_desc_prop_ethernet, 1, Properties,
+                                     NewEthernet),
+    NewPort = Port#ofp_port{properties = NewProperties},
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
@@ -495,12 +530,12 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                 disabled ->
                     case {Port, Ifindex} of
                         {undefined, _} ->
-                            linc_us4_port_native:send(Socket, Ifindex, Frame);
+                            linc_us5_port_native:send(Socket, Ifindex, Frame);
                         {_, undefined} ->
                             port_command(Port, Frame)
                     end;
                 enabled ->
-                    linc_us4_queue:send(SwitchId, PortNo, QueueId, Frame)
+                    linc_us5_queue:send(SwitchId, PortNo, QueueId, Frame)
             end
     end,
     {noreply, State}.
@@ -533,13 +568,13 @@ terminate(_Reason, #state{port = #ofp_port{port_no = PortNo},
                           switch_id = SwitchId} = State) ->
     case queues_enabled(SwitchId) of
         true ->
-            linc_us4_queue:detach_all(SwitchId, PortNo);
+            linc_us5_queue:detach_all(SwitchId, PortNo);
         false ->
             ok
     end,
     true = ets:delete(linc:lookup(SwitchId, linc_ports), PortNo),
     true = ets:delete(linc:lookup(SwitchId, linc_port_stats), PortNo),
-    linc_us4_port_native:close(State).
+    linc_us5_port_native:close(State).
 
 %% @private
 code_change(_OldVsn, State, _Extra) ->
@@ -558,7 +593,7 @@ get_all_port_no(SwitchId) ->
 
 -spec add(linc_port_type(), integer(), [linc_port_config()]) -> pid() | error.
 add(physical, SwitchId, PortConfig) ->
-    Sup = linc:lookup(SwitchId, linc_us4_port_sup),
+    Sup = linc:lookup(SwitchId, linc_us5_port_sup),
     case supervisor:start_child(Sup, [PortConfig]) of
         {ok, Pid} ->
             ?INFO("Created port: ~p", [PortConfig]),
@@ -576,7 +611,7 @@ remove(SwitchId, PortNo) ->
         {error, _} ->
             bad_port;
         Pid ->
-            Sup = linc:lookup(SwitchId, linc_us4_port_sup),
+            Sup = linc:lookup(SwitchId, linc_us5_port_sup),
             ok = supervisor:terminate_child(Sup, Pid)
     end.
 
@@ -585,7 +620,7 @@ handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting) ->
         true ->
             drop;
         false ->
-            LincPkt = linc_us4_packet:binary_to_record(Frame, SwitchId, PortNo),
+            LincPkt = linc_us5_packet:binary_to_record(Frame, SwitchId, PortNo),
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
             NewLincPkt =
                 case check_port_config(no_packet_in, PortConfig) of
@@ -596,9 +631,9 @@ handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting) ->
                 end,
             case SyncRouting of
                 true ->
-                    linc_us4_routing:route(NewLincPkt);
+                    linc_us5_routing:route(NewLincPkt);
                 false ->
-                    linc_us4_routing:spawn_route(NewLincPkt)
+                    linc_us5_routing:spawn_route(NewLincPkt)
             end
     end.
 
@@ -641,16 +676,16 @@ microsec_to_sec(Micro) ->
 microsec_to_nsec(Micro) ->
     (Micro rem 1000000) * 1000.
 
-maybe_buffer(_SwitchId, action, Packet, no_buffer) ->
-    {no_buffer,pkt:encapsulate(Packet)};
-maybe_buffer(SwitchId, action, Packet, Bytes) ->
-    maybe_buffer(SwitchId, Packet, Bytes);
-maybe_buffer(SwitchId, no_match, Packet, _Bytes) ->
+%% If the packet is sent to the controller because of a "send to
+%% controller" action, then we should use the max_len field from that
+%% action.  If the packet is sent for other reasons, then we should
+%% send at least miss_send_len bytes.
+maybe_buffer(SwitchId, table_miss, Packet, _Bytes) ->
     maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len));
 maybe_buffer(SwitchId, invalid_ttl, Packet, _Bytes) ->
-    %% The spec does not specify how many bytes to include for invalid_ttl,
-    %% so we use miss_send_len here as well.
-    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len)).
+    maybe_buffer(SwitchId, Packet, get_switch_config(miss_send_len));
+maybe_buffer(SwitchId, _Reason, Packet, Bytes) ->
+    maybe_buffer(SwitchId, Packet, Bytes).
 
 maybe_buffer(_SwitchId, Packet, no_buffer) ->
     {no_buffer, pkt:encapsulate(Packet)};
@@ -711,3 +746,16 @@ ports_for_switch(SwitchId, Config) ->
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).
+
+validate_port_mod(#ofp_port{hw_addr = HWAddr},
+                  #ofp_port_mod{hw_addr = PMHwAddr}) when HWAddr =/= PMHwAddr ->
+    {error, {port_mod_failed, bad_hw_addr}};
+validate_port_mod(#ofp_port{}, #ofp_port_mod{properties = PMProperties}) ->
+    case PMProperties of
+        %% Ensure there is one single property, for Ethernet...
+        [#ofp_port_mod_prop_ethernet{}] ->
+            ok;
+        %% ...otherwise reject the message.
+        _ ->
+            {error, {port_mod_failed, bad_config}}
+    end.

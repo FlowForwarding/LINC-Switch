@@ -1367,7 +1367,9 @@ version(2) ->
 version(3) ->
     '1.2';
 version(4) ->
-    '1.3'.
+    '1.3';
+version(5) ->
+    '1.4'.
 
 is_present(Value, List, IfPresent, IfAbsent) ->
     case lists:member(Value, List) of

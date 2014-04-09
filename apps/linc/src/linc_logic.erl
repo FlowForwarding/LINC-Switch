@@ -318,17 +318,20 @@ handle_info(timeout, #state{backend_mod = BackendMod,
             {stop, {backend_failed, Reason}, State}
     end;
 
-handle_info({ofp_message, Pid, #ofp_message{body = MessageBody} = Message},
+handle_info({ofp_message, Pid, #ofp_message{body = MessageBody, 
+                                            xid = Xid} = Message},
             #state{backend_mod = Backend,
                    backend_state = BackendState} = State) ->
     ?DEBUG("Received message from the controller: ~p", [Message]),
-    NewBState = case Backend:handle_message(MessageBody, BackendState) of
+    BState2 = Backend:set_monitor_data(Pid, Xid, BackendState),
+    NewBState = case Backend:handle_message(MessageBody, BState2) of
                     {noreply, NewState} ->
                         NewState;
-                    {reply, ReplyBody, NewState} ->
-                        ofp_channel_send(Pid,
-                                         Backend,
-                                         Message#ofp_message{body = ReplyBody}),
+                    {reply, Replies, NewState} when is_list(Replies) ->
+                        send_replies(Pid, Backend, Replies, Message),
+                        NewState;
+                    {reply, Reply, NewState} ->
+                        send_reply(Pid, Backend, Reply, Message),
                         NewState
                 end,
     {noreply, State#state{backend_state = NewBState}};
@@ -458,6 +461,17 @@ extract_mac([N1, N2 | Rest], Mac) ->
     B1 = list_to_integer([N1], 16),
     B2 = list_to_integer([N2], 16),
     extract_mac(Rest, <<Mac/binary, B1:4, B2:4>>).
+
+send_replies(Pid, Backend, Replies, OriginalMessage) ->
+    lists:foreach(
+      fun(Reply) ->
+              send_reply(Pid, Backend, Reply, OriginalMessage)
+      end, Replies).
+
+send_reply(Pid, Backend, #ofp_message{} = ReplyMessage, _OriginalMessage) ->
+    ofp_channel_send(Pid, Backend, ReplyMessage);
+send_reply(Pid, Backend, ReplyBody, OriginalMessage) ->
+    ofp_channel_send(Pid, Backend, OriginalMessage#ofp_message{body = ReplyBody}).
 
 ofp_channel_send(Id, Backend, Message) ->
     case ofp_channel:send(Id, Message) of

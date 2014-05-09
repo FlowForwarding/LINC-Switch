@@ -285,12 +285,16 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
     PortName = "Port" ++ integer_to_list(PortNo),
     Advertised = case lists:keyfind(features, 1, PortOpts) of
+                     false ->
+                         ?FEATURES;
                      {features, undefined} ->
                          ?FEATURES;
                      {features, Features} ->
                          linc_ofconfig:convert_port_features(Features)
                  end,
     PortConfig = case lists:keyfind(config, 1, PortOpts) of
+                     false ->
+                         [];
                      {config, undefined} ->
                          [];
                      {config, Config} ->

@@ -19,10 +19,13 @@ update-deps:
 	@./rebar update-deps
 
 test: compile
-	@./rebar skip_deps=true apps="linc,linc_us4" eunit
+	@./rebar skip_deps=true apps="linc,linc_us5" eunit
 
 test_us3: compile
 	@./rebar skip_deps=true apps="linc,linc_us3" eunit
+
+test_us4: compile
+	@./rebar skip_deps=true apps="linc,linc_us4" eunit
 
 clean:
 	@./rebar clean
@@ -41,4 +44,4 @@ dev_prepare: compile
 	./scripts/pre_develop_hook
 
 dev:
-	erl -env ERL_MAX_ETS_TABLES 3000 -pa apps/*/ebin apps/*/test deps/*/ebin -config rel/files/sys.config -args_file rel/files/vm.args -eval "lists:map(fun application:start/1, [kernel, stdlib, public_key, crypto, ssl, compiler, syntax_tools, runtime_tools, xmerl, mnesia, lager, linc, sync])"
+	erl -env ERL_MAX_ETS_TABLES 3000 -pa apps/*/ebin apps/*/test deps/*/ebin -config rel/files/sys.config -args_file rel/files/vm.args -eval "lists:map(fun application:start/1, [kernel, stdlib, asn1, crypto, public_key, ssl, compiler, syntax_tools, runtime_tools, xmerl, mnesia, lager, linc, sync])"

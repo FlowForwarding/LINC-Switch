@@ -31,7 +31,7 @@ usage_pattern(ScriptName) ->
         " -o OUTPUT_FILE".
 
 usage_example(ScriptName) ->
-    ScriptName ++ " -s 0 tap0 tap1 -c tcp:10.48.11.5:6633 tls:10.48.11.6:5533 "
+    ScriptName ++ "-s 0 tap0 tap1 -c tcp:10.48.11.5:6653 tls:10.48.11.6:5533 "
         "-o ../rel/files/sys.config".
 
 parse_args([], Config) ->

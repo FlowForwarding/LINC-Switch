@@ -436,7 +436,7 @@ gen_datapath_id(SwitchId) ->
     datapathid(SwitchId,get_datapath_mac()).
 
 datapathid(SwitchId,MAC) ->
-    list_to_binary(string:join([integer_to_hex(D) || <<D>> <= <<MAC/binary,SwitchId:16>>],":")).
+    string:join([integer_to_hex(D) || <<D>> <= <<MAC/binary,SwitchId:16>>],":").
 
 integer_to_hex(I) ->
     case integer_to_list(I, 16) of

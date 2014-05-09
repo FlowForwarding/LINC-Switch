@@ -427,25 +427,19 @@ get_datapath_mac() ->
              || {_IF, Ps} <- Ifs, lists:keymember(hwaddr, 1, Ps)],
     %% Make sure MAC /= 0
     [MAC | _] = [M || M <- MACs, M /= [0,0,0,0,0,0]],
-    to_hex(list_to_binary(MAC), []).
+    list_to_binary(MAC).
 
-to_hex(<<>>, Hex) ->
-    lists:flatten(lists:reverse(Hex));
-to_hex(<<B1:4, B2:4, Binary/binary>>, Hex) ->
-    I1 = integer_to_list(B1, 16),
-    I2 = integer_to_list(B2, 16),
-    to_hex(Binary, [":", I2, I1 | Hex]).
+gen_datapath_id(SwitchId) ->
+    datapathid(SwitchId,get_datapath_mac()).
 
-gen_datapath_id(SwitchId) when SwitchId < 10 ->
-    get_datapath_mac() ++ "00:0" ++ integer_to_list(SwitchId);
-gen_datapath_id(SwitchId) when SwitchId < 100 ->
-    get_datapath_mac() ++ "00:" ++ integer_to_list(SwitchId);
-gen_datapath_id(SwitchId) when SwitchId < 1000 ->
-    get_datapath_mac() ++ "0" ++ integer_to_list(SwitchId div 100) ++
-        ":" ++ integer_to_list(SwitchId rem 100);
-gen_datapath_id(SwitchId) when SwitchId < 10000 ->
-    get_datapath_mac() ++ integer_to_list(SwitchId div 100) ++
-        ":" ++ integer_to_list(SwitchId rem 100).
+datapathid(SwitchId,MAC) ->
+    list_to_binary(string:join([integer_to_hex(D) || <<D>> <= <<MAC/binary,SwitchId:16>>],":")).
+
+integer_to_hex(I) ->
+    case integer_to_list(I, 16) of
+        [D] -> [$0, D];
+        DD  -> DD
+    end.
 
 extract_mac(DatapathId) ->
     Str = re:replace(string:substr(DatapathId, 1, 17), ":", "",

@@ -209,11 +209,17 @@ convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
                             NewPort = {port, PortNo, PortConfig},
                             {[NewPort | Ports], [NewPortQueues | Queues]}
                     end, {[], []}, LogicalPorts),
+    {controllers, Controllers} = lists:keyfind(controllers, 1,
+                                               LogicalSwitchConfig),
     NewLogicalSwitchConfig1 =
         lists:keystore(ports, 1, LogicalSwitchConfig, {ports, NewPorts}),
     NewLogicalSwitchConfig2 =
         lists:keystore(queues, 1, NewLogicalSwitchConfig1, {queues, NewQueues}),
-    {switch, SwitchId, NewLogicalSwitchConfig2}.
+    NewControllers = convert_controllers(Controllers),
+    NewLogicalSwitchConfig3 =
+        lists:keystore(controllers, 1, NewLogicalSwitchConfig2,
+                       {controllers, NewControllers}),
+    {switch, SwitchId, NewLogicalSwitchConfig3}.
 
 convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
     PortQueues =
@@ -223,6 +229,16 @@ convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
              {QId, QueueConfig}
          end || QId <- QueueIds],
     {port, PortNo, [PortRate, {port_queues, PortQueues}]}.
+
+convert_controllers(Controllers) ->
+    [begin
+         Host = element(2, C),
+         setelement(2, C, convert_host_to_ip(Host))
+     end || C <- Controllers].
+
+convert_host_to_ip(Host) ->
+    {ok, IP} = inet:getaddr(Host, inet),
+    inet_parse:ntoa(IP).
 
 -spec convert_port_config([atom()] | #port_configuration{}) ->
                                  #port_configuration{} | [atom()].
@@ -690,9 +706,11 @@ extract_operations(#capable_switch{resources = Resources,
                                [];
                            _ ->
                                [{op(DefOp, Op),
-                                 {controller, {Id, SwitchId}, IP, Port, tcp}}
+                                 {controller, {Id, SwitchId},
+                                  IP, Port, tcp, Role}}
                                 || #controller{operation = Op,
                                                id = Id,
+                                               role = Role,
                                                ip_address = IP,
                                                port = Port} <- Controllers]
                        end}
@@ -847,7 +865,7 @@ do_running([{Op, {switch, SwitchId, DatapathId}} | Rest], OnError, Certs) ->
             do_running(Rest, OnError, Certs)
     end;
 do_running([{Op, {controller, {ControllerId, SwitchId},
-                  Host, Port, Proto}} | Rest], OnError, Certs) ->
+                  Host, Port, Proto, Role}} | Rest], OnError, Certs) ->
     Host2 = case Host of
                 undefined -> "localhost";
                 _ -> Host
@@ -860,6 +878,10 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                  undefined -> tls;
                  _ -> Proto
              end,
+    Role2 = case Role of
+                undefined -> equal;
+                _ -> Role
+            end,
     case Op of
         create ->
             case is_valid_controller(SwitchId, ControllerId) of
@@ -889,7 +911,7 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         Op when Op == merge orelse Op == replace ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:replace_connection(Pid, Host2, Port2, Proto2),
+                    ofp_client:replace_connection(Pid, Host2, Port2, Proto2, Role2),
                     do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,

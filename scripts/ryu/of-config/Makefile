@@ -5,3 +5,6 @@ get-config:
 
 set-controller-role-test:
 	@ryu-manager  set-controller-role-test.py
+
+set-inexistent-queue-config-test:
+	@ryu-manager set-inexistent-queue-config-test.py

@@ -253,6 +253,8 @@ encode(Packet = #ndp_na{}) ->
 encode(Packet = #ndp_ns{}) ->
     Ipv6 = #ipv6{saddr = <<0:128>>, daddr = <<0:128>>},
     pkt:encapsulate([Ipv6, #icmpv6{}, Packet]);
+encode(Packet = #tcp{}) ->
+    pkt_tcp:encapsulate(Packet, #ipv4{}, <<>>);
 encode(Packet = #udp{}) ->
     pkt_udp:encapsulate(Packet, #ipv4{}, <<>>);
 encode(_Packet = #sctp{}) ->

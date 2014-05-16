@@ -237,13 +237,16 @@ ofp_packet_out(#state{switch_id = SwitchId} = State,
     {noreply, State};
 ofp_packet_out(#state{switch_id = SwitchId} = State,
                #ofp_packet_out{buffer_id = BufferId,
+                               in_port = InPort,
                                actions = Actions}) ->
     case linc_buffer:get_buffer(SwitchId, BufferId) of
-        #linc_pkt{} = Pkt ->
-            linc_us4_actions:apply_list(Pkt, Actions);
         not_found ->
             %% Buffer has been dropped, ignore
-            ok
+            ok;
+        Pkt ->
+            LincPkt = #linc_pkt{in_port = InPort, packet = Pkt},
+            linc_us4_actions:apply_list(
+              LincPkt#linc_pkt{packet_in_reason = packet_out}, Actions)
     end,
     {noreply, State}.
 

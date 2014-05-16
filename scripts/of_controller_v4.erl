@@ -554,6 +554,15 @@ scenario(mininet_mytopo) ->
      flow_mod_output_to_port(2, 1, undefined)];
 
 
+%% Scenario motivated by #322
+%% (https://github.com/FlowForwarding/LINC-Switch/issues/322).
+%%
+%% This is a scenario for testing buffering packets in LINC between ofp_packet_in
+%% and ofp_packet_out messages. It sends a flow that generate a ofp_packet_in
+%% for every packet. The packets are buffered in the switch.
+scenario(forward_to_controller_and_buffer) ->
+    [flow_mod_output_to_port(1, controller, 128)];
+
 %% This scenario is empty as hello message is malformed and sent just after
 %% the connection is established.
 scenario(hello_with_bad_version) ->
@@ -1039,7 +1048,7 @@ flow_mod_output_to_port(InPort, OutPort, MaxLen) ->
                             name = in_port,
                             value = <<InPort:32>>},
     Match = #ofp_match{fields = [MatchField]},
-    Action = case InPort =:= controller of
+    Action = case OutPort =:= controller of
                  true ->
                      #ofp_action_output{port = OutPort, max_len = MaxLen};
                  false ->

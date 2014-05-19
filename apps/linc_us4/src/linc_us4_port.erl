@@ -357,7 +357,6 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                     eth
             end
     end,
-    State2 = setup_load_control(SwitchId, PortNo, State),
     case Type of
         %% When switch connects to a tap interface, erlang receives file
         %% descriptor to read/write ethernet frames directly from the
@@ -383,9 +382,10 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                             linc_us4_queue:attach_all(SwitchId, PortNo,
                                                       SendFun, QueuesConfig)
                     end,
-                    {ok, State2#state{erlang_port = ErlangPort,
+                    {ok, State#state{erlang_port = ErlangPort,
                                      port_ref = Pid,
-                                     port = Port#ofp_port{hw_addr = HwAddr}}}
+                                     port = Port#ofp_port{hw_addr = HwAddr}},
+                    0}
             end;
         %% When switch connects to a hardware interface such as eth0
         %% then communication is handled by two channels:
@@ -414,10 +414,11 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
             ets:insert(linc:lookup(SwitchId, linc_port_stats),
                        #ofp_port_stats{port_no = PortNo,
                                        duration_sec = erlang:now()}),
-            {ok, State2#state{socket = Socket,
+            {ok, State#state{socket = Socket,
                              ifindex = IfIndex,
                              epcap_pid = EpcapPid,
-                             port = Port#ofp_port{hw_addr = HwAddr}}}
+                             port = Port#ofp_port{hw_addr = HwAddr}},
+            0}
     end.
 
 %% @private
@@ -533,8 +534,14 @@ handle_info({'EXIT', _Pid, {port_terminated, 1}},
     ?ERROR("Port for interface ~p exited abnormally",
            [Interface]),
     {stop, normal, State};
+
 handle_info(#load_control_message{} = Msg, State) ->
     {noreply, linc_us4_port_load_regulator:limit_load_if_necessary(Msg, State)};
+
+handle_info(timeout, #state{switch_id = SwitchId,
+                            port = #ofp_port{port_no = PortNo}} = State) ->
+    {noreply, setup_load_control(SwitchId, PortNo, State)};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 

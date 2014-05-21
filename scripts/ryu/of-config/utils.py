@@ -14,6 +14,16 @@ def _get_running_xml_config_without_namcespaces(session):
     raw_config = session.raw_get_config('running')
     return etree.fromstring(re.sub('ns0:', '', raw_config))
 
+def _get_xml_element_value(element):
+    if hasattr(element, 'text'):
+        return element.text
+    return None
+
+def _does_resource_match(request, resource):
+    if resource.tag != request['resource']:
+        return False
+    return  _get_xml_element_value(resource.find('resource-id')) == request['id']
+
 def get_config_as_xml(session):
     return _get_running_xml_config_without_namcespaces(session)
 
@@ -22,6 +32,11 @@ def pretty_print_xml_config(config):
 
 def get_config_value_from_xml(id, config):
     return config.find(CONFIG_ELEMENTS[id]).text
+
+def get_config_value_from_resources(request, config):
+    for r in config.find('resources'):
+        if _does_resource_match(request, r):
+            return _get_xml_element_value(r.find(request['value']))
 
 def edit_running_config_by_xml_string(config, session):
     session.raw_edit_config('running', config)

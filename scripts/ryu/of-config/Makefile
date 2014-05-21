@@ -8,3 +8,6 @@ set-controller-role-test:
 
 set-inexistent-queue-config-test:
 	@ryu-manager set-inexistent-queue-config-test.py
+
+set-port-element-of-queue-resource-test:
+	@ryu-manager set-port-element-of-queue-resource-test.py

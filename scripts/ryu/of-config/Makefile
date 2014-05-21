@@ -11,3 +11,6 @@ set-inexistent-queue-config-test:
 
 set-port-element-of-queue-resource-test:
 	@ryu-manager set-port-element-of-queue-resource-test.py
+
+set-queue-min-max-rate-test:
+	@ryu-manager set-queue-min-max-rate-test.py

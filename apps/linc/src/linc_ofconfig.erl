@@ -878,10 +878,6 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
                  undefined -> tls;
                  _ -> Proto
              end,
-    Role2 = case Role of
-                undefined -> equal;
-                _ -> Role
-            end,
     case Op of
         create ->
             case is_valid_controller(SwitchId, ControllerId) of
@@ -911,7 +907,11 @@ do_running([{Op, {controller, {ControllerId, SwitchId},
         Op when Op == merge orelse Op == replace ->
             case is_valid_controller(SwitchId, ControllerId) of
                 {true, Pid} ->
-                    ofp_client:replace_connection(Pid, Host2, Port2, Proto2, Role2),
+                    Config = [ X || {_, Val} = X <- lists:zip(
+                                                      [ip, port, protocol, role],
+                                                      [Host, Port, Proto, Role]),
+                                    Val /= undefined],
+                    ofp_client:update_connection_config(Pid, Config),
                     do_running(Rest, OnError, Certs);
                 false ->
                     linc_logic:open_controller(SwitchId, ControllerId,
@@ -1024,7 +1024,7 @@ do_startup([{Op, {switch, SwitchId, _} = Switch} | Rest], OnError,
             NewSwitches = lists:keyreplace(SwitchId, 2, Switches, Switch),
             do_startup(Rest, OnError, Startup#ofconfig{switches = NewSwitches})
     end;
-do_startup([{Op, {controller, CtrlId, _, _, _} = Ctrl} | Rest], OnError,
+do_startup([{Op, {controller, CtrlId, _, _, _, _} = Ctrl} | Rest], OnError,
            #ofconfig{controllers = Ctrls} = Startup) ->
     case Op of
         create ->

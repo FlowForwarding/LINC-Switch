@@ -50,3 +50,7 @@ def connect_to_switch(host, port, username, password):
 
 def get_controller_roles():
     return ['equal', 'slave', 'master']
+
+def get(session):
+    raw_config =  session.raw_get()
+    return etree.fromstring(re.sub('ns0:', '', raw_config))

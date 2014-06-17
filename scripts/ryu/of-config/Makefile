@@ -1,5 +1,8 @@
 .PHONY: get-config set-controller-role
 
+get:
+	@ryu-manager  get.py
+
 get-config:
 	@ryu-manager  get-config.py
 

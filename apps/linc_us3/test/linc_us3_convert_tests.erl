@@ -61,13 +61,14 @@ ether_ignore_vlan() ->
 %% Issue reported and described here:
 %% https://github.com/FlowForwarding/LINC-Switch/issues/3
 vlan_match_only_outer() ->
-    P1 = [#ether{}, #ieee802_1q_tag{vid=333}, #ieee802_1q_tag{vid=444}],
+    P1 = [#ether{}, #ieee802_1q_tag{vid = <<333:12>>},
+          #ieee802_1q_tag{vid = <<444:12>>}],
     Fields1 = linc_us3_convert:packet_fields(P1),
     F1 = lists:filter(fun(X) -> X#ofp_field.name == vlan_vid end, Fields1),
     ?assert(length(F1) =:= 1), % exactly 1 field added
     [VLAN1 | _] = F1,
     ?assert(VLAN1 =/= false),
-    ?assert(VLAN1#ofp_field.value =:= 333).
+    ?assert(VLAN1#ofp_field.value =:= <<(?OFPVID_PRESENT bor 333):13>>).
 
 %% Fixtures --------------------------------------------------------------------
 

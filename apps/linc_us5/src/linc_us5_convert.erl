@@ -61,12 +61,13 @@ eth_and_vlan_fields(P) ->
                      ofp_field(eth_dst, DHost),
                      ofp_field(eth_src, SHost)];
                 {_, #ieee802_1q_tag{ether_type = VlanType,
-                                    vid = VID,
+                                    vid = <<VID:12>>,
                                     pcp = PCP}} ->
                     [ofp_field(eth_dst, DHost),
                      ofp_field(eth_src, SHost),
                      ofp_field(eth_type, <<VlanType:16>>),
-                     ofp_field(vlan_vid, VID),
+                     ofp_field(vlan_vid,
+                               <<(?OFPVID_PRESENT bor VID):13>>),
                      ofp_field(vlan_pcp, <<PCP:3>>)]
             end
     end.

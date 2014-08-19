@@ -63,8 +63,9 @@ special_header_fields(P) ->
             [ofp_field(eth_type, <<(Ether#ether.type):16>>)];
         %% found VLAN header - take eth_type from it, also set other fields
         {_, VLAN} ->
+            <<VID:12>> = VLAN#ieee802_1q_tag.vid,
             [ofp_field(eth_type, <<(VLAN#ieee802_1q_tag.ether_type):16>>),
-             ofp_field(vlan_vid, VLAN#ieee802_1q_tag.vid),
+             ofp_field(vlan_vid, <<(?OFPVID_PRESENT bor VID):13>>),
              ofp_field(vlan_pcp, <<(VLAN#ieee802_1q_tag.pcp):3>>)]
     end.
 

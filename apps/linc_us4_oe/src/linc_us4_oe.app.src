@@ -1,0 +1,18 @@
+{application, linc_us4_oe,
+ [{description, "LINC Userspace Backend v4 with Optical Extenstions"},
+  {vsn, "1.1"},
+  {applications, [kernel,
+                  stdlib,
+                  lager,
+                  mnesia,
+                  linc]},
+  {env, [{version, 4},
+         {controllers, []},
+         {ports, []},
+         {of_config, disabled},
+         {manufacturer_desc, <<"Dummy">>},
+         {hardware_desc, <<"Dummy">>},
+         {software_desc, <<"Dummy">>},
+         {serial_number, <<"Dummy">>},
+         {datapath_desc, <<"Dummy">>}]}
+ ]}.

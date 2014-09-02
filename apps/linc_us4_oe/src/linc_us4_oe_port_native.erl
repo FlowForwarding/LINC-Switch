@@ -20,7 +20,9 @@
 
 -export([tap/2,
          eth/1,
+         optical/2,
          send/3,
+         send/2,
          close/1]).
 
 -ifdef(TEST).
@@ -76,6 +78,9 @@ eth(Interface) ->
     HwAddr = get_hw_addr(Interface),
     {Socket, IfIndex, Pid, HwAddr}.
 
+optical(SwitchId, PortNo) ->
+    linc_us4_oe_optical_native:start_link(SwitchId, PortNo, self()).
+
 %% TODO: Add typespecs to procket to avoid:
 %% linc_us4_oe_port_procket.erl:7: Function send/2 has no local return
 %% linc_us4_oe_port_procket.erl:11: Function close/1 has no local return
@@ -92,10 +97,15 @@ send(Socket, Ifindex, Frame) ->
             packet:send(Socket, Ifindex, Frame)
     end.
 
-close(#state{socket = undefined, port_ref = PortRef}) ->
+send(Pid, Frame) ->
+    linc_us4_oe_optical_native:send(Pid, Frame).
+
+close(#state{socket = undefined, port_ref = PortRef,
+             optical_port_pid = undefined}) ->
     tuncer:down(PortRef),
     tuncer:destroy(PortRef);
-close(#state{socket = Socket, port_ref = undefined, epcap_pid = EpcapPid}) ->
+close(#state{socket = Socket, port_ref = undefined, epcap_pid = EpcapPid,
+             optical_port_pid = undefined}) ->
     %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
     %% and it's an atom, not a pid.
     case catch is_process_alive(EpcapPid) of
@@ -104,7 +114,11 @@ close(#state{socket = Socket, port_ref = undefined, epcap_pid = EpcapPid}) ->
         _ ->
             ok
     end,
-    procket:close(Socket).
+    procket:close(Socket);
+close(#state{socket = undefined, port_ref = undefined,
+             optical_port_pid = Pid}) ->
+    linc_us4_oe_optical_native:stop(Pid).
+
 
 %%%-----------------------------------------------------------------------------
 %%% Internal functions

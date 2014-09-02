@@ -54,6 +54,13 @@ start_link() ->
                      linc_ofconfig:get_startup_without_ofconfig()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
+    %% Better place for this initialization?
+    case application:gen_env(linc, optical_extension) of
+        {ok, enabled} ->
+            initialize_optical_extension();
+        _ ->
+            ok
+    end,
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.
@@ -116,3 +123,6 @@ start_dependency(App) ->
             ?ERROR("Starting ~p application failed because: ~p",
                    [App, Error])
     end.
+
+initialize_optical_extension() ->
+    linc_oe:initialize().

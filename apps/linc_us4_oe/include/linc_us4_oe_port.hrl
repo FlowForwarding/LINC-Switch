@@ -44,6 +44,8 @@
           socket             :: integer(),
           ifindex            :: integer(),
           epcap_pid          :: pid(),
+          %% State of simulated optical interface
+          optical_port_pid   :: pid(),
           %% Queue subsystem state
           queues = disabled  :: linc_queues_state(),
           %% Overload protection state

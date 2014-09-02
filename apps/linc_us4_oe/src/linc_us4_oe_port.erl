@@ -333,6 +333,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                   end,
     SwitchName = "LogicalSwitch" ++ integer_to_list(SwitchId),
     ResourceId =  SwitchName ++ "-" ++ PortName,
+    %% Interface doesn't matter for optical simulation
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
     %% Use sync routing unless explicitly disabled in the configuration
     SyncRouting = case application:get_env(linc, sync_routing) of
@@ -351,13 +352,38 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                    %% The type is not specified explicitly.
                    %% Guess from the interface name.
                    case re:run(Interface, "^tap.*$", [{capture, none}]) of
-                match ->
-                                      tap;
-                                   nomatch ->
-                                      eth
-                              end
-                               end,
-                               case Type of
+                       match ->
+                           tap;
+                       nomatch ->
+                           eth
+                   end
+           end,
+    case Type of
+        %% TODO: Comment
+        optical ->
+            case linc_us4_oe_native:optical(SwitchId, PortNo) of
+                {error, _Erro} ->
+                    {stop, shutdown};
+                {ok, Pid} ->
+                    ets:insert(linc:lookup(SwitchId, linc_ports),
+                               #linc_port{port_no = PortNo, pid = self()}),
+                    ets:insert(linc:lookup(SwitchId, linc_port_stats),
+                               #ofp_port_stats{port_no = PortNo,
+                                               duration_sec = erlang:now()}),
+                    case queues_config(SwitchId, PortOpts) of
+                        disabled ->
+                            disabled;
+                        QueuesConfig ->
+                            SendFun = fun(Frame) ->
+                                              linc_us4_oe_optical_native:send(Pid, Frame)
+                                      end,
+                            linc_us4_oe_queue:attach_all(SwitchId, PortNo,
+                                                         SendFun, QueuesConfig)
+                    end,
+                    {ok, State#state{optical_port_pid = pid,
+                                     port = Port#ofp_port{hw_addr = <<>>}},
+                     0}
+            end;
         %% When switch connects to a tap interface, erlang receives file
         %% descriptor to read/write ethernet frames directly from the
         %% desired /dev/tapX character device. No socket communication

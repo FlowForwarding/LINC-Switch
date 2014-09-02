@@ -362,31 +362,31 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %% descriptor to read/write ethernet frames directly from the
         %% desired /dev/tapX character device. No socket communication
         %% is involved.
-                                   tap ->
-                                       case linc_us4_oe_port_native:tap(Interface, PortOpts) of
-                                           {stop, shutdown} ->
-                                               {stop, shutdown};
-                                           {ErlangPort, Pid, HwAddr} ->
-                                               ets:insert(linc:lookup(SwitchId, linc_ports),
-                                                          #linc_port{port_no = PortNo, pid = self()}),
-                                               ets:insert(linc:lookup(SwitchId, linc_port_stats),
-                                                          #ofp_port_stats{port_no = PortNo,
-                                                                          duration_sec = erlang:now()}),
-                                               case queues_config(SwitchId, PortOpts) of
-                                                   disabled ->
-                                                       disabled;
-                                                   QueuesConfig ->
-                                                       SendFun = fun(Frame) ->
-                                                                         port_command(ErlangPort, Frame)
-                                                                 end,
-                                                       linc_us4_oe_queue:attach_all(SwitchId, PortNo,
-                                                                                 SendFun, QueuesConfig)
-                                               end,
-                                               {ok, State#state{erlang_port = ErlangPort,
-                                                                port_ref = Pid,
-                                                                port = Port#ofp_port{hw_addr = HwAddr}},
-                                                0}
-                                       end;
+        tap ->
+            case linc_us4_oe_port_native:tap(Interface, PortOpts) of
+                {stop, shutdown} ->
+                    {stop, shutdown};
+                {ErlangPort, Pid, HwAddr} ->
+                    ets:insert(linc:lookup(SwitchId, linc_ports),
+                               #linc_port{port_no = PortNo, pid = self()}),
+                    ets:insert(linc:lookup(SwitchId, linc_port_stats),
+                               #ofp_port_stats{port_no = PortNo,
+                                               duration_sec = erlang:now()}),
+                    case queues_config(SwitchId, PortOpts) of
+                        disabled ->
+                            disabled;
+                        QueuesConfig ->
+                            SendFun = fun(Frame) ->
+                                              port_command(ErlangPort, Frame)
+                                      end,
+                            linc_us4_oe_queue:attach_all(SwitchId, PortNo,
+                                                         SendFun, QueuesConfig)
+                    end,
+                    {ok, State#state{erlang_port = ErlangPort,
+                                     port_ref = Pid,
+                                     port = Port#ofp_port{hw_addr = HwAddr}},
+                     0}
+            end;
         %% When switch connects to a hardware interface such as eth0
         %% then communication is handled by two channels:
         %% * receiving ethernet frames is done by libpcap wrapped-up by
@@ -394,32 +394,32 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %% * sending ethernet frames is done by writing to
         %%   a RAW socket binded with given network interface.
         %%   Handling of RAW sockets differs between OSes.
-                                   eth ->
-                                       {Socket, IfIndex, EpcapPid, HwAddr} =
-                                           linc_us4_oe_port_native:eth(Interface),
-                                       case queues_config(SwitchId, PortOpts) of
-                                           disabled ->
-                                               disabled;
-                                           QueuesConfig ->
-                                               SendFun = fun(Frame) ->
-                                                                 linc_us4_oe_port_native:send(Socket,
-                                                                                           IfIndex,
-                                                                                           Frame)
-                                                         end,
-                                               linc_us4_oe_queue:attach_all(SwitchId, PortNo,
-                                                                         SendFun, QueuesConfig)
-                                       end,
-                                       ets:insert(linc:lookup(SwitchId, linc_ports),
-                                                  #linc_port{port_no = PortNo, pid = self()}),
-                                       ets:insert(linc:lookup(SwitchId, linc_port_stats),
-                                                  #ofp_port_stats{port_no = PortNo,
-                                                                  duration_sec = erlang:now()}),
-                                       {ok, State#state{socket = Socket,
-                                                        ifindex = IfIndex,
-                                                        epcap_pid = EpcapPid,
-                                                        port = Port#ofp_port{hw_addr = HwAddr}},
-                                        0}
-                               end.
+        eth ->
+            {Socket, IfIndex, EpcapPid, HwAddr} =
+                linc_us4_oe_port_native:eth(Interface),
+            case queues_config(SwitchId, PortOpts) of
+                disabled ->
+                    disabled;
+                QueuesConfig ->
+                    SendFun = fun(Frame) ->
+                                      linc_us4_oe_port_native:send(Socket,
+                                                                   IfIndex,
+                                                                   Frame)
+                              end,
+                    linc_us4_oe_queue:attach_all(SwitchId, PortNo,
+                                                 SendFun, QueuesConfig)
+            end,
+            ets:insert(linc:lookup(SwitchId, linc_ports),
+                       #linc_port{port_no = PortNo, pid = self()}),
+            ets:insert(linc:lookup(SwitchId, linc_port_stats),
+                       #ofp_port_stats{port_no = PortNo,
+                                       duration_sec = erlang:now()}),
+            {ok, State#state{socket = Socket,
+                             ifindex = IfIndex,
+                             epcap_pid = EpcapPid,
+                             port = Port#ofp_port{hw_addr = HwAddr}},
+             0}
+    end.
 
 %% @private
 handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
@@ -539,7 +539,8 @@ handle_info(#load_control_message{} = Msg, State) ->
     {noreply, linc_us4_oe_port_load_regulator:limit_load_if_necessary(Msg, State)};
 
 handle_info(timeout, #state{switch_id = SwitchId,
-                            port = #ofp_port{port_no = PortNo}} = State) ->
+                            port = #ofp_port{port_no = PortNo}}
+            = State) ->
     {noreply, setup_load_control(SwitchId, PortNo, State)};
 
 handle_info(_Info, State) ->

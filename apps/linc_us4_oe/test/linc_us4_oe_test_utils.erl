@@ -90,12 +90,20 @@ mock([port_native | Rest]) ->
                      fun(_, _) ->
                              {port, pid, <<1,1,1,1,1,1>>}
                      end),
+    ok = meck:expect(linc_us4_oe_port_native, optical,
+                     fun(_, _) ->
+                             {ok, <<1,1,1,1,1,1>>}
+                     end),
     ok = meck:expect(linc_us4_oe_port_native, close,
                      fun(_) ->
                              ok
                      end),
     ok = meck:expect(linc_us4_oe_port_native, send,
                      fun(_, _, _) ->
+                             ok
+                     end),
+    ok = meck:expect(linc_us4_oe_port_native, send,
+                     fun(_, _) ->
                              ok
                      end),
     mock(Rest);
@@ -136,6 +144,12 @@ mock([sup | Rest]) ->
     mock(Rest);
 mock([packet | Rest]) ->
     ok = meck:new(packet),
+    mock(Rest);
+mock([routing | Rest]) ->
+    ok = meck:new(linc_us4_oe_routing),
+    ok = meck:expect(linc_us4_oe_routing, route, fun(_) ->
+                                                         ok
+                                                 end),
     mock(Rest).
 
 unmock([]) ->
@@ -166,6 +180,9 @@ unmock([sup | Rest]) ->
     unmock(Rest);
 unmock([packet | Rest]) ->
     ok = meck:unload(packet),
+    unmock(Rest);
+unmock([routing | Rest]) ->
+    ok = meck:unload(linc_us4_oe_routing),
     unmock(Rest).
 
 mock_reset([]) ->

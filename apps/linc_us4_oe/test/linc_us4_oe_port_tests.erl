@@ -30,7 +30,7 @@
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4_oe.hrl").
 
--define(MOCKED, [logic, port_native, packet]).
+-define(MOCKED, [logic, port_native, packet, routing]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -71,6 +71,17 @@ port_test_() ->
       {"Port routing strategy: explicit asynchronous routing",
        fun async_routing_explicitly_set/0}}
     ]}.
+
+optical_port_test_() ->
+    {setup,
+     fun optical_extension_setup/0,
+     fun optical_extension_teardown/1,
+     [{foreach, fun foreach_setup/0, fun foreach_teardown/1,
+       [{"Test message reaches optical backend",
+         fun message_should_reach_optical_backend/0},
+        %% FAIL!!!
+        {"Test message from optical backend is routed",
+         fun message_from_optical_backed_should_be_routed/0}]}]}.
 
 port_mod() ->
     BadPort = 999,
@@ -119,7 +130,7 @@ send_normal() ->
 %% [3]: http://mininet.org/
 send_flood() ->
     [InPort | PortsThatShouldBeFlooded] =
-        [PortNo || {port, PortNo, _Config} <- ports()],
+        [PortNo || {port, PortNo, _Config} <- ports(dummy)],
     Pkt = pkt(InPort),
     ?assertEqual(ok, linc_us4_oe_port:send(Pkt, flood)),
     %% wait because send to port is a gen_server:cast
@@ -249,38 +260,66 @@ routing_fun_invoked_test(ExpectedRoutingFun) ->
     ?assertEqual(1, meck:num_calls(linc_us4_oe_routing, ExpectedRoutingFun, '_')),
     unmock_routing_module().
 
+message_should_reach_optical_backend() ->
+    ok = linc_us4_oe_port:send(pkt(), _PortNo = 1),
+    ?assertEqual(_NumOfPackets = 1,
+                 meck:num_calls(linc_us4_oe_port_native, send, 2)).
+
+message_from_optical_backed_should_be_routed() ->
+    Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, _PortNo = 1),
+    Pid ! {optical_data, _OpticalPortPidFromMeck = <<1,1,1,1,1,1>>,
+           <<"Hello Alice!">>},
+    ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
+    
+
 
 %% Fixtures --------------------------------------------------------------------
 
-ports() ->
-    [{port, 1, [{interface, "dummy1"},
-                {features, #features{}},
-                {config, #port_configuration{}}]},
-     {port, 2, [{interface, "dummy2"},
-                {features, #features{}},
-                {config, #port_configuration{}}]},
-     {port, 3, [{interface, "dummy3"},
-                {features, #features{}},
-                {config, #port_configuration{}}]}].
+ports(Type) ->
+    [begin
+         Opts0 = [{interface, "dummy" ++ integer_to_list(No)},
+                  {features, #features{}},
+                  {config, #port_configuration{}}],
+         Opts1 = case Type of
+                     optical ->
+                         [{type, Type} | Opts0];
+                     _ ->
+                         Opts0
+                 end,
+         {port, No, Opts1}
+     end || No <- [1, 2, 3]].
 
-ports_without_queues() ->
-    Ports = ports(),
-    [{switch, 0, [{ports, Ports},
-                  {queues_status, disabled},
-                  {queues, []}]}].
+ports_without_queues(Type) ->
+    [{switch, 0,
+      [{ports, ports(Type)}, {queues_status, disabled}, {queues, []}]}].
+
+optical_extension_setup() ->
+    meck:new(linc_us4_oe_packet),
+    meck:expect(linc_us4_oe_packet, optical_packet_to_record,
+                fun(_, _, _) ->
+                        #linc_pkt{}
+                end),
+    setup(optical).
 
 setup() ->
+    setup(dummy).
+
+setup(Type) ->
     mock(?MOCKED),
     linc:create(?SWITCH_ID),
     linc_us4_oe_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us4_oe_sup:start_link(?SWITCH_ID),
-    Config = ports_without_queues(),
+    Config = ports_without_queues(Type),
     application:load(linc),
     application:set_env(linc, logical_switches, Config).
 
 teardown(_) ->
     linc:delete(?SWITCH_ID),
     unmock(?MOCKED).
+
+optical_extension_teardown(Args) ->
+    meck:unload(linc_us4_oe_packet),
+    teardown(Args).
 
 foreach_setup() ->
     ok = meck:reset(linc_logic),

@@ -20,6 +20,7 @@
 -module(linc_us4_oe_packet).
 
 -export([binary_to_record/3,
+         optical_packet_to_record/3,
          find/2,
          find_and_edit/3,
          find_and_edit_skip/4,
@@ -61,6 +62,9 @@ binary_to_record(Binary, SwitchId, Port) ->
                    [Binary, E1, E2]),
             #linc_pkt{}
     end.
+
+optical_packet_to_record(Packet, SwitchId, Port) ->
+    #linc_pkt{}.
 
 %%------------------------------------------------------------------------------
 %% @doc Looks for given element/tag in packet, returns 'not_found' or the

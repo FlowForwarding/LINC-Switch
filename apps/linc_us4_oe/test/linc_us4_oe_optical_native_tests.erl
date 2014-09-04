@@ -20,8 +20,8 @@ fail() ->
 
 setup() ->
     ok = meck:new(linc_oe, [passthrough]),
-    ok = meck:expect(linc_oe, add_mapping_ofp_port_to_optical_link,
-                     fun(_, _) ->
+    ok = meck:expect(linc_oe, add_mapping_ofp_to_optical_port,
+                     fun(_, _, _) ->
                              ok
                      end),
     ok = meck:new(linc_us4_oe_port),

@@ -120,8 +120,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%-----------------------------------------------------------------------------
 
 add_ofp_port_to_optical_port_mapping(SwitchId, PortNo) ->
-    linc_oe:add_mapping_ofp_port_to_optical_link(SwitchId, PortNo).
-    %% ets:insert(ofp_port_to_optical_link, {{SwitchID, PortNo}, self()}).
+    linc_oe:add_mapping_ofp_to_optical_port(SwitchId, PortNo, self()).
 
 get_optical_peer_pid(SwitchId, PortNo) ->
     linc_oe:get_optical_peer_pid(SwitchId, PortNo).

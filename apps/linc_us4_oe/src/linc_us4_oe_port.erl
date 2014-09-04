@@ -361,8 +361,8 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     case Type of
         %% TODO: Comment
         optical ->
-            case linc_us4_oe_native:optical(SwitchId, PortNo) of
-                {error, _Erro} ->
+            case linc_us4_oe_port_native:optical(SwitchId, PortNo) of
+                {error, _Error} ->
                     {stop, shutdown};
                 {ok, Pid} ->
                     ets:insert(linc:lookup(SwitchId, linc_ports),
@@ -380,7 +380,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                             linc_us4_oe_queue:attach_all(SwitchId, PortNo,
                                                          SendFun, QueuesConfig)
                     end,
-                    {ok, State#state{optical_port_pid = pid,
+                    {ok, State#state{optical_port_pid = Pid,
                                      port = Port#ofp_port{hw_addr = <<>>}},
                      0}
             end;
@@ -514,7 +514,8 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    erlang_port = Port,
                    queues = QueuesState,
                    ifindex = Ifindex,
-                   switch_id = SwitchId} = State) ->
+                   switch_id = SwitchId,
+                   optical_port_pid = undefined} = State) ->
     case check_port_config(no_fwd, PortConfig) of
         true ->
             drop;
@@ -531,6 +532,30 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                     end;
                 enabled ->
                     linc_us4_oe_queue:send(SwitchId, PortNo, QueueId, Frame)
+            end
+    end,
+    {noreply, State};
+handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
+            #state{optical_port_pid = Pid,
+                   socket = undefined,
+                   erlang_port = undefined,
+                   queues = QueuesState,
+                   port = #ofp_port{port_no = PortNo} = Port,
+                   switch_id = SwitchId} = State) ->
+    
+    case is_port_accepting_packets(Port) of
+        false ->
+            drop;
+        true ->
+            %% NOTE: byte counters are fake for optical ports
+            update_port_tx_counters(SwitchId, PortNo,
+                                    byte_size(term_to_binary(Packet))),
+            case QueuesState of
+                disabled ->
+                    linc_us4_oe_port_native:send(Pid, Packet);
+                enabled ->
+                    linc_us4_oe_queue:send(SwitchId, PortNo, QueueId,
+                                           Packet)
             end
     end,
     {noreply, State}.
@@ -552,6 +577,15 @@ handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
                                           overload_protection = Protection,
                                           sync_routing = SyncRouting} = State) ->
     [handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting)
+     || Protection /= drop_all andalso Protection /= drop_rx],
+    {noreply, State};
+handle_info({optical_data, Pid, Packet},
+            #state{port = Port,
+                   optical_port_pid = Pid,
+                   switch_id = SwitchId,
+                   overload_protection = Protection,
+                   sync_routing = SyncRouting} = State) ->
+    [handle_optical_packet(Packet, SwitchId, Port, SyncRouting)
      || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
 
@@ -633,6 +667,34 @@ handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting) ->
         false ->
             LincPkt = linc_us4_oe_packet:binary_to_record(Frame, SwitchId, PortNo),
             update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
+            NewLincPkt =
+                case check_port_config(no_packet_in, PortConfig) of
+                    false ->
+                        LincPkt;
+                    true ->
+                        LincPkt#linc_pkt{no_packet_in = true}
+                end,
+            case SyncRouting of
+                true ->
+                    linc_us4_oe_routing:route(NewLincPkt);
+                false ->
+                    linc_us4_oe_routing:spawn_route(NewLincPkt)
+            end
+    end.
+
+handle_optical_packet(Packet, SwitchId,
+                      #ofp_port{port_no = PortNo,
+                                config = PortConfig} = Port,
+                      SyncRouting) ->
+    case is_port_accepting_packets(Port) of
+        false ->
+            drop;
+        true ->
+            %% NOTE: byte counters are fake for optical ports
+            update_port_rx_counters(SwitchId, PortNo,
+                                    byte_size(term_to_binary(Packet))),
+            LincPkt = linc_us4_oe_packet:optical_packet_to_record(
+                        Packet, SwitchId, PortNo),
             NewLincPkt =
                 case check_port_config(no_packet_in, PortConfig) of
                     false ->
@@ -780,6 +842,11 @@ ports_for_switch(SwitchId, Config) ->
 
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).
+
+is_port_accepting_packets(#ofp_port{config = Config, state = State}) ->
+    (not lists:member(port_down, Config))
+        andalso (not lists:member(no_fwd, Config))
+        andalso (not lists:member(link_down, State)).
 
 setup_load_control(SwitchId, PortNo, State) ->
     CheckerReference =

@@ -19,6 +19,10 @@
 %% @doc Utility module for nicer tests.
 -module(linc_us4_oe_test_utils).
 
+-include_lib("of_protocol/include/of_protocol.hrl").
+-include_lib("of_protocol/include/ofp_v4.hrl").
+-include("linc_us4_oe.hrl").
+
 -export([mock/1,
          unmock/1,
          mock_reset/1,
@@ -143,13 +147,18 @@ mock([sup | Rest]) ->
                   end),
     mock(Rest);
 mock([packet | Rest]) ->
-    ok = meck:new(packet),
+    ok = meck:new(linc_us4_oe_packet),
+    ok = meck:expect(linc_us4_oe_packet, optical_packet_to_record,
+                     fun(_, _, _) ->
+                             #linc_pkt{}
+                     end),
     mock(Rest);
 mock([routing | Rest]) ->
     ok = meck:new(linc_us4_oe_routing),
-    ok = meck:expect(linc_us4_oe_routing, route, fun(_) ->
-                                                         ok
-                                                 end),
+    [ok,ok] = [meck:expect(linc_us4_oe_routing, Fun, fun(_) ->
+                                                            ok
+                                                     end)
+               || Fun <- [route, spawn_route]],
     mock(Rest).
 
 unmock([]) ->
@@ -179,7 +188,7 @@ unmock([sup | Rest]) ->
     ok = meck:unload(linc_us4_oe_sup),
     unmock(Rest);
 unmock([packet | Rest]) ->
-    ok = meck:unload(packet),
+    ok = meck:unload(linc_us4_oe_packet),
     unmock(Rest);
 unmock([routing | Rest]) ->
     ok = meck:unload(linc_us4_oe_routing),

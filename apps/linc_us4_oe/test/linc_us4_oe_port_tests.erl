@@ -30,7 +30,8 @@
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4_oe.hrl").
 
--define(MOCKED, [logic, port_native, packet, routing]).
+-define(MOCKED(Type), [logic, port_native]
+        ++ [X || X <- [packet, routing], Type == optical]).
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -74,8 +75,7 @@ port_test_() ->
 
 optical_port_test_() ->
     {setup,
-     fun optical_extension_setup/0,
-     fun optical_extension_teardown/1,
+     fun optical_extension_setup/0, fun teardown/1,
      [{foreach, fun foreach_setup/0, fun foreach_teardown/1,
        [{"Test message reaches optical backend",
          fun message_should_reach_optical_backend/0},
@@ -262,14 +262,13 @@ routing_fun_invoked_test(ExpectedRoutingFun) ->
 
 message_should_reach_optical_backend() ->
     ok = linc_us4_oe_port:send(pkt(), _PortNo = 1),
-    ?assertEqual(_NumOfPackets = 1,
-                 meck:num_calls(linc_us4_oe_port_native, send, 2)).
+    ?assertEqual(ok, meck:wait(linc_us4_oe_port_native, send, 2, 1000)).
 
 message_from_optical_backed_should_be_routed() ->
     Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, _PortNo = 1),
     Pid ! {optical_data, _OpticalPortPidFromMeck = <<1,1,1,1,1,1>>,
            <<"Hello Alice!">>},
-    ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
+    ?assertEqual(ok, meck:wait(linc_us4_oe_routing, spawn_route, 1, 1000)).
     
 
 
@@ -294,32 +293,24 @@ ports_without_queues(Type) ->
       [{ports, ports(Type)}, {queues_status, disabled}, {queues, []}]}].
 
 optical_extension_setup() ->
-    meck:new(linc_us4_oe_packet),
-    meck:expect(linc_us4_oe_packet, optical_packet_to_record,
-                fun(_, _, _) ->
-                        #linc_pkt{}
-                end),
     setup(optical).
 
 setup() ->
-    setup(dummy).
+    setup(ethernet).
 
 setup(Type) ->
-    mock(?MOCKED),
+    mock(?MOCKED(Type)),
     linc:create(?SWITCH_ID),
     linc_us4_oe_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us4_oe_sup:start_link(?SWITCH_ID),
     Config = ports_without_queues(Type),
     application:load(linc),
-    application:set_env(linc, logical_switches, Config).
+    application:set_env(linc, logical_switches, Config),
+    Type.
 
-teardown(_) ->
+teardown(Type) ->
     linc:delete(?SWITCH_ID),
-    unmock(?MOCKED).
-
-optical_extension_teardown(Args) ->
-    meck:unload(linc_us4_oe_packet),
-    teardown(Args).
+    unmock(?MOCKED(Type)).
 
 foreach_setup() ->
     ok = meck:reset(linc_logic),

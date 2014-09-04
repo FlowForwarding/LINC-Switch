@@ -22,7 +22,10 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         start_switch/1,
+         stop_switch/1,
+         switches/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -35,11 +38,10 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    {ok, Pid} = supervisor:start_link(?MODULE, []),
+    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, []),
     start_ofconfig(Pid),
 
-    ?DEBUG("sys.config: ~p", [application:get_env(linc,
-                                                  logical_switches)]),
+    ?DEBUG("sys.config: ~p", [application:get_env(linc, logical_switches)]),
     Config = case application:get_env(linc, of_config) of
                  {ok, enabled} ->
                      ?DEBUG("Old startup: ~p",
@@ -55,7 +57,7 @@ start_link() ->
              end,
     ?DEBUG("Configuration: ~p", [Config]),
     %% Better place for this initialization?
-    case application:gen_env(linc, optical_extension) of
+    case application:get_env(linc, optical_extension) of
         {ok, enabled} ->
             initialize_optical_extension();
         _ ->
@@ -65,22 +67,48 @@ start_link() ->
      || {switch, Id, _} <- Config],
     {ok, Pid}.
 
-start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
-    Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
-    LogicSup = {Id, {linc_sup, start_link, Opts},
-                permanent, 5000, supervisor, [linc_sup]},
-    supervisor:start_child(Sup, LogicSup).
+switches() ->
+    [{SwitchId, Pid, process_alive(Pid)} || {SwitchId, Pid, _} <- ets:tab2list(?MODULE)].
+
+start_switch(SwitchId) ->
+    case ets:lookup(?MODULE, SwitchId) of
+        [] -> unknown_switchid;
+        [{_, _, LogicSup}] ->
+            supervisor:start_child(?MODULE, LogicSup)
+    end.
+
+stop_switch(SwitchId) ->
+    case ets:lookup(?MODULE, SwitchId) of
+        [] -> unknown_switchid;
+        [{_, _, LogicSup}] ->
+            supervisor:terminate_child(?MODULE, LogicSup)
+    end.
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
 init([]) ->
+    ?MODULE = ets:new(?MODULE, [public, named_table]),
     {ok, {{one_for_one, 5, 10}, []}}.
 
 %%------------------------------------------------------------------------------
 %% Internal functions
 %%------------------------------------------------------------------------------
+
+process_alive(Pid) ->
+    case is_process_alive(Pid) of
+        true -> running;
+        false -> off
+    end.
+
+start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
+    Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
+    LogicSup = {Id, {linc_sup, start_link, Opts},
+                permanent, 5000, supervisor, [linc_sup]},
+    {ok, ChildPid} = Return = supervisor:start_child(Sup, LogicSup),
+    true = ets:insert(?MODULE, {SwitchId, ChildPid, LogicSup}),
+    Return.
 
 backend_for_switch(SwitchId) ->
     {ok, Switches} = application:get_env(linc, logical_switches),

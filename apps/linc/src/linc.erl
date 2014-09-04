@@ -43,13 +43,13 @@
 %% Utility Commands
 %%------------------------------------------------------------------------------
 start_switch(SwitchId) ->
-    linc_capable_switch_sup:start_switch(SwitchId).
+    linc_capable_sup:start_switch(SwitchId).
 
 stop_switch(SwitchId) ->
-    linc_capable_switch_sup:stop_switch(SwitchId).
+    linc_capable_sup:stop_switch(SwitchId).
 
 switches() ->
-    linc_capable_switch_sup:switches().
+    linc_capable_sup:switches().
 
 %%------------------------------------------------------------------------------
 %% Application callbacks

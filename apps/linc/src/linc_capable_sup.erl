@@ -68,47 +68,37 @@ start_link() ->
     {ok, Pid}.
 
 switches() ->
-    [{SwitchId, Pid, process_alive(Pid)} || {SwitchId, Pid, _} <- ets:tab2list(?MODULE)].
+    [{switch_id(Id), Pid} || {Id, Pid, supervisor, [linc_sup]} <- supervisor:which_children(?MODULE)].
 
 start_switch(SwitchId) ->
-    case ets:lookup(?MODULE, SwitchId) of
-        [] -> unknown_switchid;
-        [{_, _, LogicSup}] ->
-            supervisor:start_child(?MODULE, LogicSup)
-    end.
+    supervisor:restart_child(?MODULE, linc_sup_id(SwitchId)).
 
 stop_switch(SwitchId) ->
-    case ets:lookup(?MODULE, SwitchId) of
-        [] -> unknown_switchid;
-        [{_, _, LogicSup}] ->
-            supervisor:terminate_child(?MODULE, LogicSup)
-    end.
+    supervisor:terminate_child(?MODULE, linc_sup_id(SwitchId)).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
 %%------------------------------------------------------------------------------
 
 init([]) ->
-    ?MODULE = ets:new(?MODULE, [public, named_table]),
     {ok, {{one_for_one, 5, 10}, []}}.
 
 %%------------------------------------------------------------------------------
 %% Internal functions
 %%------------------------------------------------------------------------------
 
-process_alive(Pid) ->
-    case is_process_alive(Pid) of
-        true -> running;
-        false -> off
-    end.
+switch_id(Id) ->
+    {match,[SwitchIdS]} = re:run(atom_to_list(Id), "([[:digit:]]+)", [{capture, first, list}]),
+    list_to_integer(SwitchIdS).
+
+linc_sup_id(SwitchId) ->
+    list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup").
 
 start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
-    Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
+    Id = linc_sup_id(SwitchId),
     LogicSup = {Id, {linc_sup, start_link, Opts},
                 permanent, 5000, supervisor, [linc_sup]},
-    {ok, ChildPid} = Return = supervisor:start_child(Sup, LogicSup),
-    true = ets:insert(?MODULE, {SwitchId, ChildPid, LogicSup}),
-    Return.
+    supervisor:start_child(Sup, LogicSup).
 
 backend_for_switch(SwitchId) ->
     {ok, Switches} = application:get_env(linc, logical_switches),

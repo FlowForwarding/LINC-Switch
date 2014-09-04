@@ -66,24 +66,32 @@ getting_optical_peer_for_nonexistent_ofp_port_should_fail() ->
 ofp_to_optical_port_table_should_initialize_correctly() ->
     %% GIVEN
     linc_oe:initialize(),
-    OpticalPorts = get_optical_ports_from_config(),
-    [NotReady | Ready] = OpticalPorts,
+    Links = get_optical_links_from_config(),
+    Ports = get_optical_ports_from_config(),
+    %% [NotReady | Ready] = OpticalPorts,
 
     %% WHEN
-    [linc_oe:add_mapping_ofp_to_optical_port(SId, PNo, self())
-     || {SId, PNo} <- Ready],
+    [linc_oe:add_mapping_ofp_to_optical_port(
+       SId, PNo, get_pid_for_port_no(PNo)) || {SId, PNo} <- Ports],
 
     %% THEN
-    [?assertEqual(self(), linc_oe:get_optical_peer_pid(SId, PNo))
-     || {SId, PNo} <- Ready],
-    ?assertThrow(optical_peer_not_ready,
-                 linc_oe:get_optical_peer_pid(element(1, NotReady),
-                                             element(2, NotReady))).
+    [begin
+         ExpectedPid = get_pid_for_port_no(element(2, PeerEnd)),
+         ?assertEqual(ExpectedPid,
+                      linc_oe:get_optical_peer_pid(SId, PNo))
+     end || {{SId, PNo}, PeerEnd} <- Links].
+    %% ?assertThrow(optical_peer_not_ready,
+    %%              linc_oe:get_optical_peer_pid(element(1, NotReady),
+    %%                                          element(2, NotReady))).
 
 %% Helpers ------------------------------------------------------------
 
 set_optical_links_config() ->
     application:set_env(linc, optical_links, ?OPTICAL_LINKS).
+
+get_optical_links_from_config() ->
+    {ok, Links} = application:get_env(linc, optical_links),
+    Links.
 
 get_optical_ports_from_config() ->
     lists:flatten(
@@ -94,3 +102,6 @@ get_non_optical_port() ->
     APort = {0, 1},
     ?assertNot(lists:member(APort, Optical)),
     APort.
+
+get_pid_for_port_no(PortNo) ->
+    list_to_pid("<0.20." ++ integer_to_list(PortNo) ++ ">").

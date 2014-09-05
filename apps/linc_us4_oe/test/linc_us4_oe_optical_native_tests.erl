@@ -19,10 +19,14 @@ fail() ->
     ?assert(false).
 
 setup() ->
-    ok = meck:new(linc_oe, [passthrough]),
+    ok = meck:new(linc_oe),
     ok = meck:expect(linc_oe, add_mapping_ofp_to_optical_port,
                      fun(_, _, _) ->
                              ok
+                     end),
+    ok = meck:expect(linc_oe, get_optical_peer_pid,
+                     fun(_, _) ->
+                             throw(optical_peer_not_ready)
                      end),
     ok = meck:new(linc_us4_oe_port),
     ok = meck:expect(linc_us4_oe_port, set_state,

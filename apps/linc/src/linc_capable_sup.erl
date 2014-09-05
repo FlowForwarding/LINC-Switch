@@ -55,9 +55,10 @@ start_link() ->
              end,
     ?DEBUG("Configuration: ~p", [Config]),
     %% Better place for this initialization?
-    case application:gen_env(linc, optical_extension) of
-        {ok, enabled} ->
-            initialize_optical_extension();
+    %% The optical links are permanent througt the capable switch life
+    case application:get_env(linc, optical_links) of
+        {ok, Links} ->
+            initialize_optical_extension(Links);
         _ ->
             ok
     end,
@@ -124,5 +125,5 @@ start_dependency(App) ->
                    [App, Error])
     end.
 
-initialize_optical_extension() ->
-    linc_oe:initialize().
+initialize_optical_extension(Links) ->
+    linc_oe:initialize(Links).

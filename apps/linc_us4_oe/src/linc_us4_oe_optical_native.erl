@@ -39,7 +39,7 @@ port_down(Pid) ->
 
 init([SwitchId, PortNo, Pid]) ->
     add_ofp_port_to_optical_port_mapping(SwitchId, PortNo),
-    ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
+    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     {ok, link_down, #state{ofp_port_switch_id = SwitchId,
                            ofp_port_no = PortNo,
                            ofp_port_pid = Pid}, 0}.
@@ -69,7 +69,7 @@ link_down({link_up, PeerPid}, #state{ofp_port_switch_id = SwitchId,
             ok
     end,
     Ref = monitor(process, PeerPid),
-    ok = linc_us4_oe_port:set_state(SwitchId, PortNo, []),
+    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, []),
     {next_state, link_up, State#state{optical_peer_pid = PeerPid,
                                       optical_peer_monitor = Ref}}.
 
@@ -129,7 +129,7 @@ handle_link_down(#state{ofp_port_switch_id = SwitchId,
                         ofp_port_no = PortNo,
                         optical_peer_pid = PeerPid,
                         optical_peer_monitor = Ref} = State) ->
-    ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
+    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     gen_fsm:send_event(PeerPid, {link_down, self()}),
     demonitor(Ref),
     State#state{optical_peer_pid = undefined,

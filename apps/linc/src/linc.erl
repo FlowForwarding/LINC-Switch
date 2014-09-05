@@ -23,7 +23,8 @@
 
 %% Application callbacks
 -export([start/2,
-         stop/1]).
+         stop/1,
+         switches/0]).
 
 -export([create/1,
          delete/1,
@@ -32,7 +33,23 @@
          controllers_for_switch/2,
          controllers_listener_for_switch/2]).
 
+%% command line API
+-export([start_switch/1,
+         stop_switch/1]).
+
 -include("linc_logger.hrl").
+
+%%------------------------------------------------------------------------------
+%% Utility Commands
+%%------------------------------------------------------------------------------
+start_switch(SwitchId) ->
+    linc_capable_sup:start_switch(SwitchId).
+
+stop_switch(SwitchId) ->
+    linc_capable_sup:stop_switch(SwitchId).
+
+switches() ->
+    linc_capable_sup:switches().
 
 %%------------------------------------------------------------------------------
 %% Application callbacks

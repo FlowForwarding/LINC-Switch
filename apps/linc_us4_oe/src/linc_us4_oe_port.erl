@@ -610,6 +610,7 @@ handle_info(_Info, State) ->
 terminate(_Reason, #state{port = #ofp_port{port_no = PortNo},
                           switch_id = SwitchId,
                           periodic_load_checker_ref = LoadCheckerRef} = State) ->
+    ?DEBUG("terminate switch ~p port ~p", [SwitchId, PortNo]),
     case queues_enabled(SwitchId) of
         true ->
             linc_us4_oe_queue:detach_all(SwitchId, PortNo);

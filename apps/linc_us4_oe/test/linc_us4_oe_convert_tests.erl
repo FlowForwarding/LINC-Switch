@@ -23,6 +23,7 @@
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
+-include_lib("linc/include/linc_oe.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 
@@ -46,6 +47,7 @@ convert_test_() ->
       {"Convert pkt:packet() to ofp_field(): ICMPv6", fun icmpv6/0},
       {"Convert pkt:packet() to ofp_field(): TCP", fun tcp/0},
       {"Convert pkt:packet() to ofp_field(): UDP", fun udp/0},
+      {"Convert pkt:packet() to ofp_field(): OCH_SIGID", fun och_sigid/0},
       {"Convert pkt:packet() to ofp_field(): unknown", fun unknown/0}
      ]}.
 
@@ -141,6 +143,10 @@ udp() ->
     Packet = [#udp{sport = 1, dport = 2}],
     check_packet(Packet, [{udp_src, <<1:16>>},
                           {udp_dst, <<2:16>>}]).
+
+och_sigid() ->
+    Packet = [#och_sigid{channel_number = CN = <<1:16>>}],
+    check_packet(Packet, [{och_sigid, <<0:16, CN/binary, 0:16>>}]).
 
 unknown() ->
     ok.

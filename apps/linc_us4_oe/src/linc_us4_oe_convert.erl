@@ -25,6 +25,7 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
+-include_lib("linc/include/linc_oe.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4_oe.hrl").
 
@@ -139,5 +140,7 @@ header_fields(#udp{sport = SPort,
                    dport = DPort}) ->
     [ofp_field(udp_src, <<SPort:16>>),
      ofp_field(udp_dst, <<DPort:16>>)];
+header_fields(#och_sigid{channel_number = CN}) ->
+    [ofp_field(och_sigid, <<0:16, CN/binary, 0:16>>)];
 header_fields(_Other) ->
     [].

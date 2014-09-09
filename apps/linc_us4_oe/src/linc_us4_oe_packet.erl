@@ -31,6 +31,7 @@
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("linc/include/linc_logger.hrl").
+-include_lib("linc/include/linc_oe.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4_oe.hrl").
 
@@ -322,6 +323,19 @@ set_field(#ofp_field{ name = udp_src, value = <<Value:16>> }, Pkt) ->
 set_field(#ofp_field{ name = udp_dst, value = <<Value:16>> }, Pkt) ->
     find_and_edit(Pkt, udp, fun(H) -> H#udp{dport = Value} end);
 
+%% Optical extension set field
+set_field(#ofp_field{name = och_sigid = Key, value = <<Value:6/bytes>>},
+          Pkt) ->
+    <<_:2/bytes, Channel:2/bytes, _:2/bytes>> = Value,
+    case find(Pkt, Key) of
+        not_found ->
+            [#och_sigid{channel_number = Channel} | Pkt];
+        {_Idx, H} ->
+            %% Assumption that #och_sigid can occur once
+            lists:keyreplace(Key, 1, Pkt,
+                             H#och_sigid{channel_number = Channel})
+    end;
+        
 set_field(_, Pkt) ->
     Pkt.
 

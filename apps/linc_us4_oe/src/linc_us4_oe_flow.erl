@@ -692,6 +692,9 @@ prerequisite_for(openflow_basic, pbb_isid) ->
     [{{openflow_basic,eth_type},<<16#88E7:16>>}];
 prerequisite_for(openflow_basic, ipv6_exthdr) ->
     [{{openflow_basic,eth_type},<<16#86dd:16>>}];
+prerequisite_for(openflow_basic, och_sigid) ->
+    %% TODO: add in_port as prerequsisite
+    [{{openflow_basic, och_sigtype}, any}];
 prerequisite_for(openflow_basic, _) ->
     [].
 
@@ -706,6 +709,9 @@ test_prereq({{Class,Name},Value},Previous) ->
     case [Field || #ofp_field{class=C,name=N}=Field <- Previous, C==Class, N==Name] of
         [#ofp_field{value=Value}] ->
             true;
+        [#ofp_field{value = _AnyValue}] when Value == any ->
+            true;
+        
         _ ->
             false
     end;

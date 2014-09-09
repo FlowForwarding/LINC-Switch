@@ -36,6 +36,7 @@ flow_mod_test_() ->
        ,{"Prerequisite field present", fun prerequisite_field_present/0}
        ,{"Prerequisite field present bad val", fun prerequisite_field_present_bad_val/0}
        ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
+       ,{"Prerequisite field can have any value", fun prerequisite_field_can_have_any_value/0}
        ,{"Goto table with smaller table_id", fun goto_backwards/0}
        ,{"Valid out port", fun valid_out_port/0}
        ,{"Invalid out port", fun invalid_out_port/0}
@@ -167,6 +168,31 @@ prerequisite_field_missing() ->
                                                     max_len = 1400}]}]},
     ?assertEqual({error,{bad_match,bad_prereq}},
                  linc_us4_oe_flow:modify(?SWITCH_ID, FlowModAdd)).
+
+prerequisite_field_can_have_any_value() ->
+    [begin
+         FlowModAdd = #ofp_flow_mod{
+                         cookie = <<0,0,0,0,0,0,0,0>>,
+                         cookie_mask = <<0,0,0,0,0,0,0,0>>,
+                         table_id = 0,command = add,idle_timeout = 0,
+                         hard_timeout = 0,priority = 5,buffer_id = no_buffer,
+                         out_port = any,out_group = any,flags = [],
+                         match =
+                             #ofp_match{
+                                fields =
+                                    [#ofp_field{
+                                        name = och_sigtype,
+                                        value = <<SigType>>},
+                                     #ofp_field{
+                                        name = och_sigid,
+                                        value = <<111:48>>}]},
+                         instructions =
+                             [#ofp_instruction_write_actions{
+                                 actions =
+                                     [#ofp_action_output{port = 15,
+                                                         max_len = 1400}]}]},
+         ?assertEqual(ok, linc_us4_oe_flow:modify(?SWITCH_ID, FlowModAdd))
+     end || SigType <- lists:seq(1,10)].
 
 %% Goto a table with smaller table_id
 goto_backwards() ->

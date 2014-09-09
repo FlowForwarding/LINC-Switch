@@ -27,6 +27,7 @@
 -include_lib("of_protocol/include/ofp_v4.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
+-include_lib("linc/include/linc_oe.hrl").
 -include("linc_us4_oe.hrl").
 
 -define(MOCKED, []).
@@ -66,6 +67,46 @@ corner_cases_packet_edit_test_() ->
       {"Edit packet: skip header", skip_header()},
       {"Edit packet: outermost header", outermost_header()}
      ]}.
+
+optical_extension_set_field_test_() ->
+    {setup,
+     fun setup/0,
+     fun teardown/1,
+     [{"Edit packet: set OCH channel number (lambda)",
+       fun och_channel_number_should_be_set/0},
+      {"Edit packet: replace OCH channel number (lambda)",
+       fun och_channel_number_should_be_replaced/0}]}.
+
+och_channel_number_should_be_set() ->
+    %% GIVEN
+    Channel = <<1:16>>,
+    FieldToSet = #ofp_field{name = och_sigid,
+                            value = <<0:16, Channel/binary, 0:16>>},
+    ExpectedPkt = [#och_sigid{channel_number = Channel}
+                   |  EthPkt = []],
+
+    %% WHEN
+    ActualPkt = linc_us4_oe_packet:set_field(FieldToSet, EthPkt),
+
+    %% THEN
+    ?assertEqual(ExpectedPkt, ActualPkt).
+
+och_channel_number_should_be_replaced() ->
+    %% GIVEN
+    NewChannel = <<2:16>>,
+    FieldToSet = #ofp_field{name = och_sigid,
+                            value = <<0:16, NewChannel/binary, 0:16>>},
+    ExpectedPkt = [#och_sigid{channel_number = NewChannel} | []],
+
+    OldChannel = <<1:16>>,
+    EthPkt = [#och_sigid{channel_number = OldChannel}],
+
+    %% WHEN
+    ActualPkt = linc_us4_oe_packet:set_field(FieldToSet, EthPkt),
+
+    %% THEN
+    ?assertEqual(ExpectedPkt, ActualPkt).
+
 
 no_header() ->
     EmptyHeader = {[], {eth_type, ?NEW_VAL(16)}, []},

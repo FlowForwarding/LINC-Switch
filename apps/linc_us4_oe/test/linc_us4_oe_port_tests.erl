@@ -165,6 +165,18 @@ port_desc_request() ->
                       ?assertMatch(#ofp_port{}, E)
               end, Body).
 
+optical_port_desc_request() ->
+    Desc = linc_us4_oe_port:get_desc(?SWITCH_ID),
+    ?assertMatch(#ofp_experimenter_reply{}, Desc),
+    ?assertMatch(#ofp_experimenter_reply{experimenter = 16#748771,
+                                         exp_type = port_description},
+                 Desc).
+    %% Data = Desc#ofp_port_desc_reply.data,
+    %% ?assert(length(Data) =/= 0),
+    %% lists:map(fun(E) ->
+    %%                   ?assertMatch(#ofp_port{}, E)
+    %%           end, Data).
+
 port_stats_request() ->
     BadPort = 999,
     StatsRequest1 = #ofp_port_stats_request{port_no = BadPort},

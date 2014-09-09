@@ -44,7 +44,9 @@
          set_advertised_features/3,
          get_all_ports_state/1,
          get_all_queues_state/1,
-         is_valid/2]).
+         is_valid/2,
+         optical_down/2,
+         optical_up/2]).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -291,6 +293,22 @@ is_valid(_SwitchId, PortNo) when is_atom(PortNo)->
 is_valid(SwitchId, PortNo) when is_integer(PortNo)->
     ets:member(linc:lookup(SwitchId, linc_ports), PortNo).
 
+optical_down(SwitchId, PortNo) ->
+    case get_port_pid(SwitchId, PortNo) of
+        {error, _} ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, optical_down)
+    end.
+
+optical_up(SwitchId, PortNo) ->
+    case get_port_pid(SwitchId, PortNo) of
+        {error, _} ->
+            {error, {bad_request, bad_port}};
+        Pid ->
+            gen_server:call(Pid, optical_up)
+    end.
+
 %%%-----------------------------------------------------------------------------
 %%% gen_server callbacks
 %%%-----------------------------------------------------------------------------
@@ -504,7 +522,13 @@ handle_call({set_advertised_features, AdvertisedFeatures}, _From,
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_info, _From, #state{resource_id = ResourceId,
                                     port = Port} = State) ->
-    {reply, {ResourceId, Port}, State}.
+    {reply, {ResourceId, Port}, State};
+handle_call(optical_down, _From,
+                            #state{optical_port_pid = undefined} = State) ->
+    {reply, not_optical_port, State};
+handle_call(optical_down, _From, #state{optical_port_pid = Pid} = State) ->
+    Reply = linc_us4_oe_optical_native:port_down(Pid),
+    {reply, Reply, State}.
 
 %% @private
 handle_cast({send, #linc_pkt{switch_id = SwitchId, in_port = InPort,

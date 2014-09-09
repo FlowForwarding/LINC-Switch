@@ -24,7 +24,10 @@
 %% Application callbacks
 -export([start/2,
          stop/1,
-         switches/0]).
+         switches/0,
+         port_down/2,
+         port_up/2,
+         ports/1]).
 
 -export([create/1,
          delete/1,
@@ -50,6 +53,16 @@ stop_switch(SwitchId) ->
 
 switches() ->
     linc_capable_sup:switches().
+
+port_down(SwitchId, PortNo) ->
+    linc_us4_oe_port:optical_down(SwitchId, PortNo).
+
+port_up(SwitchId, PortNo) ->
+    linc_us4_oe_port:optical_up(SwitchId, PortNo).
+
+ports(SwitchId) ->
+    linc_logic:get_backend_ports(SwitchId).
+
 
 %%------------------------------------------------------------------------------
 %% Application callbacks

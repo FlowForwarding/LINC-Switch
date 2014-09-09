@@ -31,7 +31,7 @@ send(Pid, Msg) ->
     gen_fsm:send_event(Pid, {send, Msg}).
 
 port_down(Pid) ->
-    gen_fsm:sync_send_all_state_event(Pid, port_down).
+    gen_fsm:send_all_state_event(Pid, port_down).
 
 %%%-----------------------------------------------------------------------------
 %%% gen_fsm callbacks
@@ -69,10 +69,13 @@ link_down({link_up, PeerPid}, #state{ofp_port_switch_id = SwitchId,
             ok
     end,
     Ref = monitor(process, PeerPid),
-    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, []),
+    ok = linc_us4_oe_port:set_state(SwitchId, PortNo, []),
     {next_state, link_up, State#state{optical_peer_pid = PeerPid,
-                                      optical_peer_monitor = Ref}}.
-
+                                      optical_peer_monitor = Ref}};
+link_down(_Event, State) ->
+    % port is waiting for peer to come up after simulated link failure.
+    % ignore sends/recvs until link is back up.
+    {next_state, link_down, State}.
 
 link_up({send, Msg}, #state{optical_peer_pid = PeerPid} = State) ->
     gen_fsm:send_event(PeerPid, {recv, Msg}),
@@ -81,25 +84,30 @@ link_up({recv, Msg}, #state{ofp_port_pid = Pid} = State) ->
     Pid ! {optical_data, self(), Msg},
     {next_state, link_up, State};
 link_up({link_down, PeerPid},
-        #state{optical_peer_pid = PeerPid} = State0) ->
-    State1 = handle_link_down(State0),
-    {next_state, link_down, State1}.
+        % link down sent from the peer port
+        #state{ofp_port_switch_id = SwitchId,
+               ofp_port_no = PortNo,
+               optical_peer_pid = PeerPid} = State) ->
+        ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
+    % wait for the peer to come back up
+    {next_state, link_down, State}.
 
 port_down(port_up, State) ->
+    % this port is simulating the link failure.
+    % wait for the admin to restore the link.
     {next_state, link_down, State, 0};
 port_down(_Event, State) ->
     {next_state, port_down, State}.
 
+handle_sync_event(Event, _From, _StateName, State) ->
+    {stop, bad_event, {bad_event, Event}, State}.
 
-handle_sync_event(port_down, _From, _StateName, State0) ->
+handle_event(port_down, _StateName, State0) ->
+    % port down sent by command utility
     State1 = handle_link_down(State0),
     {next_state, port_down, State1};
-handle_sync_event(stop, _From, _StateName, State) ->
-    {stop, normal, ok, State}.
-
-
-handle_event(_Event, StateName, State) ->
-    {next_state, StateName, State}.
+handle_event(stop, _StateName, State) ->
+    {stop, normal, State}.
 
 handle_info({'DOWN', Ref, process, PeerPid, _Reason}, _StateName,
             #state{optical_peer_pid = PeerPid,
@@ -129,7 +137,7 @@ handle_link_down(#state{ofp_port_switch_id = SwitchId,
                         ofp_port_no = PortNo,
                         optical_peer_pid = PeerPid,
                         optical_peer_monitor = Ref} = State) ->
-    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
+    ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     gen_fsm:send_event(PeerPid, {link_down, self()}),
     demonitor(Ref),
     State#state{optical_peer_pid = undefined,

@@ -528,6 +528,12 @@ handle_call(optical_down, _From,
     {reply, not_optical_port, State};
 handle_call(optical_down, _From, #state{optical_port_pid = Pid} = State) ->
     Reply = linc_us4_oe_optical_native:port_down(Pid),
+    {reply, Reply, State};
+handle_call(optical_up, _From,
+                            #state{optical_port_pid = undefined} = State) ->
+    {reply, not_optical_port, State};
+handle_call(optical_up, _From, #state{optical_port_pid = Pid} = State) ->
+    Reply = linc_us4_oe_optical_native:port_up(Pid),
     {reply, Reply, State}.
 
 %% @private

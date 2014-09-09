@@ -3,7 +3,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/3, stop/1, send/2, port_down/1]).
+-export([start_link/3, stop/1, send/2, port_down/1, port_up/1]).
 
 %% gen_fsm callbacks
 -export([init/1, link_up/2, link_down/2, handle_event/3, port_down/2,
@@ -33,13 +33,16 @@ send(Pid, Msg) ->
 port_down(Pid) ->
     gen_fsm:send_all_state_event(Pid, port_down).
 
+port_up(Pid) ->
+    gen_fsm:send_event(Pid, port_up).
+
 %%%-----------------------------------------------------------------------------
 %%% gen_fsm callbacks
 %%%-----------------------------------------------------------------------------
 
 init([SwitchId, PortNo, Pid]) ->
     add_ofp_port_to_optical_port_mapping(SwitchId, PortNo),
-    %% ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
+    % ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     {ok, link_down, #state{ofp_port_switch_id = SwitchId,
                            ofp_port_no = PortNo,
                            ofp_port_pid = Pid}, 0}.
@@ -90,7 +93,7 @@ link_up({link_down, PeerPid},
                optical_peer_pid = PeerPid} = State) ->
         ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     % wait for the peer to come back up
-    {next_state, link_down, State}.
+    {next_state, link_down, State#state{optical_peer_pid = undefined}}.
 
 port_down(port_up, State) ->
     % this port is simulating the link failure.

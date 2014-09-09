@@ -199,14 +199,15 @@ convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
                        CapableSwitchPorts, CapableSwitchQueues) ->
     {ports, LogicalPorts} = lists:keyfind(ports, 1, LogicalSwitchConfig),
     {NewPorts, NewQueues} =
-        lists:foldl(fun({port, PortNo, QueuesConfig}, {Ports, Queues}) ->
+        lists:foldl(fun({port, PortNo, QueuesConfig, PortLabel}, {Ports, Queues}) ->
                             {port, PortNo, PortConfig} =
                                 lists:keyfind(PortNo, 2, CapableSwitchPorts),
                             PortRate = logical_switch_port_rate(PortConfig),
                             NewPortQueues = convert_queues(PortNo, PortRate,
                                                            QueuesConfig,
                                                            CapableSwitchQueues),
-                            NewPort = {port, PortNo, PortConfig},
+                            %% TODO: Port label not present
+                            NewPort = {port, PortNo, [PortLabel | PortConfig]},
                             {[NewPort | Ports], [NewPortQueues | Queues]}
                     end, {[], []}, LogicalPorts),
     {controllers, Controllers} = lists:keyfind(controllers, 1,

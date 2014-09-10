@@ -75,7 +75,9 @@ optical_extension_set_field_test_() ->
      [{"Edit packet: set OCH channel number (lambda)",
        fun och_channel_number_should_be_set/0},
       {"Edit packet: replace OCH channel number (lambda)",
-       fun och_channel_number_should_be_replaced/0}]}.
+       fun och_channel_number_should_be_replaced/0},
+      {"Edit optical record: remove OCH optical data from packet",
+       fun och_optical_data_should_be_removed_from_packet/0}]}.
 
 och_channel_number_should_be_set() ->
     %% GIVEN
@@ -107,6 +109,19 @@ och_channel_number_should_be_replaced() ->
     %% THEN
     ?assertEqual(ExpectedPkt, ActualPkt).
 
+och_optical_data_should_be_removed_from_packet() ->
+    %% GIVEN
+    OpticalPacket = [#och_sigtype{value = <<"Specialized">>},
+                     #och_sigid{channel_number = <<"Kona">>}
+                     | ExpectedEthPakcet = []],
+
+    %% WHEN
+    EthPacket =
+        linc_us4_oe_packet:optical_record_to_ethernet_record(
+          OpticalPacket),
+
+    %% THEN
+    ?assertEqual(ExpectedEthPakcet, EthPacket).
 
 no_header() ->
     EmptyHeader = {[], {eth_type, ?NEW_VAL(16)}, []},

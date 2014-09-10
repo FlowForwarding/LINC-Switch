@@ -512,7 +512,8 @@ handle_call(get_info, _From, #state{resource_id = ResourceId,
     {reply, {ResourceId, Port}, State}.
 
 %% @private
-handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
+handle_cast({send, #linc_pkt{switch_id = SwitchId, in_port = InPort,
+                             packet = Packet0, queue_id = QueueId}},
             #state{socket = Socket,
                    port = #ofp_port{port_no = PortNo,
                                     config = PortConfig},
@@ -521,11 +522,17 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    ifindex = Ifindex,
                    switch_id = SwitchId,
                    optical_port_pid = undefined} = State) ->
+    Packet1 = case linc_oe:is_port_optical(SwitchId, InPort) of
+                  true ->
+                      linc_us4_oe_packet:optical_record_to_ethernet_record(Packet0);
+                  false ->
+                      Packet0
+              end,
     case check_port_config(no_fwd, PortConfig) of
         true ->
             drop;
         false ->
-            Frame = pkt:encapsulate(Packet),
+            Frame = pkt:encapsulate(Packet1),
             update_port_tx_counters(SwitchId, PortNo, byte_size(Frame)),
             case QueuesState of
                 disabled ->

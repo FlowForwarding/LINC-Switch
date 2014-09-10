@@ -461,6 +461,13 @@ apply_list(#linc_pkt{packet = Packet} = Pkt,
     Packet2 = linc_us4_oe_packet:set_field(F, Packet),
     apply_list(Pkt#linc_pkt{packet = Packet2}, Rest, SideEffects);
 
+apply_list(#linc_pkt{packet = Packet} = Pkt,
+           [#ofp_action_experimenter{
+               experimenter = ?INFOBLOX_EXPERIMENTER,
+               data = #ofp_action_set_field{field = Field}}
+            | Rest], SideEffects) ->
+    Packet2 = linc_us4_oe_packet:set_field(Field, Packet),
+    apply_list(Pkt#linc_pkt{packet = Packet2}, Rest, SideEffects);
 apply_list(Pkt, [#ofp_action_experimenter{experimenter = _Exp} | Rest],
            SideEffects) ->
     %% TODO: Add functionality ot invoke experimenter callback module based on

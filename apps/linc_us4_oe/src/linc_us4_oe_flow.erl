@@ -878,6 +878,18 @@ validate_action(_SwitchId, #ofp_action_set_field{field=Field}, Match) ->
         false ->
             {error,{bad_action,bad_argument}}
     end;
+validate_action(_SwitchId,
+                #ofp_action_experimenter{
+                   experimenter = ?INFOBLOX_EXPERIMENTER,
+                   data = #ofp_action_set_field{field = Field}},
+                _Match) ->
+    case Field#ofp_field.name of
+        och_sigid ->
+            ok;
+        _ ->
+            %% TODO: Return appropriate codes
+            {error,{bad_action,bad_type}}
+    end;
 validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
     {error,{bad_action,bad_type}}.
 

@@ -571,7 +571,8 @@ scenario(hello_with_bad_version) ->
     [];
 
 scenario(oe_set_field_och_sigid) ->
-    [flow_mod_set_field_och_sigid_on_eth(),
+    [oe_port_desc_request(),
+     flow_mod_set_field_och_sigid_on_eth(),
      flow_mod_change_och_sigid(),
      flow_mod_remove_och_sigid()];
 scenario(_Unknown) ->
@@ -835,6 +836,12 @@ delete_all_groups() ->
 
 port_desc_request() ->
     message(#ofp_port_desc_request{}).
+
+oe_port_desc_request() ->
+    message(#ofp_experimenter_request{
+               experimenter = ?INFOBLOX_EXPERIMENTER,
+               exp_type = port_desc,
+               data = <<>>}).
 
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).

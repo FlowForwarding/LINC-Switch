@@ -102,6 +102,8 @@ port_down(port_up, State) ->
 port_down(_Event, State) ->
     {next_state, port_down, State}.
 
+handle_sync_event(stop, _From, _StateName, State) ->
+    {stop, normal, ok, State};
 handle_sync_event(Event, _From, _StateName, State) ->
     {stop, bad_event, {bad_event, Event}, State}.
 

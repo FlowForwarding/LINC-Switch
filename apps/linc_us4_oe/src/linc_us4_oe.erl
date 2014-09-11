@@ -59,7 +59,8 @@
          ofp_meter_mod/2,
          ofp_meter_stats_request/2,
          ofp_meter_config_request/2,
-         ofp_meter_features_request/2]).
+         ofp_meter_features_request/2,
+         ofp_experimenter_request/2]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -410,6 +411,15 @@ ofp_meter_config_request(#state{switch_id = SwitchId} = State,
 
 ofp_meter_features_request(State, #ofp_meter_features_request{}) ->
     {reply, linc_us4_oe_meter:get_features(), State}.
+
+%% Experimenters ----------------------------------------------------------------------
+
+ofp_experimenter_request(#state{switch_id = SwitchId} = State,
+                         #ofp_experimenter_request{
+                            experimenter = ?INFOBLOX_EXPERIMENTER,
+                            exp_type = port_desc}) ->
+    Reply = linc_us4_oe_port:get_experimental_desc(SwitchId),
+    {reply, Reply, State}.
 
 %%%-----------------------------------------------------------------------------
 %%% Helpers

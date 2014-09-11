@@ -32,6 +32,13 @@
 
 -define(MOCKED(Type), [logic, port_native]
         ++ [X || X <- [packet, routing], Type == optical]).
+
+-define(OE_PORT_DESC_REPLY_PATTERN,
+        #ofp_experimenter_reply{
+           experimenter = ?INFOBLOX_EXPERIMENTER,
+           exp_type = port_desc,
+           data = #ofp_port_desc_reply_v6{}}).
+
 -define(SWITCH_ID, 0).
 
 %% Tests -----------------------------------------------------------------------
@@ -79,9 +86,10 @@ optical_port_test_() ->
      [{foreach, fun foreach_setup/0, fun foreach_teardown/1,
        [{"Test message reaches optical backend",
          fun message_should_reach_optical_backend/0},
-        %% FAIL!!!
         {"Test message from optical backend is routed",
-         fun message_from_optical_backed_should_be_routed/0}]}]}.
+         fun message_from_optical_backed_should_be_routed/0},
+        {"Test experimantal port desc",
+         fun experimental_port_desc_should_be_contructed/0}]}]}.
 
 port_mod() ->
     BadPort = 999,
@@ -164,18 +172,6 @@ port_desc_request() ->
     lists:map(fun(E) ->
                       ?assertMatch(#ofp_port{}, E)
               end, Body).
-
-optical_port_desc_request() ->
-    Desc = linc_us4_oe_port:get_desc(?SWITCH_ID),
-    ?assertMatch(#ofp_experimenter_reply{}, Desc),
-    ?assertMatch(#ofp_experimenter_reply{experimenter = 16#748771,
-                                         exp_type = port_description},
-                 Desc).
-    %% Data = Desc#ofp_port_desc_reply.data,
-    %% ?assert(length(Data) =/= 0),
-    %% lists:map(fun(E) ->
-    %%                   ?assertMatch(#ofp_port{}, E)
-    %%           end, Data).
 
 port_stats_request() ->
     BadPort = 999,
@@ -281,7 +277,33 @@ message_from_optical_backed_should_be_routed() ->
     Pid ! {optical_data, _OpticalPortPidFromMeck = <<1,1,1,1,1,1>>,
            <<"Hello Alice!">>},
     ?assertEqual(ok, meck:wait(linc_us4_oe_routing, spawn_route, 1, 1000)).
-    
+
+experimental_port_desc_should_be_contructed() ->
+    %% GIVEN
+    %% Config for logical switch 1 with 3 ports is set up 
+
+    %% WHEN
+    Desc = linc_us4_oe_port:get_experimental_desc(?SWITCH_ID),
+
+    %% THEN
+    ?assertMatch(?OE_PORT_DESC_REPLY_PATTERN, Desc),
+    assert_port_desc_matches_port_from_config(Desc).
+
+assert_port_desc_matches_port_from_config(Desc) ->
+    PortDescs =
+        Desc#ofp_experimenter_reply.data#ofp_port_desc_reply_v6.body,
+    ?assert(length(PortDescs) =/= 0),
+    ExpectedPorts = get_ports_from_config_for_switch(?SWITCH_ID),
+    lists:map(fun(E) ->
+                      ?assertMatch(#ofp_port_v6{}, E),
+                      PortNo = E#ofp_port_v6.port_no,
+                      ?assert(lists:keymember(PortNo, 2, ExpectedPorts))
+              end, PortDescs).
+
+get_ports_from_config_for_switch(SwitchId) ->
+    [{switch, SwitchId, Config}] = ports_without_queues(optical),
+    {ports, ExpectedPorts} = lists:keyfind(ports, 1, Config),
+    ExpectedPorts.
 
 
 %% Fixtures --------------------------------------------------------------------

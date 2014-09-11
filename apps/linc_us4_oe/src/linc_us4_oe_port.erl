@@ -34,6 +34,7 @@
          modify/2,
          send/2,
          get_desc/1,
+         get_experimental_desc/1,
          get_stats/2,
          get_state/2,
          set_state/3,
@@ -66,6 +67,20 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
+
+-define(DEFAULT_OPTICAL_FEATURES,
+        [#ofp_port_optical_transport_application_code{
+            feature_type = opt_interface_class,
+            oic_type = itut_g698_1,
+            app_code = <<"Hello ONOS!":(15*8)>>}]).
+
+-define(DEFAULT_OPTICAL_PROPERTIES,
+        [#ofp_port_desc_prop_optical_transport{
+            type = optical_transport,
+            port_signal_type = 1,
+            reserved = 0,
+            features = ?DEFAULT_OPTICAL_FEATURES}
+        ]).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -190,6 +205,18 @@ get_desc(SwitchId) ->
                           [Port | Ports]
                   end, [], linc:lookup(SwitchId, linc_ports)),
     #ofp_port_desc_reply{body = L}.
+
+%% @doc Return a list of all OFP ports present in the switch BUT
+%% using #ofp_port_desc_reply_v6 that show all the ports to the controller
+%% as optical
+get_experimental_desc(SwitchId) ->
+    L = ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
+                          Port = gen_server:call(Pid, get_port),
+                          [translate_ofp_port_to_optical_v6(Port) | Ports]
+                  end, [], linc:lookup(SwitchId, linc_ports)),
+    #ofp_experimenter_reply{experimenter = ?INFOBLOX_EXPERIMENTER,
+                            exp_type = port_desc,
+                            data = #ofp_port_desc_reply_v6{body = L}}.
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(integer(), ofp_port_stats_request()) -> ofp_port_stats_reply() |
@@ -890,3 +917,16 @@ setup_load_control(SwitchId, PortNo, State) ->
     CheckerReference =
         linc_us4_oe_port_load_regulator:schedule_periodic_check(SwitchId, PortNo),
     State#state{periodic_load_checker_ref = CheckerReference}.
+
+translate_ofp_port_to_optical_v6(Port) ->
+    PortV6 = #ofp_port_v6{port_no = Port#ofp_port.port_no,
+                          hw_addr = Port#ofp_port.hw_addr,
+                          name = Port#ofp_port.name,
+                          config = Port#ofp_port.config,
+                          state = Port#ofp_port.state,
+                          properties = ?DEFAULT_OPTICAL_PROPERTIES},
+    mark_optical_v6_as_eth(PortV6).
+
+mark_optical_v6_as_eth(Port) ->
+    %% TODO
+    Port.

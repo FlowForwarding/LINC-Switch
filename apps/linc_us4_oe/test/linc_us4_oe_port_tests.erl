@@ -276,7 +276,7 @@ message_from_optical_backed_should_be_routed() ->
     Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, _PortNo = 1),
     Pid ! {optical_data, _OpticalPortPidFromMeck = <<1,1,1,1,1,1>>,
            <<"Hello Alice!">>},
-    ?assertEqual(ok, meck:wait(linc_us4_oe_routing, spawn_route, 1, 1000)).
+    ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
 
 experimental_port_desc_should_be_contructed() ->
     %% GIVEN

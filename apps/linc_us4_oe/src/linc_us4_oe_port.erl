@@ -77,7 +77,7 @@
 -define(DEFAULT_OPTICAL_PROPERTIES,
         [#ofp_port_desc_prop_optical_transport{
             type = optical_transport,
-            port_signal_type = 1,
+            port_signal_type = och,
             reserved = 0,
             features = ?DEFAULT_OPTICAL_FEATURES}
         ]).

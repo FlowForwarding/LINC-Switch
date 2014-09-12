@@ -72,7 +72,7 @@
         [#ofp_port_optical_transport_application_code{
             feature_type = opt_interface_class,
             oic_type = itut_g698_1,
-            app_code = <<"Hello ONOS!":(15*8)>>}]).
+            app_code = <<"Hello ONOS!">>}]).
 
 -define(DEFAULT_OPTICAL_PROPERTIES,
         [#ofp_port_desc_prop_optical_transport{
@@ -81,6 +81,8 @@
             reserved = 0,
             features = ?DEFAULT_OPTICAL_FEATURES}
         ]).
+
+-define(DEFAULT_HW_ADDR, <<8,0,39,255,136,50>>).
 
 %%%-----------------------------------------------------------------------------
 %%% API functions
@@ -426,7 +428,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                                                          SendFun, QueuesConfig)
                     end,
                     {ok, State#state{optical_port_pid = Pid,
-                                     port = Port#ofp_port{hw_addr = <<>>}},
+                                     port = Port#ofp_port{hw_addr = ?DEFAULT_HW_ADDR}},
                      0}
             end;
         %% When switch connects to a tap interface, erlang receives file

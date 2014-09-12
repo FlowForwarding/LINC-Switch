@@ -64,8 +64,11 @@
          async_config/3,
          role_request/2,
          flow_mod_issue153/0,
-         table_features_keep_table_0/0
-         ]).
+         table_features_keep_table_0/0,
+         flow_mod_set_field_och_sigid_on_eth/0,
+         flow_mod_remove_och_sigid/0,
+         flow_mod_change_och_sigid/0
+        ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -1222,14 +1225,18 @@ flow_mod_change_och_sigid() ->
                             has_mask = false,
                             name = in_port,
                             value= <<3:32>>},
-    MatchField2 = #ofp_field{class = openflow_basic,
-                            has_mask = false,
-                            name = och_sigtype,
-                             value= <<10:8>>},
-    MatchField3 = #ofp_field{class = openflow_basic,
-                             has_mask = false,
-                             name = och_sigid,
-                             value= <<0:16, (_InChannelNumber = 10):16, 0:16>>},
+    MatchField2 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigtype,
+                                       value= <<10:8>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
+    MatchField3 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigid,
+                                       value= <<0:16, (_InChannelNumber = 10):16, 0:16>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER}, 
     Field = #ofp_field{class = openflow_basic,
                        has_mask = false,
                        name = och_sigid,
@@ -1262,14 +1269,18 @@ flow_mod_remove_och_sigid() ->
                              has_mask = false,
                              name = in_port,
                              value= <<5:32>>},
-    MatchField2 = #ofp_field{class = openflow_basic,
-                             has_mask = false,
-                             name = och_sigtype,
-                             value= <<10:8>>},
-    MatchField3 = #ofp_field{class = openflow_basic,
-                             has_mask = false,
-                             name = och_sigid,
-                             value= <<0:16, (_InChannelNumber = 20):16, 0:16>>},
+    MatchField2 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigtype,
+                                       value= <<10:8>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
+    MatchField3 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigid,
+                                       value= <<0:16, (_InChannelNumber = 20):16, 0:16>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
     Action = #ofp_action_output{port = 6, max_len = no_buffer},
     Instruction = #ofp_instruction_apply_actions{actions = [Action]},
     message(#ofp_flow_mod{

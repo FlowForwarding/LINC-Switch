@@ -590,7 +590,11 @@ validate_match([#ofp_field{class = Class, name = Name} = Field | Fields],
         [{ErrorCode, _FaildedCheck, _} | _] ->
             {error, {bad_match, ErrorCode}}
     end;
-
+validate_match([#ofp_oxm_experimenter{
+                   body = #ofp_field{} = Field,
+                   experimenter = ?INFOBLOX_EXPERIMENTER}
+                | Fields], Previous) ->
+    validate_match([Field | Fields], Previous);
 validate_match([],_Previous) ->
     ok.
 

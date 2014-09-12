@@ -176,7 +176,9 @@ pkt_fields_match_flow_field(PktFields,
             vlan_pkt_field_match_flow_field(PktField, FlowField)
     end;
 pkt_fields_match_flow_field(_PktFields,
-                            #ofp_field{name = och_sigtype}) ->
+                            #ofp_oxm_experimenter{
+                               body = #ofp_field{name = och_sigtype},
+                               experimenter = ?INFOBLOX_EXPERIMENTER}) ->
     %% For now don't care about matching on och_sigtype; however require
     %% it as a prerequisite in linc_us4_oe_flow:are_prerequisities_met/2
     true;
@@ -211,6 +213,12 @@ pkt_field_match_flow_field(#ofp_field{name = PktFieldName},
     false;
 pkt_field_match_flow_field(#ofp_field{value= Value},
                            #ofp_field{value= Value, has_mask = false}) ->
+    true;
+pkt_field_match_flow_field(
+  #ofp_oxm_experimenter{body = #ofp_field{value = Value},
+                        experimenter = ?INFOBLOX_EXPERIMENTER},
+  #ofp_oxm_experimenter{body = #ofp_field{value = Value, has_mask = false},
+                        experimenter = ?INFOBLOX_EXPERIMENTER}) ->
     true;
 pkt_field_match_flow_field(#ofp_field{value = PktFieldValue},
                            #ofp_field{value= FlowFieldValue, has_mask = true,

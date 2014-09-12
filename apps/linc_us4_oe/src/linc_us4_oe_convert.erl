@@ -141,6 +141,8 @@ header_fields(#udp{sport = SPort,
     [ofp_field(udp_src, <<SPort:16>>),
      ofp_field(udp_dst, <<DPort:16>>)];
 header_fields(#och_sigid{channel_number = CN}) ->
-    [ofp_field(och_sigid, <<0:16, CN/binary, 0:16>>)];
+    [#ofp_oxm_experimenter{
+        body = ofp_field(och_sigid, <<0:16, CN/binary, 0:16>>),
+        experimenter = ?INFOBLOX_EXPERIMENTER}];
 header_fields(_Other) ->
     [].

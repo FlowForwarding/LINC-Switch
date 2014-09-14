@@ -1,0 +1,88 @@
+{
+    "comment": "Multilayer topology description and configuration",
+        "restrictLinks": false,
+        "restrictSwitches": false,
+
+        "switchConfig": [
+        {
+            "allowed": true,
+            "latitude": 80.8,
+            "longitude": 90.1,
+            "name": "Dallas-W1",
+            "nodeDpid": "00:00:ff:ff:ff:ff:ff:02",
+            "params": {
+                "numRegen": 2
+            },
+            "type": "Roadm"
+        },
+        {
+            "allowed": true,
+            "latitude": 80.8,
+            "longitude": 90.1,
+            "name": "NYC-W10",
+            "nodeDpid": "00:00:ff:ff:ff:ff:ff:03",
+            "params": {
+                "numRegen": 3
+            },
+            "type": "Roadm"
+        }
+    ],
+
+        "linkConfig": [
+        {
+            "allowed": true,
+            "nodeDpid1": "00:00:ff:ff:ff:ff:ff:02",
+            "nodeDpid2": "00:00:ff:ff:ff:ff:ff:03",
+            "params": {
+                "distKms": 5000,
+                "nodeName1": "Dallas-W1",
+                "nodeName2": "NYC-W10",
+                "numWaves": 80,
+                "port1": 20,
+                "port2": 21
+            },
+            "type": "wdmLink"
+        },
+        {
+            "allowed": true,
+            "nodeDpid1": "00:00:ff:ff:ff:ff:ff:00",
+            "nodeDpid2": "00:00:ff:ff:ff:ff:ff:02",
+            "params": {
+                "nodeName1": "Dallas-R1",
+                "nodeName2": "Dallas-W1",
+                "port1": 33,
+                "port2": 10
+            },
+            "type": "pktOptLink"
+        },
+        {
+            "allowed": true,
+            "nodeDpid1": "00:00:ff:ff:ff:ff:ff:00",
+            "nodeDpid2": "00:00:ff:ff:ff:ff:ff:01",
+            "params": {
+                "port1": 6,
+                "port2": 1
+            },
+            "type": "pktLink"
+        }
+    ],
+
+        "opticalReachabilty": [
+            [
+            "Dallas-W1",
+        "NYC-W10"
+            ],
+        [
+            "NYC-W10",
+        "Dallas-W1"
+            ],
+        [
+            "Dallas-W2",
+        "SFO-W3"
+            ],
+        [
+            "SFO-W3",
+        "Dallas-W2"
+            ]
+            ]
+}

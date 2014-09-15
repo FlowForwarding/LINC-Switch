@@ -298,7 +298,10 @@ handle_info(timeout, #state{backend_mod = BackendMod,
                             config = Config} = State) ->
     %% Starting the backend and opening connections to the controllers as a
     %% first thing after the logic and the main supervisor started.
-    DatapathId = gen_datapath_id(SwitchId),
+    {switch, SwitchId, SwitchOpts} = lists:keyfind(SwitchId, 2,
+                                                   Config),
+    {datapath_id, DatapathId} = lists:keyfind(datapath_id, 1,
+                                              SwitchOpts),
     BackendOpts = lists:keystore(switch_id, 1, BackendState,
                                  {switch_id, SwitchId}),
     BackendOpts2 = lists:keystore(datapath_mac, 1, BackendOpts,

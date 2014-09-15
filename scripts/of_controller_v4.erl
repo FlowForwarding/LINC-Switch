@@ -5,6 +5,8 @@
 %%%-----------------------------------------------------------------------------
 -module(of_controller_v4).
 
+-include_lib("stdlib/include/ms_transform.hrl").
+
 -compile([{parse_transform, lager_transform}]).
 
 %% API
@@ -62,8 +64,11 @@
          async_config/3,
          role_request/2,
          flow_mod_issue153/0,
-         table_features_keep_table_0/0
-         ]).
+         table_features_keep_table_0/0,
+         flow_mod_set_field_och_sigid_on_eth/0,
+         flow_mod_remove_och_sigid/0,
+         flow_mod_change_och_sigid/0
+        ]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
 -include_lib("of_protocol/include/ofp_v4.hrl").
@@ -567,6 +572,12 @@ scenario(forward_to_controller_and_buffer) ->
 %% the connection is established.
 scenario(hello_with_bad_version) ->
     [];
+
+scenario(oe_set_field_och_sigid) ->
+    [oe_port_desc_request(),
+     flow_mod_set_field_och_sigid_on_eth(),
+     flow_mod_change_och_sigid(),
+     flow_mod_remove_och_sigid()];
 scenario(_Unknown) ->
     lager:debug("Unknown controller's scenario. Running `all_messages` one."),
     scenario(all_messages).
@@ -828,6 +839,12 @@ delete_all_groups() ->
 
 port_desc_request() ->
     message(#ofp_port_desc_request{}).
+
+oe_port_desc_request() ->
+    message(#ofp_experimenter_request{
+               experimenter = ?INFOBLOX_EXPERIMENTER,
+               exp_type = port_desc,
+               data = <<>>}).
 
 role_request() ->
     message(#ofp_role_request{role = nochange, generation_id = 1}).
@@ -1171,6 +1188,116 @@ flow_mod_issue153() ->
                out_group = any,
                flags = [],
                match = #ofp_match{fields = [MatchField]},
+               instructions = [Instruction]}).
+
+flow_mod_set_field_och_sigid_on_eth() ->
+    MatchField = #ofp_field{class = openflow_basic,
+                            has_mask = false,
+                            name = in_port,
+                            value= <<1:32>>},
+    Field = #ofp_field{class = openflow_basic,
+                       has_mask = false,
+                       name = och_sigid,
+                       value = <<0:16, (_ChannelNumber = 10):16, 0:16>>},
+    SetField = #ofp_action_set_field{field = Field},
+    Action1 = #ofp_action_experimenter{experimenter = ?INFOBLOX_EXPERIMENTER,
+                                       data = SetField},
+    Action2 = #ofp_action_output{port = 2, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1,
+                                                            Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = #ofp_match{fields = [MatchField]},
+               instructions = [Instruction]}).
+
+flow_mod_change_och_sigid() ->
+    MatchField1 = #ofp_field{class = openflow_basic,
+                            has_mask = false,
+                            name = in_port,
+                            value= <<3:32>>},
+    MatchField2 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigtype,
+                                       value= <<10:8>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
+    MatchField3 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigid,
+                                       value= <<0:16, (_InChannelNumber = 10):16, 0:16>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER}, 
+    Field = #ofp_field{class = openflow_basic,
+                       has_mask = false,
+                       name = och_sigid,
+                       value = <<0:16, (_OutChannelNumber = 20):16, 0:16>>},
+    SetField = #ofp_action_set_field{field = Field},
+    Action1 = #ofp_action_experimenter{experimenter = ?INFOBLOX_EXPERIMENTER,
+                                       data = SetField},
+    Action2 = #ofp_action_output{port = 4, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action1,
+                                                            Action2]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = #ofp_match{fields = [MatchField1,
+                                            MatchField2,
+                                            MatchField3]},
+               instructions = [Instruction]}).
+
+flow_mod_remove_och_sigid() ->
+    MatchField1 = #ofp_field{class = openflow_basic,
+                             has_mask = false,
+                             name = in_port,
+                             value= <<5:32>>},
+    MatchField2 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigtype,
+                                       value= <<10:8>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
+    MatchField3 = #ofp_oxm_experimenter{
+                     body = #ofp_field{class = openflow_basic,
+                                       has_mask = false,
+                                       name = och_sigid,
+                                       value= <<0:16, (_InChannelNumber = 20):16, 0:16>>},
+                     experimenter = ?INFOBLOX_EXPERIMENTER},
+    Action = #ofp_action_output{port = 6, max_len = no_buffer},
+    Instruction = #ofp_instruction_apply_actions{actions = [Action]},
+    message(#ofp_flow_mod{
+               cookie = <<0:64>>,
+               cookie_mask = <<0:64>>,
+               table_id = 0,
+               command = add,
+               idle_timeout = 0,
+               hard_timeout = 0,
+               priority = 1,
+               buffer_id = no_buffer,
+               out_port = any,
+               out_group = any,
+               flags = [],
+               match = #ofp_match{fields = [MatchField1,
+                                            MatchField2,
+                                            MatchField3]},
                instructions = [Instruction]}).
 
 table_features_keep_table_0() ->

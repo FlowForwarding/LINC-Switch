@@ -96,7 +96,7 @@ mock([port_native | Rest]) ->
                      end),
     ok = meck:expect(linc_us4_oe_port_native, optical,
                      fun(_, _) ->
-                             {ok, <<1,1,1,1,1,1>>}
+                             {ok, list_to_pid("<0.0.99>")}
                      end),
     ok = meck:expect(linc_us4_oe_port_native, close,
                      fun(_) ->

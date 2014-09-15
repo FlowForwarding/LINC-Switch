@@ -89,7 +89,9 @@ optical_port_test_() ->
         {"Test message from optical backend is routed",
          fun message_from_optical_backed_should_be_routed/0},
         {"Test experimantal port desc",
-         fun experimental_port_desc_should_be_contructed/0}]}]}.
+         fun experimental_port_desc_should_be_contructed/0},
+        {"Test OF 1.3 port desc not returns optical ports",
+         fun optical_ports_should_not_be_included_in_port_desc/0}]}]}.
 
 port_mod() ->
     BadPort = 999,
@@ -274,7 +276,8 @@ message_should_reach_optical_backend() ->
 
 message_from_optical_backed_should_be_routed() ->
     Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, _PortNo = 1),
-    Pid ! {optical_data, _OpticalPortPidFromMeck = <<1,1,1,1,1,1>>,
+    Pid ! {optical_data,
+           _OpticalPortPidFromMeck = list_to_pid("<0.0.99>"),
            <<"Hello Alice!">>},
     ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
 
@@ -299,6 +302,17 @@ assert_port_desc_matches_port_from_config(Desc) ->
                       PortNo = E#ofp_port_v6.port_no,
                       ?assert(lists:keymember(PortNo, 2, ExpectedPorts))
               end, PortDescs).
+
+optical_ports_should_not_be_included_in_port_desc() ->
+    %% GIVEN
+    %% All the ports in the switch are optical
+
+    %% WHEN
+    Desc = linc_us4_oe_port:get_desc(?SWITCH_ID),
+
+    %% THEN
+    ?assertMatch(#ofp_port_desc_reply{}, Desc),
+    ?assertMatch([], Desc#ofp_port_desc_reply.body).
 
 get_ports_from_config_for_switch(SwitchId) ->
     [{switch, SwitchId, Config}] = ports_without_queues(optical),

@@ -199,13 +199,18 @@ send(#linc_pkt{switch_id = SwitchId} = Pkt, PortNo) when is_integer(PortNo) ->
             gen_server:cast(Pid, {send, Pkt})
     end.
 
-%% @doc Return list of all OFP ports present in the switch.
+%% @doc Return list of all non-optical OFP ports present in the switch.
 -spec get_desc(integer()) -> ofp_port_desc_reply().
 get_desc(SwitchId) ->
-    L = ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
-                          Port = gen_server:call(Pid, get_port),
-                          [Port | Ports]
-                  end, [], linc:lookup(SwitchId, linc_ports)),
+    Filter = fun(#linc_port{pid = Pid}, Ports) ->
+                     case gen_server:call(Pid, get_non_optical_port) of
+                         optical ->
+                             Ports;
+                         Port ->
+                             [Port | Ports]
+                     end
+             end,
+    L = ets:foldl(Filter, [], linc:lookup(SwitchId, linc_ports)),
     #ofp_port_desc_reply{body = L}.
 
 %% @doc Return a list of all OFP ports present in the switch BUT
@@ -213,7 +218,7 @@ get_desc(SwitchId) ->
 %% as optical
 get_experimental_desc(SwitchId) ->
     L = ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
-                          Port = gen_server:call(Pid, get_port),
+                          Port = gen_server:call(Pid, get_any_port),
                           [translate_ofp_port_to_optical_v6(Port) | Ports]
                   end, [], linc:lookup(SwitchId, linc_ports)),
     #ofp_experimenter_reply{experimenter = ?INFOBLOX_EXPERIMENTER,
@@ -508,7 +513,12 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
-handle_call(get_port, _From, #state{port = Port} = State) ->
+handle_call(get_non_optical_port, From, #state{optical_port_pid = Pid} = State)
+  when is_pid(Pid) ->
+    {reply, optical, State};
+handle_call(get_non_optical_port, _From, #state{port = Port} = State) ->
+    {reply, Port, State};
+handle_call(get_any_port, _From, #state{port = Port} = State) ->
     {reply, Port, State};
 handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->

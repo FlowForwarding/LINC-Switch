@@ -305,10 +305,12 @@ handle_info(timeout, #state{backend_mod = BackendMod,
     BackendOpts = lists:keystore(switch_id, 1, BackendState,
                                  {switch_id, SwitchId}),
     BackendOpts2 = lists:keystore(datapath_mac, 1, BackendOpts,
-                                  {datapath_mac, extract_mac(DatapathId)}),
+                                  {datapath_mac, get_datapath_mac()}),
     BackendOpts3 = lists:keystore(config, 1, BackendOpts2,
                                   {config, Config}),
-    case BackendMod:start(BackendOpts3) of
+    BackendOpts4 = lists:keystore(datapath_id, 1, BackendOpts3,
+                                  {datapath_id, extract_binary(DatapathId)}),
+    case BackendMod:start(BackendOpts4) of
         {ok, Version, BackendState2} ->
             start_and_register_ofp_channels_sup(SwitchId),
             Opts = [{controlling_process, self()}, {version, Version}],
@@ -446,6 +448,10 @@ integer_to_hex(I) ->
         [D] -> [$0, D];
         DD  -> DD
     end.
+
+extract_binary(String) ->
+    Str = re:replace(String, ":", "", [global, {return, list}]),
+    extract_mac(Str, <<>>).
 
 extract_mac(DatapathId) ->
     Str = re:replace(string:substr(DatapathId, 1, 17), ":", "",

@@ -72,6 +72,7 @@
           buffer_state,
           switch_id :: integer(),
           datapath_mac :: binary(),
+          datapath_id :: binary(),
           switch_config = [{flags, []}, {miss_send_len, no_buffer}] ::
             [switch_config_opt()]
          }).
@@ -90,6 +91,7 @@ start(BackendOpts) ->
     try
         {switch_id, SwitchId} = lists:keyfind(switch_id, 1, BackendOpts),
         {datapath_mac, DatapathMac} = lists:keyfind(datapath_mac, 1, BackendOpts),
+        {datapath_id, DatapathId} = lists:keyfind(datapath_id, 1, BackendOpts),
         {config, Config} = lists:keyfind(config, 1, BackendOpts),
         BufferState = linc_buffer:initialize(SwitchId),
         {ok, _Pid} = linc_us4_oe_sup:start_backend_sup(SwitchId),
@@ -99,7 +101,8 @@ start(BackendOpts) ->
         {ok, 4, #state{flow_state = FlowState,
                        buffer_state = BufferState,
                        switch_id = SwitchId,
-                       datapath_mac = DatapathMac}}
+                       datapath_mac = DatapathMac,
+                       datapath_id = DatapathId}}
     catch
         _:Error ->
             {error, Error}
@@ -157,10 +160,21 @@ set_monitor_data(_ClientPid, _Xid, State) ->
 %%%-----------------------------------------------------------------------------
 
 ofp_features_request(#state{switch_id = SwitchId,
-                            datapath_mac = DatapathMac} = State,
+                            datapath_mac = DatapathMac,
+                            datapath_id = undefined} = State,
                      #ofp_features_request{}) ->
     FeaturesReply = #ofp_features_reply{datapath_mac = DatapathMac,
                                         datapath_id = SwitchId,
+                                        n_buffers = 0,
+                                        n_tables = 255,
+                                        auxiliary_id = 0,
+                                        capabilities = ?CAPABILITIES},
+    {reply, FeaturesReply, State};
+ofp_features_request(#state{datapath_id = SysConfigDatapathId} = State,
+                     #ofp_features_request{}) ->
+    <<SwitchId:16, DataPathMac:48/bits>> = SysConfigDatapathId,
+    FeaturesReply = #ofp_features_reply{datapath_id = SwitchId,
+                                        datapath_mac = DataPathMac,
                                         n_buffers = 0,
                                         n_tables = 255,
                                         auxiliary_id = 0,

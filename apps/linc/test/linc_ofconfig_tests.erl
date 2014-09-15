@@ -21,28 +21,21 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("of_config/include/of_config.hrl").
 
+-define(DATAPATH_ID, "00:00:00:00:00:00:00:0B").
+
 %% Generators ------------------------------------------------------------------
 
 startup_format_without_ofconfig_test_() ->
     {setup,
-     fun() ->
-             meck:new(inet, [unstick, passthrough]),
-             meck:expect(inet, getifaddrs, 0,
-                         {ok, [{"fake0",
-                                [{flags,[up,broadcast,running,multicast]},
-                                 {hwaddr,[2,0,0,0,0,1]},
-                                 {addr,{192,168,1,1}},
-                                 {netmask,{255,255,255,0}},
-                                 {broadaddr,{192,168,1,255}}]}]})
-     end,
-     fun(_) ->
-             meck:unload()
-     end,
-     [{setup,
+     fun setup/0,
+     fun teardown/1,
+     [{foreach,
        fun load_simple_environment_without_ofconfig/0,
        fun unload_environment/1,
-       {"Test startup for the simplest switch config",
-        fun should_return_simple_startup_with_datapath_id/0}},
+       [{"Test startup for the simplest switch config",
+        fun should_return_startup_with_generated_datapath_id/0},
+        {"Test startup for the simplest switch config with datapath id",
+         fun should_return_startup_with_datapath_id/0}]},
       {setup,
        fun load_simple_environment_with_ports_without_ofconfig/0,
        fun unload_environment/1,
@@ -66,7 +59,7 @@ startup_format_without_ofconfig_test_() ->
 
 %% Tests -----------------------------------------------------------------------
 
-should_return_simple_startup_with_datapath_id() ->
+should_return_startup_with_generated_datapath_id() ->
     ?assertMatch([{switch, 0, [{datapath_id, DatapathId},
                                {backend, linc_us4},
                                {controllers, []},
@@ -76,6 +69,23 @@ should_return_simple_startup_with_datapath_id() ->
                                {queues, []}]}]
                  when is_list(DatapathId) andalso length(DatapathId) == 23,
                       linc_ofconfig:get_startup_without_ofconfig()).
+
+should_return_startup_with_datapath_id() ->
+    %% GIVEN
+    add_datapath_id_to_logical_switch_config(DatapathId = ?DATAPATH_ID),
+    ExpectedConfig = [{switch, 0, [{backend, linc_us4},
+                                   {controllers, []},
+                                   {controllers_listener, disabled},
+                                   {ports, []},
+                                   {queues_status, disabled},
+                                   {datapath_id, DatapathId},
+                                   {queues, []}]}],
+
+    %% WHEN
+    ActualConfig = linc_ofconfig:get_startup_without_ofconfig(),
+    
+    %% THEN
+    ?assertMatch(ExpectedConfig, ActualConfig).
 
 should_return_startup_with_ports(CapableSwitchPorts) ->
     [{switch, _SwitchId, SwitchConfig}] =
@@ -144,6 +154,19 @@ unload_environment(_) ->
 
 %% Helpers ----------------------------------------------------------------------
 
+setup() ->
+    meck:new(inet, [unstick, passthrough]),
+    meck:expect(inet, getifaddrs, 0,
+                {ok, [{"fake0",
+                       [{flags,[up,broadcast,running,multicast]},
+                        {hwaddr,[2,0,0,0,0,1]},
+                        {addr,{192,168,1,1}},
+                        {netmask,{255,255,255,0}},
+                        {broadaddr,{192,168,1,255}}]}]}).
+
+teardown(_) ->
+    meck:unload().
+
 load_simple_environment_without_ofconfig(CapableSwitchPorts, CapableSwitchQueues,
                                          LogicalSwitchPorts) ->
     application:load(linc),
@@ -167,3 +190,11 @@ generate_logical_switch_config(CapableSwitchQueues, LogicalSwitchPorts) ->
                            _ ->
                                enabled
                        end}]}].
+
+add_datapath_id_to_logical_switch_config(DatapathId) ->
+    {ok, [{switch, 0, Opts0}]} = application:get_env(linc,
+                                                     logical_switches),
+    Opts1 = lists:keystore(datapath_id, 1, Opts0,
+                           {datapath_id, DatapathId}),
+    ok = application:set_env(linc, logical_switches,
+                             [{switch, 0, Opts1}]).

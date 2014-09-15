@@ -336,7 +336,7 @@ delete_startup_switches([{switch, SwitchId, Opts} | Rest],
                         []
                 end,
     NewCtrls = [],
-    NewSwitch = {switch, SwitchId, linc_logic:gen_datapath_id(SwitchId)},
+    NewSwitch = {switch, SwitchId, get_datapath_id(SwitchId, Opts)},
     NewStartup = Startup#ofconfig{ports = Ports ++ NewPorts,
                                   queues = Queues ++ lists:flatten(NewQueues),
                                   switches = [NewSwitch | Switches],
@@ -373,9 +373,9 @@ read_and_update_startup() ->
 -spec get_startup_without_ofconfig() -> [term()].
 get_startup_without_ofconfig() ->
     [begin
-         LogicalSwitchTmp = add_datapath_id_to_logical_switch(LogicalSwitch),
-         convert_logical_switch_ports(LogicalSwitchTmp)
-     end || LogicalSwitch <- get_linc_logical_switches()].
+         LSW1 = assure_datapath_id_in_logical_switch_config(LSW0),
+         convert_logical_switch_ports(LSW1)
+     end || LSW0 <- get_linc_logical_switches()].
 
 %%------------------------------------------------------------------------------
 %% gen_netconf callbacks
@@ -1233,7 +1233,7 @@ update_switches([{switch, SwitchId, Opts} | Rest],
 
     DatapathId = case lists:keyfind(SwitchId, 2, OldSwitches) of
                      {switch, _, D} -> D;
-                     false -> linc_logic:gen_datapath_id(SwitchId)
+                     false -> get_datapath_id(SwitchId, Opts)
                  end,
     update_switches(Rest, Startup,
                     {[{switch, SwitchId,
@@ -1319,9 +1319,15 @@ logical_switch_port_rate(PortConfig) ->
             R
     end.
 
-add_datapath_id_to_logical_switch({switch, SwitchId, LogicalSwitchConfig}) ->
-    {switch, SwitchId, [{datapath_id, linc_logic:gen_datapath_id(SwitchId)}
-                        | LogicalSwitchConfig]}.
+assure_datapath_id_in_logical_switch_config({switch, SwitchId, Opts}) ->
+    case lists:keyfind(datapath_id, 1, Opts) of
+        false ->
+            {switch, SwitchId,
+             [{datapath_id, linc_logic:gen_datapath_id(SwitchId)}
+              | Opts]};
+        _Datapath_Id ->
+            {switch, SwitchId, Opts}
+    end.
 
 convert_logical_switch_ports({switch, SwitchId, LogicalSwitchConfig}) ->
     LogicalPorts = proplists:get_value(ports, LogicalSwitchConfig),
@@ -1441,4 +1447,12 @@ translate([{Value, Indicator, Atom} | Rest], Acc) ->
             translate(Rest, [Atom | Acc]);
         false ->
             translate(Rest, Acc)
+    end.
+
+get_datapath_id(SwitchId, SwitchOpts) ->
+    case lists:keyfind(Key = datapath_id, 1, SwitchOpts) of
+        false ->
+            linc_logic:gen_datapath_id(SwitchId);
+        {Key, Dpid} ->
+            Dpid
     end.

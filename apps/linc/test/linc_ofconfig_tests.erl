@@ -23,6 +23,11 @@
 
 -define(DATAPATH_ID, "00:00:00:00:00:00:00:0B").
 
+-define(INSTANITATOR(Comment, TestFun),
+        fun(Value) ->
+                {Comment, fun() -> TestFun(Value) end}
+        end).
+
 %% Generators ------------------------------------------------------------------
 
 startup_format_without_ofconfig_test_() ->
@@ -30,32 +35,28 @@ startup_format_without_ofconfig_test_() ->
      fun setup/0,
      fun teardown/1,
      [{foreach,
-       fun load_simple_environment_without_ofconfig/0,
+       fun load_environment_without_ofconfig/0,
        fun unload_environment/1,
-       [{"Test startup for the simplest switch config",
-        fun should_return_startup_with_generated_datapath_id/0},
-        {"Test startup for the simplest switch config with datapath id",
+       [{"Test startup for simple config",
+         fun should_return_startup_with_generated_datapath_id/0},
+        {"Test startup for simple config with datapath id",
          fun should_return_startup_with_datapath_id/0}]},
       {setup,
-       fun load_simple_environment_with_ports_without_ofconfig/0,
+       fun load_environment_with_ports_without_ofconfig/0,
        fun unload_environment/1,
-       fun(CapableSwitchPorts) ->
-               {"Test startup for the simplest switch config with two ports",
-                fun() ->
-                        should_return_startup_with_ports(CapableSwitchPorts)
-                end}
-       end},
+       ?INSTANITATOR("Test startup with two ports",
+                     should_return_startup_with_ports)},
       {setup,
-       fun load_simple_environment_with_ports_and_queues_without_ofconfig/0,
+       fun load_environment_with_ports_and_queues_without_ofconfig/0,
        fun unload_environment/1,
-       fun(LogicalSwitchPorts) ->
-               {"Test startup for the simplest switch config with one port "
-                "with two queues attached",
-                fun() ->
-                        should_return_startup_with_ports_and_queues(
-                          LogicalSwitchPorts)
-                end}
-       end}]}.
+       ?INSTANITATOR("Test startup with one port with two queues",
+                     should_return_startup_with_ports_and_queues)},
+      {setup,
+       fun load_environment_with_extended_ports/0,
+       fun unload_environment/1,
+       ?INSTANITATOR("Test startup with extended ports config",
+                     should_return_startup_with_extended_ports)}
+     ]}.
 
 %% Tests -----------------------------------------------------------------------
 
@@ -108,8 +109,24 @@ should_return_startup_with_ports_and_queues(LogicalSwitchPorts) ->
          ?assert(lists:keymember(port_rate, 1, PortOptsForQueues)),
          ?assert(lists:keymember(port_queues, 1, PortOptsForQueues)),
          assert_port_queues(ExpectedQueues, PortOptsForQueues)
-     end || {port, ExpectedPortNo, {queues, ExpectedQueues}}
+     end || {port, ExpectedPortNo, [{queues, ExpectedQueues}]}
                 <- LogicalSwitchPorts, ExpectedQueues /= []].
+
+should_return_startup_with_extended_ports(LogicalSwitchPorts) ->
+    %% GIVEN
+    %% Logical switch ports has additional attributes: port_no
+    %% and port name
+
+    %% WHEN
+    [{switch, _SwitchId, SwitchConfig}] =
+        linc_ofconfig:get_startup_without_ofconfig(),
+
+    %% THEN
+    {ports, PortsConfig} = lists:keyfind(ports, 1, SwitchConfig),
+    [begin
+         {_, _, ActualOpts} = lists:keyfind(CapablePortNo, 2, PortsConfig),
+         assert_logical_port_no_and_port_name(ExpectedOpts, ActualOpts)
+     end || {port, CapablePortNo, ExpectedOpts} <- LogicalSwitchPorts].
 
 assert_port_queues(ExpectedQueues, ActualPortOptsForQueues) ->
     ?assert(lists:all(fun({QueueId, QueueOpts}) ->
@@ -119,34 +136,52 @@ assert_port_queues(ExpectedQueues, ActualPortOptsForQueues) ->
                       end, proplists:get_value(port_queues,
                                                ActualPortOptsForQueues))).
 
+assert_logical_port_no_and_port_name(ExpectedOpts, ActualOpts) ->
+    [?assertEqual(lists:keyfind(Opt, 1, ExpectedOpts),
+                  lists:keyfind(Opt, 1, ActualOpts))
+    || Opt <- [port_name, port_no]].
 
 %% Fixtures --------------------------------------------------------------------
 
-load_simple_environment_without_ofconfig() ->
+load_environment_without_ofconfig() ->
     CapableSwitchPorts = CapableSwitchQueues = LogicalSwitchPorts = [],
-    load_simple_environment_without_ofconfig(CapableSwitchPorts,
-                                             CapableSwitchQueues,
-                                             LogicalSwitchPorts).
+    load_environment_without_ofconfig(CapableSwitchPorts,
+                                      CapableSwitchQueues,
+                                      LogicalSwitchPorts).
 
-load_simple_environment_with_ports_without_ofconfig() ->
+load_environment_with_ports_without_ofconfig() ->
     CapableSwitchPorts = [{port, 1, [{interface, "eth0"}]},
                           {port, 2, [{interface, "eth1"}]}],
-    LogicalSwitchPorts = [{port, 1, {queues, []}},
-                          {port, 2, {queues, []}}],
+    LogicalSwitchPorts = [{port, 1, [{queues, []}]},
+                          {port, 2, [{queues, []}]}],
     CapableSwitchQueues = [],
-    load_simple_environment_without_ofconfig(CapableSwitchPorts,
-                                             CapableSwitchQueues,
-                                             LogicalSwitchPorts),
+    load_environment_without_ofconfig(CapableSwitchPorts,
+                                      CapableSwitchQueues,
+                                      LogicalSwitchPorts),
     CapableSwitchPorts.
 
-load_simple_environment_with_ports_and_queues_without_ofconfig() ->
+load_environment_with_ports_and_queues_without_ofconfig() ->
     CapableSwitchPorts = [{port, 1, [{interface, "eth0"}]}],
     CapableSwitchQueues = [{queue, 33, [{min_rate, 100}, {max_rate, 200}]},
-                            {queue, 99, [{min_rate, 100}, {max_rate, 100}]}],
-    LogicalSwitchPorts = [{port, 1, {queues, [33, 99]}}],
-    load_simple_environment_without_ofconfig(CapableSwitchPorts,
-                                             CapableSwitchQueues,
-                                             LogicalSwitchPorts),
+                           {queue, 99, [{min_rate, 100}, {max_rate, 100}]}],
+    LogicalSwitchPorts = [{port, 1, [{queues, [33, 99]}]}],
+    load_environment_without_ofconfig(CapableSwitchPorts,
+                                      CapableSwitchQueues,
+                                      LogicalSwitchPorts),
+    LogicalSwitchPorts.
+
+load_environment_with_extended_ports() ->
+    CapableSwitchPorts = [{port, 1, [{interface, "eth0"}]},
+                          {port, 2, [{interface, "eth1"}]}],
+    LogicalSwitchPorts =
+        [{port, CapableNo, [{queues, []}, {port_no, LogicalNo},
+                            {port_name, Name}]}
+         || {CapableNo, LogicalNo, Name} <- [{1, 100, "LAPIERRE"},
+                                          {2, 200, "DEVINCI"}]],
+    CapableSwitchQueues = [],
+    load_environment_without_ofconfig(CapableSwitchPorts,
+                                      CapableSwitchQueues,
+                                      LogicalSwitchPorts),
     LogicalSwitchPorts.
 
 unload_environment(_) ->
@@ -167,8 +202,8 @@ setup() ->
 teardown(_) ->
     meck:unload().
 
-load_simple_environment_without_ofconfig(CapableSwitchPorts, CapableSwitchQueues,
-                                         LogicalSwitchPorts) ->
+load_environment_without_ofconfig(CapableSwitchPorts, CapableSwitchQueues,
+                                  LogicalSwitchPorts) ->
     application:load(linc),
     application:set_env(linc, of_config, disabled),
     application:set_env(linc, capable_switch_ports, CapableSwitchPorts),

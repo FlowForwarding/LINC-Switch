@@ -513,7 +513,7 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
-handle_call(get_non_optical_port, From, #state{optical_port_pid = Pid} = State)
+handle_call(get_non_optical_port, _From, #state{optical_port_pid = Pid} = State)
   when is_pid(Pid) ->
     {reply, optical, State};
 handle_call(get_non_optical_port, _From, #state{port = Port} = State) ->
@@ -529,6 +529,8 @@ handle_call({set_port_state, NewPortState}, _From,
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
+
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_port_config, _From,
             #state{port = #ofp_port{config = PortConfig}} = State) ->
@@ -539,6 +541,7 @@ handle_call({set_port_config, NewPortConfig}, _From,
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
@@ -558,6 +561,7 @@ handle_call({set_advertised_features, AdvertisedFeatures}, _From,
     PortStatus = #ofp_port_status{reason = modify,
                                   desc = NewPort},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
+    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_info, _From, #state{resource_id = ResourceId,
                                     port = Port} = State) ->
@@ -942,3 +946,14 @@ translate_ofp_port_to_optical_v6(Port) ->
 mark_optical_v6_as_eth(Port) ->
     %% TODO
     Port.
+
+oe_port_status(Port = #ofp_port{}) ->
+    PortStatus = #ofp_port_status{
+                    reason = modify,
+                    desc = translate_ofp_port_to_optical_v6(Port)
+    },
+    #ofp_experimenter{
+        experimenter = ?INFOBLOX_EXPERIMENTER,
+        exp_type = port_status,
+        data = PortStatus
+    }.

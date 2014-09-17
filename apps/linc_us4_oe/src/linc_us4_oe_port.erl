@@ -348,35 +348,12 @@ optical_up(SwitchId, PortNo) ->
 %%%-----------------------------------------------------------------------------
 
 %% @private
-init([SwitchId, {port, PortNo, PortOpts}]) ->
+init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
-    PortName = "Port" ++ integer_to_list(PortNo),
-    Advertised = case lists:keyfind(features, 1, PortOpts) of
-                     false ->
-                         ?FEATURES;
-                     {features, undefined} ->
-                         ?FEATURES;
-                     {features, Features} ->
-                         linc_ofconfig:convert_port_features(Features)
-                 end,
-    PortConfig = case lists:keyfind(config, 1, PortOpts) of
-                     false ->
-                         [];
-                     {config, undefined} ->
-                         [];
-                     {config, Config} ->
-                         linc_ofconfig:convert_port_config(Config)
-                 end,
-    Port = #ofp_port{port_no = PortNo,
-                     name = PortName,
-                     config = PortConfig,
-                     state = [live],
-                     curr = ?FEATURES,
-                     advertised = Advertised,
-                     supported = ?FEATURES, peer = ?FEATURES,
-                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED},
+    Port = set_ofp_port(CapablePortNo, PortOpts),
+    PortNo = Port#ofp_port.port_no,
     QueuesState = case queues_enabled(SwitchId) of
                       false ->
                           disabled;
@@ -384,7 +361,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                           enabled
                   end,
     SwitchName = "LogicalSwitch" ++ integer_to_list(SwitchId),
-    ResourceId =  SwitchName ++ "-" ++ PortName,
+    ResourceId =  SwitchName ++ "-" ++ Port#ofp_port.name,
     %% Interface doesn't matter for optical simulation
     {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
     %% Use sync routing unless explicitly disabled in the configuration
@@ -957,3 +934,33 @@ oe_port_status(Port = #ofp_port{}) ->
         exp_type = port_status,
         data = PortStatus
     }.
+
+set_ofp_port(CapablePortNo, PortOpts) ->
+    PortNo = proplists:get_value(port_no, PortOpts, CapablePortNo),
+    PortName = proplists:get_value(port_name, PortOpts,
+                                   "Port" ++ integer_to_list(PortNo)),
+    Advertised = case lists:keyfind(features, 1, PortOpts) of
+                     false ->
+                         ?FEATURES;
+                     {features, undefined} ->
+                         ?FEATURES;
+                     {features, Features} ->
+                         linc_ofconfig:convert_port_features(Features)
+                 end,
+    PortConfig = case lists:keyfind(config, 1, PortOpts) of
+                     false ->
+                         [];
+                     {config, undefined} ->
+                         [];
+                     {config, Config} ->
+                         linc_ofconfig:convert_port_config(Config)
+                 end,
+    Port = #ofp_port{port_no = PortNo,
+                     name = PortName,
+                     config = PortConfig,
+                     state = [live],
+                     curr = ?FEATURES,
+                     advertised = Advertised,
+                     supported = ?FEATURES, peer = ?FEATURES,
+                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
+

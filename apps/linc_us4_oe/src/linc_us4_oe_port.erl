@@ -79,7 +79,7 @@
             type = optical_transport,
             port_signal_type = och,
             reserved = 0,
-            features = ?DEFAULT_OPTICAL_FEATURES}
+            features = []}
         ]).
 
 -define(DEFAULT_HW_ADDR, <<8,0,39,255,136,50>>).

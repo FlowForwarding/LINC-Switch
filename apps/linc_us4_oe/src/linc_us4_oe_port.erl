@@ -223,7 +223,7 @@ get_experimental_desc(SwitchId) ->
                   end, [], linc:lookup(SwitchId, linc_ports)),
     #ofp_experimenter_reply{experimenter = ?INFOBLOX_EXPERIMENTER,
                             exp_type = port_desc,
-                            data = #ofp_port_desc_reply_v6{body = L}}.
+                            data = L}.
 
 %% @doc Return port stats record for the given OF port.
 -spec get_stats(integer(), ofp_port_stats_request()) -> ofp_port_stats_reply() |

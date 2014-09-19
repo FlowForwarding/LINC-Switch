@@ -33,13 +33,9 @@
 -define(MOCKED(Type), [logic, port_native]
         ++ [X || X <- [packet, routing], Type == optical]).
 
--define(OE_PORT_DESC_REPLY_PATTERN,
-        #ofp_experimenter_reply{
-           experimenter = ?INFOBLOX_EXPERIMENTER,
-           exp_type = port_desc,
-           data = #ofp_port_desc_reply_v6{}}).
-
 -define(SWITCH_ID, 0).
+
+-define(NON_OPTICAL_PORT, 3).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -98,6 +94,8 @@ optical_port_test_() ->
          fun message_from_optical_backed_should_be_routed/0},
         {"Test experimantal port desc",
          fun experimental_port_desc_should_be_constructed/0},
+        {"Test non-optical ports are marked in experimental port desc",
+         fun non_optical_ports_should_be_marked_in_exp_port_desc/0},
         {"Test OF 1.3 port desc not returns optical ports",
          fun optical_ports_should_not_be_included_in_port_desc/0}]}]}.
 
@@ -326,25 +324,46 @@ message_from_optical_backed_should_be_routed() ->
 
 experimental_port_desc_should_be_constructed() ->
     %% GIVEN
-    %% Config for logical switch 1 with 3 ports is set up 
+    %% Config for logical switch 1 with 3 ports is set up; the 3rd port
+    %% is not optical
 
     %% WHEN
     Desc = linc_us4_oe_port:get_experimental_desc(?SWITCH_ID),
 
     %% THEN
-    ?assertMatch(?OE_PORT_DESC_REPLY_PATTERN, Desc),
+    ?assertMatch(#ofp_experimenter_reply{
+                    experimenter = ?INFOBLOX_EXPERIMENTER,
+                    exp_type = port_desc},
+                 Desc),
     assert_port_desc_matches_port_from_config(Desc).
 
 assert_port_desc_matches_port_from_config(Desc) ->
-    PortDescs =
-        Desc#ofp_experimenter_reply.data#ofp_port_desc_reply_v6.body,
+    PortDescs = Desc#ofp_experimenter_reply.data,
     ?assert(length(PortDescs) =/= 0),
     ExpectedPorts = get_ports_from_config_for_switch(?SWITCH_ID),
     lists:map(fun(E) ->
                       ?assertMatch(#ofp_port_v6{}, E),
-                      PortNo = E#ofp_port_v6.port_no,
+                      PortNo = #ofp_port_v6.port_no,
                       ?assert(lists:keymember(PortNo, 2, ExpectedPorts))
               end, PortDescs).
+
+non_optical_ports_should_be_marked_in_exp_port_desc() ->
+    %% GIVEN
+    %% Config for logical switch 1 with 3 ports is set up; the 3rd port
+    %% is not optical
+
+    %% WHEN
+    Desc = linc_us4_oe_port:get_experimental_desc(?SWITCH_ID),
+
+    %% THEN
+    assert_non_optical_port_is_marked(?NON_OPTICAL_PORT,
+                                      Desc#ofp_experimenter_reply.data).
+
+assert_non_optical_port_is_marked(ExpectedPortNo, PortsDesc) ->
+    [ActualPortNo] = [begin
+                          P#ofp_port_v6.port_no
+                      end || P  <- PortsDesc, not P#ofp_port_v6.is_optical],
+    ?assertEqual(ActualPortNo, ExpectedPortNo).
 
 optical_ports_should_not_be_included_in_port_desc() ->
     %% GIVEN
@@ -355,7 +374,7 @@ optical_ports_should_not_be_included_in_port_desc() ->
 
     %% THEN
     ?assertMatch(#ofp_port_desc_reply{}, Desc),
-    ?assertMatch([], Desc#ofp_port_desc_reply.body).
+    ?assertMatch([#ofp_port{port_no = 3}], Desc#ofp_port_desc_reply.body).
 
 get_ports_from_config_for_switch(SwitchId) ->
     [{switch, SwitchId, Config}] = ports_without_queues(optical),
@@ -371,7 +390,7 @@ ports(TestType) ->
                   {features, #features{}},
                   {config, #port_configuration{}}],
          Opts1 = case TestType of
-                     optical ->
+                     optical when No /= ?NON_OPTICAL_PORT ->
                          [{type, TestType} | Opts0];
                      port_config when No /= 3 ->
                          PortNo = No + 100,
@@ -412,6 +431,7 @@ setup(Type) ->
     Type.
 
 teardown(Type) ->
+    application:unload(linc),
     linc:delete(?SWITCH_ID),
     unmock(?MOCKED(Type)).
 

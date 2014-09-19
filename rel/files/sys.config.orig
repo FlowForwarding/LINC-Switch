@@ -88,6 +88,14 @@
        %%    a. the port has to be defined in the `capable_switch_ports`,
        %%    b. the port has to be listed in the `ports` for the logical switch.
        %%
+       %% Note that logical switch port numbers do not have to be the same
+       %% as capable switch port numbers. If the `port_no` option is not
+       %% provided it defaults to capable switch port number.
+       %%
+       %% If `port_name` option is not provided it defaults to
+       %% `Port{LOGICAL_SWITCH_PORT_NO}` or `Port{CAPABLE_SWITCH_PORT_NO}`
+       %% if logical port number is not provided.
+       %%
        %% If queues are enabled, assign them to ports.
        %% Remember to set appropriate port rates in `capable_switch_ports`.
        %% Queue configuration is not part of the OpenFlow specification
@@ -95,9 +103,13 @@
        {ports, [
                 %% Examples:
                 %% - port without queues:
-                %% {port, 1, {queues, []}},
+                %% {port, 1, [{queues, []}]},
                 %% - port with two queues:
-                %% {port, 2, {queues, [1, 2]}}
+                %% {port, 2, [{queues, [1, 2]}]},
+                %% - port with explicit number and name
+                %% {port, 2, [{queues, []},
+                %%            {port_no, 1},
+                %%            {port_name, "Banshee"}]}
                ]}
       ]}
 

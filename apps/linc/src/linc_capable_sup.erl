@@ -32,6 +32,8 @@
 
 -include("linc_logger.hrl").
 
+-define(PORTS_MAP_ETS, ports_map).
+
 %%------------------------------------------------------------------------------
 %% API functions
 %%------------------------------------------------------------------------------
@@ -58,12 +60,7 @@ start_link() ->
     ?DEBUG("Configuration: ~p", [Config]),
     %% Better place for this initialization?
     %% The optical links are permanent througt the capable switch life
-    case application:get_env(linc, optical_links) of
-        {ok, Links} ->
-            initialize_optical_extension(Links);
-        _ ->
-            ok
-    end,
+    initialize_capable_switch_data(),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.
@@ -82,11 +79,16 @@ stop_switch(SwitchId) ->
 %%------------------------------------------------------------------------------
 
 init([]) ->
+    %% initialize_capable_switch_data(),
     {ok, {{one_for_one, 5, 10}, []}}.
 
 %%------------------------------------------------------------------------------
 %% Internal functions
 %%------------------------------------------------------------------------------
+
+initialize_capable_switch_data() ->
+    initialize_optical_extension(),
+    create_mapping_between_capable_and_logical_ports().
 
 switch_id(Id) ->
     {match,[SwitchIdS]} = re:run(atom_to_list(Id), "([[:digit:]]+)", [{capture, first, list}]),
@@ -143,5 +145,30 @@ start_dependency(App) ->
                    [App, Error])
     end.
 
-initialize_optical_extension(Links) ->
-    linc_oe:initialize(Links).
+initialize_optical_extension() ->
+    case application:get_env(linc, optical_links) of
+        {ok, Links} ->
+            linc_oe:initialize(Links);
+        _ ->
+            ok
+    end.
+
+create_mapping_between_capable_and_logical_ports() ->
+    ets:new(?PORTS_MAP_ETS, [named_table, public,
+                             {read_concurrency, true}]),
+    {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
+    [begin
+         {ports, SwPorts} = lists:keyfind(ports, 1, SwOpts),
+         create_mapping_between_capable_and_logical_ports(SwId, SwPorts)
+     end || {switch, SwId, SwOpts} <- LogicalSwitches].
+
+create_mapping_between_capable_and_logical_ports(SwId, SwPorts) ->
+    [begin
+         Mapping = case lists:keyfind(port_no, 1, PortOts) of
+                       {port_no, LogicalNo} ->
+                           {CapableNo, {SwId, LogicalNo}};
+                       false ->
+                           {CapableNo, {SwId, CapableNo}}
+         end,
+         ets:insert_new(?PORTS_MAP_ETS, Mapping) orelse throw(bad_port_config)
+     end || {port, CapableNo, PortOts} <- SwPorts].

@@ -195,31 +195,39 @@ get_linc_logical_switches() ->
     [convert_logical_switch(S, CapableSwitchPorts, CapableSwitchQueues)
      || S <- LogicalSwitches].
 
-convert_logical_switch({switch, SwitchId, LogicalSwitchConfig},
-                       CapableSwitchPorts, CapableSwitchQueues) ->
-    {ports, LogicalPorts} = lists:keyfind(ports, 1, LogicalSwitchConfig),
-    {NewPorts, NewQueues} =
-        lists:foldl(fun({port, PortNo, QueuesConfig}, {Ports, Queues}) ->
-                            {port, PortNo, PortConfig} =
-                                lists:keyfind(PortNo, 2, CapableSwitchPorts),
-                            PortRate = logical_switch_port_rate(PortConfig),
-                            NewPortQueues = convert_queues(PortNo, PortRate,
-                                                           QueuesConfig,
-                                                           CapableSwitchQueues),
-                            NewPort = {port, PortNo, PortConfig},
-                            {[NewPort | Ports], [NewPortQueues | Queues]}
-                    end, {[], []}, LogicalPorts),
+convert_logical_switch({switch, SwitchId, LogicalConfig},
+                       CapablePorts, CapableQueues) ->
+    {ports, LogicalPorts} = lists:keyfind(ports, 1, LogicalConfig),
+    {NewPorts, NewQueues} = convert_ports_and_queues(CapablePorts,
+                                                     CapableQueues,
+                                                     LogicalPorts),
     {controllers, Controllers} = lists:keyfind(controllers, 1,
-                                               LogicalSwitchConfig),
-    NewLogicalSwitchConfig1 =
-        lists:keystore(ports, 1, LogicalSwitchConfig, {ports, NewPorts}),
-    NewLogicalSwitchConfig2 =
-        lists:keystore(queues, 1, NewLogicalSwitchConfig1, {queues, NewQueues}),
+                                               LogicalConfig),
     NewControllers = convert_controllers(Controllers),
-    NewLogicalSwitchConfig3 =
-        lists:keystore(controllers, 1, NewLogicalSwitchConfig2,
-                       {controllers, NewControllers}),
-    {switch, SwitchId, NewLogicalSwitchConfig3}.
+    NewOpts = [{ports, NewPorts}, {queues, NewQueues},
+               {controllers, NewControllers}],
+    NewLogicalConfig =
+        lists:foldl(fun({Opt, _} = OptValue, Config) ->
+                            lists:keystore(Opt, 1, Config, OptValue)
+                    end, LogicalConfig, NewOpts),
+    {switch, SwitchId, NewLogicalConfig}.
+
+convert_ports_and_queues(CapablePorts, CapableQueues, LogicalPorts) ->
+    lists:foldl(
+      fun({port, PortNo, LogicalPortOpts}, {Ports, Queues}) ->
+              {_, _, CapablePortOpts} = lists:keyfind(PortNo, 2,
+                                                      CapablePorts),
+              PortRate = logical_switch_port_rate(CapablePortOpts),
+              QueuesConfig = lists:keyfind(queues, 1, LogicalPortOpts),
+              NewPortQueues = convert_queues(PortNo,
+                                             PortRate,
+                                             QueuesConfig,
+                                             CapableQueues),
+              NewPortConfig = convert_port_opts(CapablePortOpts,
+                                                LogicalPortOpts),
+              NewPort = {port, PortNo, NewPortConfig},
+              {[NewPort | Ports], [NewPortQueues | Queues]}
+      end, {[], []}, LogicalPorts).
 
 convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
     PortQueues =
@@ -229,6 +237,11 @@ convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
              {QId, QueueConfig}
          end || QId <- QueueIds],
     {port, PortNo, [PortRate, {port_queues, PortQueues}]}.
+
+convert_port_opts(CapablePortOpts, LogicalPortOpts) ->
+    Opts = [lists:keyfind(Opt, 1, LogicalPortOpts)
+            || Opt <- [port_no, port_name]],
+    [O || O <- Opts, O =/= false] ++ CapablePortOpts.
 
 convert_controllers(Controllers) ->
     [begin

@@ -43,6 +43,14 @@
 
 %% Tests -----------------------------------------------------------------------
 
+port_config_test_() ->
+    {setup, fun port_config_test_setup/0, fun teardown/1,
+     {foreach, fun foreach_setup/0, fun foreach_teardown/1,
+     [{"Port has right OF Port No",
+       fun port_should_have_right_number_set/0},
+      {"Port has right OF Port Name",
+       fun port_should_have_right_name_set/0}]}}.
+
 port_test_() ->
     {setup, fun setup/0, fun teardown/1,
     [
@@ -92,6 +100,41 @@ optical_port_test_() ->
          fun experimental_port_desc_should_be_contructed/0},
         {"Test OF 1.3 port desc not returns optical ports",
          fun optical_ports_should_not_be_included_in_port_desc/0}]}]}.
+
+port_should_have_right_number_set() ->
+    %% GIVEN
+    %% Some ports have port_no option with number that differs from
+    %% capable port number and
+    ExpectedPorts =
+        [begin
+             proplists:get_value(port_no, Opts, CapableNo)
+         end || {port, CapableNo, Opts} <- get_logical_ports()],
+
+    %% WHEN
+    %% Nothing blows up
+
+    %% THEN
+    [?assert(linc_us4_oe_port:is_valid(?SWITCH_ID, P)) || P <- ExpectedPorts].
+
+port_should_have_right_name_set() ->
+    %% GIVEN
+    %% Some ports have port_name set and
+    Expected =
+        [begin
+             PortNo = proplists:get_value(port_no, Opts, CapableNo),
+             DefaultName = "Port" ++ integer_to_list(PortNo),
+             {PortNo, proplists:get_value(port_name, Opts, DefaultName)}
+         end || {port, CapableNo, Opts} <- get_logical_ports()],
+
+    %% WHEN
+    %% Nothing blows up
+
+    %% THEN
+    #ofp_port_desc_reply{body = Ports} = linc_us4_oe_port:get_desc(?SWITCH_ID),
+    [begin
+         ExpectedName = proplists:get_value(Actual#ofp_port.port_no, Expected),
+         ?assertEqual(ExpectedName, Actual#ofp_port.name)
+     end || Actual <- Ports].
 
 port_mod() ->
     BadPort = 999,
@@ -322,14 +365,19 @@ get_ports_from_config_for_switch(SwitchId) ->
 
 %% Fixtures --------------------------------------------------------------------
 
-ports(Type) ->
+ports(TestType) ->
     [begin
          Opts0 = [{interface, "dummy" ++ integer_to_list(No)},
                   {features, #features{}},
                   {config, #port_configuration{}}],
-         Opts1 = case Type of
+         Opts1 = case TestType of
                      optical ->
-                         [{type, Type} | Opts0];
+                         [{type, TestType} | Opts0];
+                     port_config when No /= 3 ->
+                         PortNo = No + 100,
+                         [{port_no, PortNo},
+                          {port_name, "Banshee" ++ integer_to_list(PortNo)}
+                          | Opts0];
                      _ ->
                          Opts0
                  end,
@@ -339,6 +387,13 @@ ports(Type) ->
 ports_without_queues(Type) ->
     [{switch, 0,
       [{ports, ports(Type)}, {queues_status, disabled}, {queues, []}]}].
+
+get_logical_ports() ->
+    {ok, [{switch, _, Config}]} = application:get_env(linc, logical_switches),
+    proplists:get_value(ports, Config).
+
+port_config_test_setup() ->
+    setup(port_config).
 
 optical_extension_setup() ->
     setup(optical).

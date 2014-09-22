@@ -203,6 +203,10 @@ check_packet(Packet, Expected) ->
     Fields = linc_us4_oe_convert:packet_fields(Packet),
     check_fields(Fields, Expected).
 
+check_fields([Converted = #ofp_oxm_experimenter{
+                             experimenter = ?INFOBLOX_EXPERIMENTER}
+              | Rest], Expected) ->
+    check_fields([Converted#ofp_oxm_experimenter.body | Rest], Expected);
 check_fields([], []) ->
     ok;
 check_fields([Converted | Rest1], [{Name, Value} | Rest2]) ->

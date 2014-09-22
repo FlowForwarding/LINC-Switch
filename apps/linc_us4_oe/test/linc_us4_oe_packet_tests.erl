@@ -116,9 +116,7 @@ och_optical_data_should_be_removed_from_packet() ->
                      | ExpectedEthPakcet = []],
 
     %% WHEN
-    EthPacket =
-        linc_us4_oe_packet:optical_record_to_ethernet_record(
-          OpticalPacket),
+    EthPacket = linc_us4_oe_packet:strip_optical_headers(OpticalPacket),
 
     %% THEN
     ?assertEqual(ExpectedEthPakcet, EthPacket).

@@ -502,10 +502,7 @@ handle_call(get_port_state, _From,
 handle_call({set_port_state, NewPortState}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{state = NewPortState},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(State)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
 
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_port_config, _From,
@@ -514,10 +511,7 @@ handle_call(get_port_config, _From,
 handle_call({set_port_config, NewPortConfig}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{config = NewPortConfig},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(State)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
@@ -534,10 +528,7 @@ handle_call(get_advertised_features, _From,
 handle_call({set_advertised_features, AdvertisedFeatures}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(State)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_info, _From, #state{resource_id = ResourceId,
                                     port = Port} = State) ->
@@ -916,7 +907,7 @@ translate_ofp_port_to_optical_v6(Port, Type) ->
                  properties = ?DEFAULT_OPTICAL_PROPERTIES,
                  is_optical = (Type == optical)}.
 
-oe_port_status(#state{port = Port, optical_port_pid = Pid}) ->
+oe_port_status(Reason, #state{port = Port, optical_port_pid = Pid}) ->
     PortType = case is_pid(Pid) of
                    true ->
                        optical;
@@ -924,14 +915,14 @@ oe_port_status(#state{port = Port, optical_port_pid = Pid}) ->
                        non_optical
                end,
     PortStatus = #ofp_port_status{
-                    reason = modify,
+                    reason = Reason,
                     desc = translate_ofp_port_to_optical_v6(Port, PortType)
     },
-    #ofp_experimenter{
-        experimenter = ?INFOBLOX_EXPERIMENTER,
-        exp_type = port_status,
-        data = PortStatus
-    }.
+    #ofp_message{body = #ofp_experimenter{
+                           experimenter = ?INFOBLOX_EXPERIMENTER,
+                           exp_type = port_status,
+                           data = PortStatus
+                          }}.
 
 set_ofp_port(CapablePortNo, PortOpts) ->
     PortNo = proplists:get_value(port_no, PortOpts, CapablePortNo),
@@ -953,12 +944,12 @@ set_ofp_port(CapablePortNo, PortOpts) ->
                      {config, Config} ->
                          linc_ofconfig:convert_port_config(Config)
                  end,
-    Port = #ofp_port{port_no = PortNo,
-                     name = PortName,
-                     config = PortConfig,
-                     state = [live],
-                     curr = ?FEATURES,
-                     advertised = Advertised,
-                     supported = ?FEATURES, peer = ?FEATURES,
-                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
+    #ofp_port{port_no = PortNo,
+              name = PortName,
+              config = PortConfig,
+              state = [live],
+              curr = ?FEATURES,
+              advertised = Advertised,
+              supported = ?FEATURES, peer = ?FEATURES,
+              curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
 

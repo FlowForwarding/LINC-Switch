@@ -557,8 +557,8 @@ handle_call(optical_up, _From, #state{optical_port_pid = Pid} = State) ->
     {reply, Reply, State}.
 
 %% @private
-handle_cast({send, #linc_pkt{switch_id = SwitchId, in_port = InPort,
-                             packet = Packet0, queue_id = QueueId}},
+handle_cast({send, #linc_pkt{switch_id = SwitchId, packet = Packet0,
+                             queue_id = QueueId}},
             #state{socket = Socket,
                    port = #ofp_port{port_no = PortNo,
                                     config = PortConfig},
@@ -567,12 +567,9 @@ handle_cast({send, #linc_pkt{switch_id = SwitchId, in_port = InPort,
                    ifindex = Ifindex,
                    switch_id = SwitchId,
                    optical_port_pid = undefined} = State) ->
-    Packet1 = case linc_oe:is_port_optical(SwitchId, InPort) of
-                  true ->
-                      linc_us4_oe_packet:optical_record_to_ethernet_record(Packet0);
-                  false ->
-                      Packet0
-              end,
+    %% The current port is non-optical so we need to strip optical headers
+    %% in case the packet has such
+    Packet1 = linc_us4_oe_packet:strip_optical_headers(Packet0),
     case check_port_config(no_fwd, PortConfig) of
         true ->
             drop;

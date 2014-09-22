@@ -21,7 +21,7 @@
 
 -export([binary_to_record/3,
          optical_packet_to_record/3,
-         optical_record_to_ethernet_record/1,
+         strip_optical_headers/1,
          find/2,
          find_and_edit/3,
          find_and_edit_skip/4,
@@ -83,7 +83,7 @@ optical_packet_to_record(Packet, SwitchId, Port) ->
             #linc_pkt{}
     end.
 
-optical_record_to_ethernet_record(Optical) ->
+strip_optical_headers(Packet) ->
     Filter = fun(#och_sigtype{}) ->
                      false;
                 (#och_sigid{}) ->
@@ -91,7 +91,7 @@ optical_record_to_ethernet_record(Optical) ->
                 (_) ->
                      true
              end,
-    lists:filter(Filter, Optical).
+    lists:filter(Filter, Packet).
 
 %%------------------------------------------------------------------------------
 %% @doc Looks for given element/tag in packet, returns 'not_found' or the

@@ -97,7 +97,7 @@ optical_port_test_() ->
         {"Test message from optical backend is routed",
          fun message_from_optical_backed_should_be_routed/0},
         {"Test experimantal port desc",
-         fun experimental_port_desc_should_be_contructed/0},
+         fun experimental_port_desc_should_be_constructed/0},
         {"Test OF 1.3 port desc not returns optical ports",
          fun optical_ports_should_not_be_included_in_port_desc/0}]}]}.
 
@@ -324,7 +324,7 @@ message_from_optical_backed_should_be_routed() ->
            <<"Hello Alice!">>},
     ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
 
-experimental_port_desc_should_be_contructed() ->
+experimental_port_desc_should_be_constructed() ->
     %% GIVEN
     %% Config for logical switch 1 with 3 ports is set up 
 

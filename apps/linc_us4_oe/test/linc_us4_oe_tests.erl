@@ -177,6 +177,7 @@ config_request_reply_teardown(_) ->
 mocked_us4_backend_setup() ->
     DummyBackendOpts = [ {Opt, dummy} || Opt <- [switch_id,
                                                  datapath_mac,
+                                                 datapath_id,
                                                  config] ],
     {ok, 4, State} = linc_us4_oe:start(DummyBackendOpts),
     State.

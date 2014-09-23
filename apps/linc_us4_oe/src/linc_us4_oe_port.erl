@@ -203,11 +203,11 @@ send(#linc_pkt{switch_id = SwitchId} = Pkt, PortNo) when is_integer(PortNo) ->
 -spec get_desc(integer()) -> ofp_port_desc_reply().
 get_desc(SwitchId) ->
     Filter = fun(#linc_port{pid = Pid}, Ports) ->
-                     case gen_server:call(Pid, get_non_optical_port) of
-                         optical ->
+                     case gen_server:call(Pid, get_port) of
+                         {optical, _P} ->
                              Ports;
-                         Port ->
-                             [Port | Ports]
+                         {non_optical, P} ->
+                             [P | Ports]
                      end
              end,
     L = ets:foldl(Filter, [], linc:lookup(SwitchId, linc_ports)),
@@ -218,8 +218,9 @@ get_desc(SwitchId) ->
 %% as optical
 get_experimental_desc(SwitchId) ->
     L = ets:foldl(fun(#linc_port{pid = Pid}, Ports) ->
-                          Port = gen_server:call(Pid, get_any_port),
-                          [translate_ofp_port_to_optical_v6(Port) | Ports]
+                          {Type, Port} = gen_server:call(Pid, get_port),
+                          [translate_ofp_port_to_optical_v6(Port, Type)
+                           | Ports]
                   end, [], linc:lookup(SwitchId, linc_ports)),
     #ofp_experimenter_reply{experimenter = ?INFOBLOX_EXPERIMENTER,
                             exp_type = port_desc,
@@ -490,23 +491,18 @@ handle_call({port_mod, #ofp_port_mod{hw_addr = PMHwAddr,
                                {{error, {port_mod_failed, bad_hw_addr}}, Port}
                        end,
     {reply, Reply, State#state{port = NewPort}};
-handle_call(get_non_optical_port, _From, #state{optical_port_pid = Pid} = State)
-  when is_pid(Pid) ->
-    {reply, optical, State};
-handle_call(get_non_optical_port, _From, #state{port = Port} = State) ->
-    {reply, Port, State};
-handle_call(get_any_port, _From, #state{port = Port} = State) ->
-    {reply, Port, State};
+handle_call(get_port, _From, #state{optical_port_pid = Pid,
+                                    port = Port} = State) when is_pid(Pid) ->
+    {reply, {optical, Port}, State};
+handle_call(get_port, _From, #state{port = Port} = State) ->
+    {reply, {non_optical, Port}, State};
 handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->
     {reply, PortState, State};
 handle_call({set_port_state, NewPortState}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{state = NewPortState},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
 
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_port_config, _From,
@@ -515,10 +511,7 @@ handle_call(get_port_config, _From,
 handle_call({set_port_config, NewPortConfig}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{config = NewPortConfig},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
@@ -535,10 +528,7 @@ handle_call(get_advertised_features, _From,
 handle_call({set_advertised_features, AdvertisedFeatures}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
     NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
-    PortStatus = #ofp_port_status{reason = modify,
-                                  desc = NewPort},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PortStatus}),
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = oe_port_status(NewPort)}),
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
     {reply, ok, State#state{port = NewPort}};
 handle_call(get_info, _From, #state{resource_id = ResourceId,
                                     port = Port} = State) ->
@@ -908,29 +898,31 @@ setup_load_control(SwitchId, PortNo, State) ->
         linc_us4_oe_port_load_regulator:schedule_periodic_check(SwitchId, PortNo),
     State#state{periodic_load_checker_ref = CheckerReference}.
 
-translate_ofp_port_to_optical_v6(Port) ->
-    PortV6 = #ofp_port_v6{port_no = Port#ofp_port.port_no,
-                          hw_addr = Port#ofp_port.hw_addr,
-                          name = Port#ofp_port.name,
-                          config = Port#ofp_port.config,
-                          state = Port#ofp_port.state,
-                          properties = ?DEFAULT_OPTICAL_PROPERTIES},
-    mark_optical_v6_as_eth(PortV6).
+translate_ofp_port_to_optical_v6(Port, Type) ->
+    #ofp_port_v6{hw_addr = Port#ofp_port.hw_addr,
+                 port_no = Port#ofp_port.port_no,
+                 name = Port#ofp_port.name,
+                 config = Port#ofp_port.config,
+                 state = Port#ofp_port.state,
+                 properties = ?DEFAULT_OPTICAL_PROPERTIES,
+                 is_optical = (Type == optical)}.
 
-mark_optical_v6_as_eth(Port) ->
-    %% TODO
-    Port.
-
-oe_port_status(Port = #ofp_port{}) ->
+oe_port_status(Reason, #state{port = Port, optical_port_pid = Pid}) ->
+    PortType = case is_pid(Pid) of
+                   true ->
+                       optical;
+                   false ->
+                       non_optical
+               end,
     PortStatus = #ofp_port_status{
-                    reason = modify,
-                    desc = translate_ofp_port_to_optical_v6(Port)
+                    reason = Reason,
+                    desc = translate_ofp_port_to_optical_v6(Port, PortType)
     },
-    #ofp_experimenter{
-        experimenter = ?INFOBLOX_EXPERIMENTER,
-        exp_type = port_status,
-        data = PortStatus
-    }.
+    #ofp_message{body = #ofp_experimenter{
+                           experimenter = ?INFOBLOX_EXPERIMENTER,
+                           exp_type = port_status,
+                           data = PortStatus
+                          }}.
 
 set_ofp_port(CapablePortNo, PortOpts) ->
     PortNo = proplists:get_value(port_no, PortOpts, CapablePortNo),
@@ -952,12 +944,12 @@ set_ofp_port(CapablePortNo, PortOpts) ->
                      {config, Config} ->
                          linc_ofconfig:convert_port_config(Config)
                  end,
-    Port = #ofp_port{port_no = PortNo,
-                     name = PortName,
-                     config = PortConfig,
-                     state = [live],
-                     curr = ?FEATURES,
-                     advertised = Advertised,
-                     supported = ?FEATURES, peer = ?FEATURES,
-                     curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
+    #ofp_port{port_no = PortNo,
+              name = PortName,
+              config = PortConfig,
+              state = [live],
+              curr = ?FEATURES,
+              advertised = Advertised,
+              supported = ?FEATURES, peer = ?FEATURES,
+              curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
 

@@ -547,7 +547,7 @@ create_flow_entry(#ofp_flow_mod{priority = Priority,
                 instructions = lists:keysort(2, Instructions)}.
 
 validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
-    case validate_match(Match) of
+    case validate_match(SwitchId, Match) of
         ok ->
             case validate_instructions(SwitchId, TableId,
                                        Instructions, Match) of
@@ -568,34 +568,35 @@ validate_match_and_instructions(SwitchId, TableId, Match, Instructions) ->
 %%   earlier position in the list of fields
 %% - The values are within the allowed domains
 %% - There's no 0 bit in a mask for the corresponding bit in a value set to 1
--spec validate_match(Match::[ofp_field()]) ->
+-spec validate_match(SwitchId :: integer(), Match::[ofp_field()]) ->
                             ok | {error,{Type :: atom(), Code :: atom()}}.
-validate_match(Fields) ->
-    validate_match(Fields, []).
+validate_match(SwitchId, Fields) ->
+    validate_match(SwitchId, Fields, []).
 
-validate_match([#ofp_field{class = Class, name = Name} = Field | Fields],
+validate_match(SwitchId,
+               [#ofp_field{class = Class, name = Name} = Field | Fields],
                Previous) ->
     Validators
         = [{bad_field, fun is_supported_field/2, [Class, Name]},
            {dup_field, fun is_not_duplicated_field/3, [Class, Name, Previous]},
            {bad_prereq, fun are_prerequisites_met/2, [Field, Previous]},
-           {bad_value, fun is_value_valid/1, [Field]},
+           {bad_value, fun is_value_valid/2, [SwitchId, Field]},
            {bad_wildcards, fun is_mask_valid/1, [Field]}],
 
     case lists:dropwhile(fun({_, CheckFun, Args}) ->
                                  erlang:apply(CheckFun, Args)
                          end, Validators) of
         [] ->
-            validate_match(Fields, [Field | Previous]);
+            validate_match(SwitchId, Fields, [Field | Previous]);
         [{ErrorCode, _FaildedCheck, _} | _] ->
             {error, {bad_match, ErrorCode}}
     end;
-validate_match([#ofp_oxm_experimenter{
-                   body = #ofp_field{} = Field,
-                   experimenter = ?INFOBLOX_EXPERIMENTER}
-                | Fields], Previous) ->
-    validate_match([Field | Fields], Previous);
-validate_match([],_Previous) ->
+validate_match(SwitchId, [#ofp_oxm_experimenter{
+                              body = #ofp_field{} = Field,
+                              experimenter = ?INFOBLOX_EXPERIMENTER}
+                           | Fields], Previous) ->
+    validate_match(SwitchId, [Field | Fields], Previous);
+validate_match(_SwitchId, [],_Previous) ->
     ok.
 
 %% Check that a field is supported.
@@ -897,9 +898,10 @@ validate_action(_SwitchId,
 validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
     {error,{bad_action,bad_type}}.
 
-%% Check that field value is in the allowed domain
-%% TODO
-is_value_valid(#ofp_field{name=_Name,value=_Value}) ->
+%% TODO: Check that field value is in the allowed domain for the rest fields
+is_value_valid(SwitchId, #ofp_field{name = in_port, value = <<PortNo:32>>}) ->
+    linc_us4_oe_port:is_valid(SwitchId, PortNo);
+is_value_valid(SwitchId, #ofp_field{name=_Name,value=_Value}) ->
     true.
 
 %% @private Check that the mask is correct for the given value

@@ -38,6 +38,7 @@ flow_mod_test_() ->
        ,{"Prerequisite field missing", fun prerequisite_field_missing/0}
        ,{"Prerequisite field can have any value", fun prerequisite_field_can_have_any_value/0}
        ,{"Goto table with smaller table_id", fun goto_backwards/0}
+       ,{"Invalid in port", fun invalid_in_port/0}
        ,{"Valid out port", fun valid_out_port/0}
        ,{"Invalid out port", fun invalid_out_port/0}
        ,{"Valid out group", fun valid_out_group/0}
@@ -203,6 +204,16 @@ goto_backwards() ->
                    [{in_port,6}],
                    [{goto_table,2}]),
     ?assertEqual({error,{bad_action,bad_table_id}},
+                 linc_us4_oe_flow:modify(?SWITCH_ID, FlowModAdd)).
+
+invalid_in_port() ->
+    FlowModAdd = ofp_v4_utils:flow_add(
+                   [{table_id,0},
+                    {priority,5},
+                    {flags,[]}],
+                   [{in_port, _Over33IsInvalid = 33}],
+                   [{write_actions,[{output,15,1400}]}]),
+    ?assertEqual({error, {bad_match, bad_value}},
                  linc_us4_oe_flow:modify(?SWITCH_ID, FlowModAdd)).
 
 valid_out_port() ->

@@ -33,11 +33,12 @@
 
 -define(MOCKED, [logic, port_native, packet]).
 -define(SWITCH_ID, 0).
+-define(PORT_NUMS, [1,2,3]).
 
 %% Tests -----------------------------------------------------------------------
 
 port_state_test_() ->
-    {setup, fun setup/0, fun teardown/1,
+    {setup, fun port_state_test_setup/0, fun teardown/1,
      [{setup, fun() -> init_port_state_setup(up) end,
        fun init_port_state_teardown/1,
        {"Port state: initial state up", fun init_port_state_should_be_up/0}},
@@ -51,12 +52,18 @@ port_state_test_() ->
         {"Port state: changes",
          fun port_status_should_be_sent_on_state_changes/0}]}]}.
 
-port_test_() ->
-    {setup, fun setup/0, fun teardown/1,
-    [
+port_config_test_() ->
+    {setup, fun port_config_test_setup/0, fun teardown/1,
      {foreach, fun foreach_setup/0, fun foreach_teardown/1,
-      [
-       {"Port: port_mod", fun port_mod/0},
+      [{"Port has right OF Port No",
+        fun port_should_have_right_number_set/0},
+       {"Port has right OF Port Name",
+        fun port_should_have_right_name_set/0}]}}.
+
+port_functionality_test_() ->
+    {setup, fun port_funcionality_setup/0, fun teardown/1,
+    [{foreach, fun foreach_setup/0, fun foreach_teardown/1,
+      [{"Port: port_mod", fun port_mod/0},
        {"Port: is_valid", fun is_valid/0},
        {"Port send: in_port", fun send_in_port/0},
        {"Port send: table", fun send_table/0},
@@ -87,6 +94,42 @@ port_test_() ->
       {"Port routing strategy: explicit asynchronous routing",
        fun async_routing_explicitly_set/0}}
     ]}.
+
+port_should_have_right_number_set() ->
+    %% GIVEN
+    %% Some ports have port_no option with number that differs from
+    %% capable port number and
+    ExpectedPorts =
+        [begin
+             proplists:get_value(port_no, Opts, CapableNo)
+         end || {port, CapableNo, Opts} <- get_logical_ports()],
+
+    %% WHEN
+    %% Nothing blows up
+
+    %% THEN
+    [?assert(linc_us4_port:is_valid(?SWITCH_ID, P)) || P <- ExpectedPorts].
+
+port_should_have_right_name_set() ->
+    %% GIVEN
+    %% Some ports have port_name set and
+    Expected =
+        [begin
+             PortNo = proplists:get_value(port_no, Opts, CapableNo),
+             DefaultName = "Port" ++ integer_to_list(PortNo),
+             {PortNo, proplists:get_value(port_name, Opts, DefaultName)}
+         end || {port, CapableNo, Opts} <- get_logical_ports()],
+
+    %% WHEN
+    %% Nothing blows up
+
+    %% THEN
+    #ofp_port_desc_reply{body = Ports} = linc_us4_port:get_desc(?SWITCH_ID),
+    [begin
+         ExpectedName = proplists:get_value(Actual#ofp_port.port_no, Expected),
+         ?assertEqual(ExpectedName, Actual#ofp_port.name)
+     end || Actual <- Ports].
+
 
 port_mod() ->
     BadPort = 999,
@@ -135,7 +178,7 @@ send_normal() ->
 %% [3]: http://mininet.org/
 send_flood() ->
     [InPort | PortsThatShouldBeFlooded] =
-        [PortNo || {port, PortNo, _Config} <- ports()],
+        [PortNo || {port, PortNo, _Config} <- ports(funcionality)],
     Pkt = pkt(InPort),
     ?assertEqual(ok, linc_us4_port:send(Pkt, flood)),
     %% wait because send to port is a gen_server:cast
@@ -298,34 +341,27 @@ routing_fun_invoked_test(ExpectedRoutingFun) ->
 
 %% Fixtures --------------------------------------------------------------------
 
-ports() ->
-    [{port, 1, [{interface, "dummy1"},
-                {features, #features{}},
-                {config, #port_configuration{}}]},
-     {port, 2, [{interface, "dummy2"},
-                {features, #features{}},
-                {config, #port_configuration{}}]},
-     {port, 3, [{interface, "dummy3"},
-                {features, #features{}},
-                {config, #port_configuration{}}]}].
+port_state_test_setup() ->
+    setup(state).
 
-ports_without_queues() ->
-    Ports = ports(),
-    [{switch, 0, [{ports, Ports},
-                  {queues_status, disabled},
-                  {queues, []}]}].
+port_config_test_setup() ->
+    setup(config).
 
-setup() ->
+port_funcionality_setup() ->
+    setup(funcionality).
+
+setup(Type) ->
     mock(?MOCKED),
     ok = meck:new(linc_us4_port, [passthrough]),
     linc:create(?SWITCH_ID),
     linc_us4_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us4_sup:start_link(?SWITCH_ID),
-    Config = ports_without_queues(),
+    Config = ports_without_queues(Type),
     application:load(linc),
     application:set_env(linc, logical_switches, Config).
 
 teardown(_) ->
+    application:unload(linc),
     linc:delete(?SWITCH_ID),
     ok = meck:unload(linc_us4_port),
     unmock(?MOCKED).
@@ -355,6 +391,35 @@ init_port_state_teardown(Args) ->
 
 foreach_teardown(_) ->
     ok = linc_us4_port:terminate(?SWITCH_ID).
+
+%% Helpers --------------------------------------------------------------------
+
+ports_without_queues(Type) ->
+    [{switch, 0,
+      [{ports, ports(Type)}, {queues_status, disabled}, {queues, []}]}].
+
+ports(config) ->
+    [DefaultPort | _] = ?PORT_NUMS,
+    [{port, DefaultPort, default_port_opts(DefaultPort)}
+     | [{port, No, extended_port_opts(No)} || No <- ?PORT_NUMS,
+                                              No /= DefaultPort]];
+ports(_) ->
+    [{port, No, default_port_opts(No)} || No <- ?PORT_NUMS].
+
+default_port_opts(PortNo) ->
+    [{interface, "dummy" ++ integer_to_list(PortNo)},
+     {features, #features{}},
+     {config, #port_configuration{}}].
+
+extended_port_opts(PortNo) ->
+    LogicalPortNo = 100 + PortNo,
+    [{port_no, LogicalPortNo},
+     {port_name, "Banshee" ++ integer_to_list(LogicalPortNo)}
+     | default_port_opts(PortNo)].
+
+get_logical_ports() ->
+    {ok, [{switch, _, Config}]} = application:get_env(linc, logical_switches),
+    proplists:get_value(ports, Config).
 
 pkt() ->
     #linc_pkt{packet = [<<>>]}.
@@ -411,7 +476,7 @@ set_reverse_link_state(PortState, PortNo) ->
                                         false ->
                                             {up, down}
                                     end,
-    {port, PortNo, PortOpts} = lists:keyfind(PortNo, 2, ports()),
+    {port, PortNo, PortOpts} = lists:keyfind(PortNo, 2, ports(state)),
     Pid ! {netlink, ref, proplists:get_value(interface, PortOpts),
            operstate, PrevOperstate, NewOperstate},
     NewOperstate.

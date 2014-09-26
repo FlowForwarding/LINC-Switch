@@ -32,18 +32,17 @@
 
 -include("linc_logger.hrl").
 
--define(PORTS_MAP_ETS, ports_map).
-
 %%------------------------------------------------------------------------------
 %% API functions
 %%------------------------------------------------------------------------------
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, []),
-    start_ofconfig(Pid),
-
-    ?DEBUG("sys.config: ~p", [application:get_env(linc, logical_switches)]),
+    {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
+    ?DEBUG("sys.config logical switches:~n~p", [LogicalSwitches]),
+    linc_ports_mapping:initialize(LogicalSwitches),
+    {ok, Pid} = supervisor:start_link(?MODULE, []),
+    start_ofconfig_if_enabled(Pid),
     Config = case application:get_env(linc, of_config) of
                  {ok, enabled} ->
                      ?DEBUG("Old startup: ~p",
@@ -58,7 +57,7 @@ start_link() ->
                      linc_ofconfig:get_startup_without_ofconfig()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
-    initialize_capable_switch_data(),
+    initialize_optical_extension_if_enabled(),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.
@@ -83,10 +82,6 @@ init([]) ->
 %% Internal functions
 %%------------------------------------------------------------------------------
 
-initialize_capable_switch_data() ->
-    initialize_optical_extension(),
-    create_mapping_between_capable_and_logical_ports().
-
 switch_id(Id) ->
     {match,[SwitchIdS]} = re:run(atom_to_list(Id), "([[:digit:]]+)", [{capture, first, list}]),
     list_to_integer(SwitchIdS).
@@ -106,7 +101,7 @@ backend_for_switch(SwitchId) ->
     {backend, BackendMod} = lists:keyfind(backend, 1, Opts),
     BackendMod.
 
-start_ofconfig(Pid) ->
+start_ofconfig_if_enabled(Pid) ->
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
             start_dependency(ssh),
@@ -142,30 +137,10 @@ start_dependency(App) ->
                    [App, Error])
     end.
 
-initialize_optical_extension() ->
+initialize_optical_extension_if_enabled() ->
     case application:get_env(linc, optical_links) of
         {ok, Links} ->
             linc_oe:initialize(Links);
         _ ->
             ok
     end.
-
-create_mapping_between_capable_and_logical_ports() ->
-    ets:new(?PORTS_MAP_ETS, [named_table, public,
-                             {read_concurrency, true}]),
-    {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
-    [begin
-         {ports, SwPorts} = lists:keyfind(ports, 1, SwOpts),
-         create_mapping_between_capable_and_logical_ports(SwId, SwPorts)
-     end || {switch, SwId, SwOpts} <- LogicalSwitches].
-
-create_mapping_between_capable_and_logical_ports(SwId, SwPorts) ->
-    [begin
-         Mapping = case lists:keyfind(port_no, 1, PortOts) of
-                       {port_no, LogicalNo} ->
-                           {CapableNo, {SwId, LogicalNo}};
-                       false ->
-                           {CapableNo, {SwId, CapableNo}}
-         end,
-         ets:insert_new(?PORTS_MAP_ETS, Mapping) orelse throw(bad_port_config)
-     end || {port, CapableNo, PortOts} <- SwPorts].

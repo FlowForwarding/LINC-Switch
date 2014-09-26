@@ -218,10 +218,10 @@ convert_ports_and_queues(CapablePorts, CapableQueues, LogicalPorts) ->
               {_, _, CapablePortOpts} = lists:keyfind(PortNo, 2,
                                                       CapablePorts),
               PortRate = logical_switch_port_rate(CapablePortOpts),
-              QueuesConfig = lists:keyfind(queues, 1, LogicalPortOpts),
+              QueuesIds = logical_port_queues_ids(LogicalPortOpts),
               NewPortQueues = convert_queues(PortNo,
                                              PortRate,
-                                             QueuesConfig,
+                                             QueuesIds,
                                              CapableQueues),
               NewPortConfig = convert_port_opts(CapablePortOpts,
                                                 LogicalPortOpts),
@@ -229,7 +229,13 @@ convert_ports_and_queues(CapablePorts, CapableQueues, LogicalPorts) ->
               {[NewPort | Ports], [NewPortQueues | Queues]}
       end, {[], []}, LogicalPorts).
 
-convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
+logical_port_queues_ids(LogicalPortOpts) when is_list(LogicalPortOpts) ->
+    proplists:get_value(queues, LogicalPortOpts);
+logical_port_queues_ids(OldFormatOpts) ->
+    {queues, QueuesIds} = OldFormatOpts,
+    QueuesIds.
+
+convert_queues(PortNo, PortRate, QueueIds, CapableSwitchQueues) ->
     PortQueues =
         [begin
              {queue, QId, QueueConfig} = lists:keyfind(QId, 2,
@@ -238,10 +244,13 @@ convert_queues(PortNo, PortRate, {queues, QueueIds}, CapableSwitchQueues) ->
          end || QId <- QueueIds],
     {port, PortNo, [PortRate, {port_queues, PortQueues}]}.
 
-convert_port_opts(CapablePortOpts, LogicalPortOpts) ->
+convert_port_opts(CapablePortOpts, LogicalPortOpts)
+  when is_list(LogicalPortOpts) ->
     Opts = [lists:keyfind(Opt, 1, LogicalPortOpts)
             || Opt <- [port_no, port_name]],
-    [O || O <- Opts, O =/= false] ++ CapablePortOpts.
+    [O || O <- Opts, O =/= false] ++ CapablePortOpts;
+convert_port_opts(CapablePortOpts, _OldFormatOpts = {queues, _}) ->
+    CapablePortOpts.
 
 convert_controllers(Controllers) ->
     [begin

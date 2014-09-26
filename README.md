@@ -85,6 +85,7 @@ Compile everything:
 
 Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` file which looks like this:
 
+```erlang
     {linc,
      [
       {of_config, enabled},
@@ -106,11 +107,12 @@ Adjust switch configuration by editing the `rel/linc/releases/0.1/sys.config` fi
           {ports,
            [
             {port, 1, {queues, []}},
-            {port, 2, {queues, []}}
+            {port, 2, [{queues, []}, {port_no, 10}, {port_name, "Port10"}]}
            ]}
          ]}
        ]}
      ]}.
+```
 
 At the moment you can change the list of controllers and ports used by the
 switch.

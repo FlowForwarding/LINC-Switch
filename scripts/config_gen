@@ -179,5 +179,5 @@ generate_logical_switch_controllers_listener(ParsedConfig) ->
     end.
 
 generate_logical_switch_ports(PortsNames, PortsMap) ->
-    [{port, element(2, lists:keyfind(PortName, 1, PortsMap)), {queues, []}}
+    [{port, element(2, lists:keyfind(PortName, 1, PortsMap)), [{queues, []}]}
      || PortName <- PortsNames].

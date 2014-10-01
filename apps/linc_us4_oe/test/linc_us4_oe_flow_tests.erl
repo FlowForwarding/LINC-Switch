@@ -182,9 +182,11 @@ prerequisite_field_can_have_any_value() ->
                              #ofp_match{
                                 fields =
                                     [#ofp_field{
+                                        class = infoblox,
                                         name = och_sigtype,
                                         value = <<SigType>>},
                                      #ofp_field{
+                                        class = infoblox,
                                         name = och_sigid,
                                         value = <<111:48>>}]},
                          instructions =

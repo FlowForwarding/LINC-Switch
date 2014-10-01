@@ -586,7 +586,7 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    queues = QueuesState,
                    port = #ofp_port{port_no = PortNo} = Port,
                    switch_id = SwitchId} = State) ->
-    
+
     case is_port_accepting_packets(Port) of
         false ->
             drop;

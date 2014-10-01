@@ -146,7 +146,7 @@ udp() ->
 
 och_sigid() ->
     Packet = [#och_sigid{channel_number = CN = <<1:16>>}],
-    check_packet(Packet, [{och_sigid, <<0:16, CN/binary, 0:16>>}]).
+    check_packet(Packet, [{infoblox, och_sigid, <<0:16, CN/binary, 0:16>>}]).
 
 unknown() ->
     ok.
@@ -203,13 +203,13 @@ check_packet(Packet, Expected) ->
     Fields = linc_us4_oe_convert:packet_fields(Packet),
     check_fields(Fields, Expected).
 
-check_fields([Converted = #ofp_oxm_experimenter{
-                             experimenter = ?INFOBLOX_EXPERIMENTER}
-              | Rest], Expected) ->
-    check_fields([Converted#ofp_oxm_experimenter.body | Rest], Expected);
 check_fields([], []) ->
     ok;
 check_fields([Converted | Rest1], [{Name, Value} | Rest2]) ->
     Expected = #ofp_field{name = Name, value = Value},
+    ?assertEqual(Expected, Converted),
+    check_fields(Rest1, Rest2);
+check_fields([Converted | Rest1], [{Class, Name, Value} | Rest2]) ->
+    Expected = #ofp_field{class = Class, name = Name, value = Value},
     ?assertEqual(Expected, Converted),
     check_fields(Rest1, Rest2).

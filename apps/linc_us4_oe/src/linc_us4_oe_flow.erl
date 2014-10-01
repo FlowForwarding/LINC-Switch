@@ -591,11 +591,6 @@ validate_match(SwitchId,
         [{ErrorCode, _FaildedCheck, _} | _] ->
             {error, {bad_match, ErrorCode}}
     end;
-validate_match(SwitchId, [#ofp_oxm_experimenter{
-                              body = #ofp_field{} = Field,
-                              experimenter = ?INFOBLOX_EXPERIMENTER}
-                           | Fields], Previous) ->
-    validate_match(SwitchId, [Field | Fields], Previous);
 validate_match(_SwitchId, [],_Previous) ->
     ok.
 
@@ -603,6 +598,10 @@ validate_match(_SwitchId, [],_Previous) ->
 %% Currently all openflow_basic fields are assumed to be supported
 %% No experimenter fields are supported
 is_supported_field(openflow_basic,_Name) ->
+    true;
+is_supported_field(infoblox, Name)
+  when  Name =:= och_sigtype orelse
+        Name =:= och_sigid ->
     true;
 is_supported_field(_Class, _Name) ->
     false.
@@ -697,11 +696,14 @@ prerequisite_for(openflow_basic, pbb_isid) ->
     [{{openflow_basic,eth_type},<<16#88E7:16>>}];
 prerequisite_for(openflow_basic, ipv6_exthdr) ->
     [{{openflow_basic,eth_type},<<16#86dd:16>>}];
-prerequisite_for(openflow_basic, och_sigid) ->
-    %% TODO: add in_port as prerequsisite
-    [{{openflow_basic, och_sigtype}, any}];
 prerequisite_for(openflow_basic, _) ->
-    [].
+    [];
+%% Infoblox class prerequisites
+prerequisite_for(infoblox, och_sigtype) ->
+    %% Add prerequisite for in_port
+    [];
+prerequisite_for(infoblox, och_sigid) ->
+    [{{infoblox, och_sigtype}, any}].
 
 test_prereq({{openflow_basic,vlan_pcp},_Value},Previous) ->
     case lists:keyfind(vlan_pcp, #ofp_field.name,Previous) of
@@ -716,7 +718,6 @@ test_prereq({{Class,Name},Value},Previous) ->
             true;
         [#ofp_field{value = _AnyValue}] when Value == any ->
             true;
-        
         _ ->
             false
     end;
@@ -901,7 +902,7 @@ validate_action(_SwitchId, #ofp_action_experimenter{}, _Match) ->
 %% TODO: Check that field value is in the allowed domain for the rest fields
 is_value_valid(SwitchId, #ofp_field{name = in_port, value = <<PortNo:32>>}) ->
     linc_us4_oe_port:is_valid(SwitchId, PortNo);
-is_value_valid(SwitchId, #ofp_field{name=_Name,value=_Value}) ->
+is_value_valid(_SwitchId, #ofp_field{name=_Name,value=_Value}) ->
     true.
 
 %% @private Check that the mask is correct for the given value

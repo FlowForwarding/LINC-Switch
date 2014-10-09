@@ -346,7 +346,7 @@ set_field(#ofp_field{name = och_sigid = Key, value = <<Value:6/bytes>>},
             lists:keyreplace(Key, 1, Pkt,
                              H#och_sigid{channel_number = Channel})
     end;
-        
+
 set_field(_, Pkt) ->
     Pkt.
 

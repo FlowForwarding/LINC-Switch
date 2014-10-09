@@ -176,11 +176,8 @@ pkt_fields_match_flow_field(PktFields,
             vlan_pkt_field_match_flow_field(PktField, FlowField)
     end;
 pkt_fields_match_flow_field(_PktFields,
-                            #ofp_oxm_experimenter{
-                               body = #ofp_field{name = och_sigtype},
-                               experimenter = ?INFOBLOX_EXPERIMENTER}) ->
-    %% For now don't care about matching on och_sigtype; however require
-    %% it as a prerequisite in linc_us4_oe_flow:are_prerequisities_met/2
+                            #ofp_field{class = infoblox, name = och_sigtype}) ->
+    %% For now don't care about matching on och_sigtype
     true;
 pkt_fields_match_flow_field(PktFields, FlowField) ->
     lists:any(fun(PktField) ->
@@ -207,24 +204,25 @@ vlan_pkt_field_match_flow_field(PktField,
             false
     end.
 
-pkt_field_match_flow_field(#ofp_field{name = PktFieldName},
-                           #ofp_field{name = FlowFieldName})
+pkt_field_match_flow_field(PktField, FlowField) ->
+    fields_classes_match(PktField, FlowField) andalso
+        fields_values_and_masks_match(PktField, FlowField).
+
+fields_classes_match(#ofp_field{class = Class1}, #ofp_field{class = Class2}) ->
+    Class1 =:= Class2.
+
+fields_values_and_masks_match(#ofp_field{name = PktFieldName},
+                              #ofp_field{name = FlowFieldName})
   when PktFieldName =/= FlowFieldName ->
     false;
-pkt_field_match_flow_field(#ofp_field{value= Value},
-                           #ofp_field{value= Value, has_mask = false}) ->
+fields_values_and_masks_match(#ofp_field{value= Value},
+                              #ofp_field{value= Value, has_mask = false}) ->
     true;
-pkt_field_match_flow_field(
-  #ofp_oxm_experimenter{body = #ofp_field{value = Value},
-                        experimenter = ?INFOBLOX_EXPERIMENTER},
-  #ofp_oxm_experimenter{body = #ofp_field{value = Value, has_mask = false},
-                        experimenter = ?INFOBLOX_EXPERIMENTER}) ->
-    true;
-pkt_field_match_flow_field(#ofp_field{value = PktFieldValue},
-                           #ofp_field{value= FlowFieldValue, has_mask = true,
-                                      mask = Mask}) ->
+fields_values_and_masks_match(#ofp_field{value = PktFieldValue},
+                              #ofp_field{value= FlowFieldValue, has_mask = true,
+                                         mask = Mask}) ->
     masked_pkt_value_match_flow_value(PktFieldValue, FlowFieldValue, Mask);
-pkt_field_match_flow_field(_, _) ->
+fields_values_and_masks_match(_, _) ->
     false.
 
 masked_pkt_value_match_flow_value(<<>>, <<>>, <<>>) ->

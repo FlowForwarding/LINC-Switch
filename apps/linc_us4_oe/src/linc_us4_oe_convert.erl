@@ -20,6 +20,7 @@
 -module(linc_us4_oe_convert).
 
 -export([ofp_field/2,
+         ofp_field/3,
          packet_fields/1]).
 
 -include_lib("of_protocol/include/of_protocol.hrl").
@@ -34,6 +35,13 @@
 -spec ofp_field(atom(), binary() | integer()) -> ofp_field().
 ofp_field(Field, Value) ->
     #ofp_field{class = openflow_basic,
+               name = Field,
+               has_mask = false,
+               value = Value}.
+
+-spec ofp_field(ofp_field_class(), atom(), binary() | integer()) -> ofp_field().
+ofp_field(Class, Field, Value) ->
+    #ofp_field{class = Class,
                name = Field,
                has_mask = false,
                value = Value}.
@@ -141,8 +149,6 @@ header_fields(#udp{sport = SPort,
     [ofp_field(udp_src, <<SPort:16>>),
      ofp_field(udp_dst, <<DPort:16>>)];
 header_fields(#och_sigid{channel_number = CN}) ->
-    [#ofp_oxm_experimenter{
-        body = ofp_field(och_sigid, <<0:16, CN/binary, 0:16>>),
-        experimenter = ?INFOBLOX_EXPERIMENTER}];
+    [ofp_field(infoblox, och_sigid, <<0:16, CN/binary, 0:16>>)];
 header_fields(_Other) ->
     [].

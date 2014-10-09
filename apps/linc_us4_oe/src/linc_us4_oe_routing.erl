@@ -177,8 +177,7 @@ pkt_fields_match_flow_field(PktFields,
     end;
 pkt_fields_match_flow_field(_PktFields,
                             #ofp_field{class = infoblox, name = och_sigtype}) ->
-    %% For now don't care about matching on och_sigtype; however require
-    %% it as a prerequisite in linc_us4_oe_flow:are_prerequisities_met/2
+    %% For now don't care about matching on och_sigtype
     true;
 pkt_fields_match_flow_field(PktFields, FlowField) ->
     lists:any(fun(PktField) ->

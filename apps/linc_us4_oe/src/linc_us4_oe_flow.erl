@@ -703,7 +703,9 @@ prerequisite_for(infoblox, och_sigtype) ->
     %% Add prerequisite for in_port
     [];
 prerequisite_for(infoblox, och_sigid) ->
-    [{{infoblox, och_sigtype}, any}].
+    %% Add prerequisite for och_sigtype like below:
+    %% [{{infoblox, och_sigtype}, any}].
+    [].
 
 test_prereq({{openflow_basic,vlan_pcp},_Value},Previous) ->
     case lists:keyfind(vlan_pcp, #ofp_field.name,Previous) of

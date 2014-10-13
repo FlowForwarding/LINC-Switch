@@ -337,14 +337,18 @@ set_field(#ofp_field{ name = udp_dst, value = <<Value:16>> }, Pkt) ->
 %% Optical extension set field
 set_field(#ofp_field{name = och_sigid = Key, value = <<Value:6/bytes>>},
           Pkt) ->
-    <<_:2/bytes, Channel:2/bytes, _:2/bytes>> = Value,
+    <<GridType:1/bytes, ChannelSpacing:1/bytes,
+      ChannelNumber:2/bytes, SpectralWidth:2/bytes>> = Value,
+    Header = #och_sigid{grid_type = GridType,
+                        channel_spacing = ChannelSpacing,
+                        channel_number = ChannelNumber,
+                        spectral_width = SpectralWidth},
     case find(Pkt, Key) of
         not_found ->
-            [#och_sigid{channel_number = Channel} | Pkt];
-        {_Idx, H} ->
+            [Header | Pkt];
+        {_Idx, _H} ->
             %% Assumption that #och_sigid can occur once
-            lists:keyreplace(Key, 1, Pkt,
-                             H#och_sigid{channel_number = Channel})
+            lists:keyreplace(Key, 1, Pkt, Header)
     end;
 
 set_field(_, Pkt) ->

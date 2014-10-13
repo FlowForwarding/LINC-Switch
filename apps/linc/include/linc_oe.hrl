@@ -2,7 +2,7 @@
 -type och_sigtype() :: #och_sigtype{}.
 
 -record(och_sigid, {
-          grid :: binary(),
+          grid_type :: binary(),
           channel_spacing :: binary(),
           channel_number :: binary(),
           spectral_width :: binary()

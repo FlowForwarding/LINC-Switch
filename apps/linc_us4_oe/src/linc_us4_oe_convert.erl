@@ -148,7 +148,9 @@ header_fields(#udp{sport = SPort,
                    dport = DPort}) ->
     [ofp_field(udp_src, <<SPort:16>>),
      ofp_field(udp_dst, <<DPort:16>>)];
-header_fields(#och_sigid{channel_number = CN}) ->
-    [ofp_field(infoblox, och_sigid, <<0:16, CN/binary, 0:16>>)];
+header_fields(#och_sigid{grid_type = GT, channel_spacing = CS,
+                         channel_number = CN, spectral_width = SW}) ->
+    [ofp_field(infoblox, och_sigid,
+               <<GT/binary, CS/binary, CN/binary, SW/binary>>)];
 header_fields(_Other) ->
     [].

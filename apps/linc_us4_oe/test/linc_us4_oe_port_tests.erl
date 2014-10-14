@@ -196,7 +196,10 @@ send_all() ->
     ?assertMatch(3, meck:num_calls(linc_us4_oe_port_native, send, '_')).
 
 send_controller() ->
-    ?assertEqual(ok, linc_us4_oe_port:send(pkt(controller,no_match), controller)).
+    mock_linc_oe(),
+    ?assertEqual(ok, linc_us4_oe_port:send(pkt(controller,no_match),
+                                           controller)),
+    unmock_linc_oe().
 
 send_local() ->
     ?assertEqual(bad_port, linc_us4_oe_port:send(pkt(), local)).
@@ -483,3 +486,10 @@ send_frame_to_routing_module_and_wait_for_mock_message(MockMsg) ->
 
 unmock_routing_module() ->
     ok = meck:unload(linc_us4_oe_routing).
+
+mock_linc_oe() ->
+    meck:new(linc_oe),
+    meck:expect(linc_oe, is_port_optical, fun(_,_) -> false end).
+
+unmock_linc_oe() ->
+    meck:unload(linc_oe).

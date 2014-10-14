@@ -173,14 +173,21 @@ send(#linc_pkt{no_packet_in = true}, controller) ->
 send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
                table_id = TableId, packet_in_reason = Reason,
                packet_in_bytes = Bytes, cookie = Cookie,
-               switch_id = SwitchId},
+               in_port = InPort, switch_id = SwitchId},
      controller) ->
-    {BufferId,Data} = maybe_buffer(SwitchId, Reason, Packet, Bytes),
-    PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
-                              table_id = TableId, cookie = Cookie,
-                              match = Fields, data = Data},
-    linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PacketIn}),
-    ok;
+    case linc_oe:is_port_optical(SwitchId, InPort) of
+        true ->
+            %% packets from optical ports cannot be forwarded to the controller
+            drop;
+        false ->
+            {BufferId,Data} = maybe_buffer(SwitchId, Reason, Packet, Bytes),
+            PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
+                                      table_id = TableId, cookie = Cookie,
+                                      match = Fields, data = Data},
+            linc_logic:send_to_controllers(SwitchId,
+                                           #ofp_message{body = PacketIn}),
+            ok
+    end;
 send(#linc_pkt{}, local) ->
     ?WARNING("Unsupported port type: local", []),
     bad_port;

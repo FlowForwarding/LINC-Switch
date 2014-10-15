@@ -84,6 +84,8 @@ backend_for_switch(SwitchId) ->
 start_ofconfig(Pid) ->
     case application:get_env(linc, of_config) of
         {ok, enabled} ->
+	    start_dependency(asn1),
+	    start_dependency(public_key),
             start_dependency(ssh),
             start_dependency(enetconf),
             OFConfig = {linc_ofconfig, {linc_ofconfig, start_link, []},

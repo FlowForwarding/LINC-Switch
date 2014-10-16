@@ -508,18 +508,17 @@ handle_call(get_port_state, _From,
     {reply, PortState, State};
 handle_call({set_port_state, NewPortState}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
-    NewPort = Port#ofp_port{state = NewPortState},
-    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
-
-    {reply, ok, State#state{port = NewPort}};
+    NewState = State#state{port = Port#ofp_port{state = NewPortState}},
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, NewState)),
+    {reply, ok, NewState};
 handle_call(get_port_config, _From,
             #state{port = #ofp_port{config = PortConfig}} = State) ->
     {reply, PortConfig, State};
 handle_call({set_port_config, NewPortConfig}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
-    NewPort = Port#ofp_port{config = NewPortConfig},
-    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
-    {reply, ok, State#state{port = NewPort}};
+    NewState = State#state{port = Port#ofp_port{config = NewPortConfig}},
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, NewState)),
+    {reply, ok, NewState};
 handle_call(get_features, _From,
             #state{port = #ofp_port{
                              curr = CurrentFeatures,
@@ -534,9 +533,10 @@ handle_call(get_advertised_features, _From,
     {reply, AdvertisedFeatures, State};
 handle_call({set_advertised_features, AdvertisedFeatures}, _From,
             #state{port = Port, switch_id = SwitchId} = State) ->
-    NewPort = Port#ofp_port{advertised = AdvertisedFeatures},
-    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, State)),
-    {reply, ok, State#state{port = NewPort}};
+    NewState = State#state{port = Port#ofp_port{advertised =
+                                                    AdvertisedFeatures}},
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, NewState)),
+    {reply, ok, NewState};
 handle_call(get_info, _From, #state{resource_id = ResourceId,
                                     port = Port} = State) ->
     {reply, {ResourceId, Port}, State};

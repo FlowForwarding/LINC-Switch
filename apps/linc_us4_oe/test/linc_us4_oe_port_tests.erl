@@ -37,6 +37,8 @@
 
 -define(NON_OPTICAL_PORT, 3).
 
+-define(PORT_STATES, [live, blocked, link_down]).
+
 %% Tests -----------------------------------------------------------------------
 
 port_config_test_() ->
@@ -97,7 +99,9 @@ optical_port_test_() ->
         {"Test non-optical ports are marked in experimental port desc",
          fun non_optical_ports_should_be_marked_in_exp_port_desc/0},
         {"Test OF 1.3 port desc not returns optical ports",
-         fun optical_ports_should_not_be_included_in_port_desc/0}]}]}.
+         fun optical_ports_should_not_be_included_in_port_desc/0},
+        {"Test correct port state is sent to controller",
+         fun controller_should_receive_port_status_with_new_state/0}]}]}.
 
 port_should_have_right_number_set() ->
     %% GIVEN
@@ -379,6 +383,34 @@ optical_ports_should_not_be_included_in_port_desc() ->
     ?assertMatch(#ofp_port_desc_reply{}, Desc),
     ?assertMatch([#ofp_port{port_no = 3}], Desc#ofp_port_desc_reply.body).
 
+controller_should_receive_port_status_with_new_state() ->
+    %% GIVEN
+    ExpectedPortState = random_port_state(),
+    ExpectedPortNo = 1,
+    Pid = self(),
+    ExpectedCall =
+        fun(?SWITCH_ID,
+            #ofp_message{body = #ofp_experimenter{data = PortStatus}}) ->
+                #ofp_port_status{desc = #ofp_port_v6{port_no = PortNo,
+                                                     state = PortState}}
+                    = PortStatus,
+                Pid ! {PortNo, PortState}
+        end,
+    meck:expect(linc_logic, send_to_controllers, ExpectedCall),
+
+    %% WHEN
+    ok = linc_us4_oe_port:set_state(
+           ?SWITCH_ID, ExpectedPortNo, ExpectedPortState),
+
+    %% THEN
+    receive
+        {ActualPortNo, ActualPortState} ->
+            ?assertEqual(ExpectedPortNo, ActualPortNo),
+            ?assertEqual(ExpectedPortState, ActualPortState)
+    after 1000 ->
+            throw(port_status_not_sent)
+    end.
+
 get_ports_from_config_for_switch(SwitchId) ->
     [{switch, SwitchId, Config}] = ports_without_queues(optical),
     {ports, ExpectedPorts} = lists:keyfind(ports, 1, Config),
@@ -493,3 +525,6 @@ mock_linc_oe() ->
 
 unmock_linc_oe() ->
     meck:unload(linc_oe).
+
+random_port_state() ->
+    [S || S <- ?PORT_STATES, random:uniform(2) == 2].

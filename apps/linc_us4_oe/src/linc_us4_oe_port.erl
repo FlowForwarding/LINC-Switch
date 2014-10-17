@@ -543,14 +543,28 @@ handle_call(get_info, _From, #state{resource_id = ResourceId,
 handle_call(optical_down, _From,
                             #state{optical_port_pid = undefined} = State) ->
     {reply, not_optical_port, State};
-handle_call(optical_down, _From, #state{optical_port_pid = Pid} = State) ->
-    Reply = linc_us4_oe_optical_native:port_down(Pid),
+handle_call(optical_down, _From,
+            #state{optical_port_pid = Pid,
+                   port = #ofp_port{state = PortState}} = State) ->
+    Reply = case lists:member(link_down, PortState) of
+                true ->
+                    link_is_already_down;
+                false ->
+                    linc_us4_oe_optical_native:port_down(Pid)
+            end,
     {reply, Reply, State};
 handle_call(optical_up, _From,
                             #state{optical_port_pid = undefined} = State) ->
     {reply, not_optical_port, State};
-handle_call(optical_up, _From, #state{optical_port_pid = Pid} = State) ->
-    Reply = linc_us4_oe_optical_native:port_up(Pid),
+handle_call(optical_up, _From,
+            #state{optical_port_pid = Pid,
+                  port = #ofp_port{state = PortState}} = State) ->
+    Reply = case lists:member(link_down, PortState) of
+                true ->
+                    linc_us4_oe_optical_native:port_up(Pid);
+                false ->
+                    link_is_already_up
+            end,
     {reply, Reply, State}.
 
 %% @private

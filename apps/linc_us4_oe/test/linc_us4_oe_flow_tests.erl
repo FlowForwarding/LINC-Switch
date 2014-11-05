@@ -73,6 +73,8 @@ flow_mod_test_() ->
        ,{"Delete where meter", fun delete_where_meter/0}
        ,{"Add flow with an incompatible value/mask pair in the match",
          fun incompatible_value_mask_pair_in_match/0}
+       ,{"OE, delete flow with match containing fields from infoblox class",
+         fun oe_delete_with_fields_from_infoblox_class/0}
       ]}}.
 
 bad_table_id() ->
@@ -1301,6 +1303,22 @@ hard_timeout() ->
     ?assertMatch([#flow_entry{}], linc_us4_oe_flow:get_flow_table(?SWITCH_ID, 1)),
     timer:sleep(2500),
     ?assertEqual([], linc_us4_oe_flow:get_flow_table(?SWITCH_ID, 1)).
+
+oe_delete_with_fields_from_infoblox_class() ->
+    %% GIVEN
+    Match = [{in_port, 3},
+             {och_sigtype, <<10>>},
+             {och_sigid, <<0,0,0,10,0,0>>}],
+    ok = linc_us4_oe_flow:modify(?SWITCH_ID,
+                                 ofp_v4_utils:flow_add([], Match, [])),
+
+    %% WHEN
+    ok = linc_us4_oe_flow:modify(?SWITCH_ID,
+                                 ofp_v4_utils:flow_delete(delete, Match, [])),
+
+    %% THEN
+    ?assertEqual([], linc_us4_oe_flow:get_flow_table(?SWITCH_ID,
+                                                     _DefaultTableId = 0)).
 
 %% Fixtures --------------------------------------------------------------------
 setup() ->

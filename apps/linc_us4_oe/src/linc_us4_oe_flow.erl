@@ -1224,7 +1224,10 @@ mask_match(Bin1,Bin2,MaskBin) ->
     Val1 band Mask == Val2 band Mask.
 
 is_more_specific(#ofp_field{class = Cls1}, #ofp_field{class = Cls2}) when
-      Cls1 =/= openflow_basic; Cls2 =/= openflow_basic ->
+      not (Cls1 == openflow_basic orelse
+           Cls2 == openflow_basic orelse
+           Cls1 == infoblox orelse
+           Cls2 == infoblox) ->
     throw(#ofp_error_msg{type = bad_match, code = bad_field});
 is_more_specific(#ofp_field{has_mask = true},
                  #ofp_field{has_mask = false}) ->

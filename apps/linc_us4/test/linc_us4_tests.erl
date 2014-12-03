@@ -150,6 +150,7 @@ setup() ->
     ok = application:start(mnesia),
     ok = application:start(syntax_tools),
     ok = application:start(compiler),
+    ok = application:start(netlink),
     ok = application:start(lager),
     ok = lager:set_loglevel(lager_console_backend, error).
 
@@ -159,6 +160,7 @@ teardown(_) ->
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
+    ok = application:stop(netlink),
     ok = application:stop(lager).
 
 config_request_reply_setup() ->

@@ -2,10 +2,10 @@
 -type och_sigtype() :: #och_sigtype{}.
 
 -record(och_sigid, {
-          grid_type :: binary(),
-          channel_spacing :: binary(),
-          channel_number :: binary(),
-          spectral_width :: binary()
+          grid_type = <<0:8>> :: binary(),
+          channel_spacing = <<0:8>> :: binary(),
+          channel_number = <<0:16>> :: binary(),
+          spectral_width = <<0:16>> :: binary()
          }).
 -type och_sigid() :: #och_sigid{}.
 

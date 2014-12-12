@@ -104,9 +104,9 @@ capable_to_logical_ports_mapping_should_fail(_) ->
     set_ports(?INCORRECT_PORTS),
 
     %% WHEN
-    turn_lager_error_reports(off),
+    switch_lager_reports(off),
     Result = application:start(linc),
-    turn_lager_error_reports(on),
+    switch_lager_reports(on),
 
     %% THEN
     ?assertMatch({error,{bad_return,{_MFA,bad_port_config}}}, Result).
@@ -116,7 +116,7 @@ capable_to_logical_ports_mapping_should_fail(_) ->
 backend_start_setup() ->
     error_logger:tty(false),
     start_dependencies(),
-    turn_lager_error_reports(on),
+    switch_lager_reports(on),
     mock_inet(),
     mock_backend(),
     setup_environment(?LINC_BACKEND, SwitchId = 1),
@@ -203,9 +203,9 @@ expect_linc_backend() ->
     meck:expect(?LINC_BACKEND, start, fun(_) -> {ok, version, state} end),
     meck:expect(?LINC_BACKEND, stop, fun(_) -> ok end).
 
-turn_lager_error_reports(off) ->
-    ok = lager:set_loglevel(lager_console_backend, emergency);
-turn_lager_error_reports(on) ->
+switch_lager_reports(off) ->
+    ok = lager:set_loglevel(lager_console_backend, none);
+switch_lager_reports(on) ->
     ok = lager:set_loglevel(lager_console_backend, error).
 
 set_ports({CapablePorts, LogicalPorts}) ->

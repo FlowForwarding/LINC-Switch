@@ -20,53 +20,132 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(LINC_BACKEND, linc_backend).
+
+-define(INSTANITATOR(CommentTestPairs),
+        fun(Value) ->
+                [{C, fun() -> T(Value) end} || {C, T} <- CommentTestPairs]
+        end).
+
+-define(PORTS, {_Capable = [{port, 1, [{interface, "dummy"}]},
+                            {port, 2, [{interface, "dummy"}]}],
+                _Logical = [{port, 1, [{queues, []}, {port_no, 10}]},
+                            {port, 2, [{queues, []}, {port_no, 11}]}]
+               }).
+
+-define(INCORRECT_PORTS, {_Capable = [{port, 1, [{interface, "dummy"}]},
+                                      {port, 2, [{interface, "dummy"}]}],
+                          _Logical = [{port, 1, [{queues, []}, {port_no, 10}]},
+                                      {port, 1, [{queues, []}, {port_no, 11}]}]
+               }).
+
 %% Tests -----------------------------------------------------------------------
 
-switch_setup_test_() ->
+backend_start_test_() ->
     {timeout, 30,
      {setup,
-      fun setup/0,
-      fun teardown/1,
-      [{"Start/stop LINC common logic", fun logic/0}]}}.
+      fun backend_start_setup/0,
+      fun backend_start_teardown/1,
+      ?INSTANITATOR([{"Start/stop LINC common logic",
+                      fun linc_logic_should_be_started/1}])
+     }}.
 
-logic() ->
-    %% As a logic backend we choose stub module 'linc_backend' from linc/test
-    %% directory. It is required because Meck won't mock modules that don't
-    %% exist.
-    Backend = linc_backend,
-    application:load(linc),
-    %% application:set_env(linc, backend, Backend),
-    Config = [{switch, SwitchId = 0,
-               [{backend, Backend},
-                {controllers, []},
-                {controllers_listener, disabled},
-                {ports, []},
-                {queues_status, disabled},
-                {queues, []}]}],
-    application:set_env(linc, logical_switches, Config),
-    application:set_env(linc, capable_switch_ports, []),
-    application:set_env(linc, capable_switch_queues, []),
-    meck:new(inet, [unstick, passthrough]),
-    meck:expect(inet, getifaddrs, 0,
-                {ok, [{"fake0",
-                       [{flags,[up,broadcast,running,multicast]},
-                        {hwaddr,[2,0,0,0,0,1]},
-                        {addr,{192,168,1,1}},
-                        {netmask,{255,255,255,0}},
-                        {broadaddr,{192,168,1,255}}]}]}),
-    meck:new(Backend),
-    meck:expect(Backend, start, fun(_) -> {ok, version, state} end),
-    meck:expect(Backend, stop, fun(_) -> ok end),
+port_mapping_test_() ->
+    {foreach,
+     fun port_mapping_setup/0,
+     fun port_mapping_teardown/1,
+     [?INSTANITATOR([{"Test capable to logical ports mapping",
+                      fun capable_to_logical_ports_map_should_be_created/1}]),
+      ?INSTANITATOR([{"Test capable to logical ports mapping without ports",
+                      fun capable_to_logical_ports_map_should_be_empty/1}]),
+      ?INSTANITATOR([{"Test capable to logical ports mapping badly defined",
+                      fun capable_to_logical_ports_mapping_should_fail/1}])
+     ]}.
+
+linc_logic_should_be_started(SwitchId) ->
+    %% GIVEN
+    expect_linc_backend(),
+
+    %% WHEN
     ?assertEqual(ok, application:start(linc)),
+
+    %% THEN
     assert_linc_logic_is_running(SwitchId, 10),
-    ?assertEqual(ok, application:stop(linc)),
-    meck:unload(Backend),
-    meck:unload(inet).
+    ?assertEqual(ok, application:stop(linc)).
+
+capable_to_logical_ports_map_should_be_created(SwitchId) ->
+    %% GIVEN
+    set_ports({CapablePorts, LogicalPorts} = ?PORTS),
+    ok = application:start(linc),
+
+    %% WHEN
+    assert_linc_logic_is_running(SwitchId, 10),
+
+    %% THEN
+    [begin
+         LogicalPort = lists:keyfind(CapableNo, 2, LogicalPorts),
+         assert_capable_port_mapped_correctly(CapableNo, SwitchId,
+                                              LogicalPort)
+     end || {port, CapableNo, _} <- CapablePorts].
+
+capable_to_logical_ports_map_should_be_empty(SwitchId) ->
+    %% GIVEN
+    set_ports({[], []}),
+    ok = application:start(linc),
+
+    %% WHEN
+    assert_linc_logic_is_running(SwitchId, 10),
+
+    %% THEN
+    ?assertEqual([], ets:tab2list(ports_map)).
+
+capable_to_logical_ports_mapping_should_fail(_) ->
+    %% GIVEN
+    set_ports(?INCORRECT_PORTS),
+
+    %% WHEN
+    switch_lager_reports(off),
+    Result = application:start(linc),
+    switch_lager_reports(on),
+
+    %% THEN
+    ?assertMatch({error,{bad_return,{_MFA,bad_port_config}}}, Result).
 
 %% Fixtures --------------------------------------------------------------------
 
-setup() ->
+backend_start_setup() ->
     error_logger:tty(false),
+    start_dependencies(),
+    switch_lager_reports(on),
+    mock_inet(),
+    mock_backend(),
+    setup_environment(?LINC_BACKEND, SwitchId = 1),
+    SwitchId.
+
+backend_start_teardown(_) ->
+    unmock_inet(),
+    unmock_backend(),
+    application:unload(linc),
+    stop_dependencies().
+
+port_mapping_setup() ->
+    SwitchId = backend_start_setup(),
+    expect_linc_backend(),
+    SwitchId.
+
+port_mapping_teardown(State) ->
+    case lists:keyfind(linc, 1, application:which_applications()) of
+        {linc, _, _} ->
+            ok = application:stop(linc);
+        false ->
+            ok
+    end,
+    ok = application:unload(linc),
+    backend_start_teardown(State).
+
+%% Helper functions ------------------------------------------------------------
+
+start_dependencies() ->
     ok = application:start(asn1),
     ok = application:start(public_key),
     ok = application:start(ssh),
@@ -74,10 +153,9 @@ setup() ->
     ok = application:start(mnesia),
     ok = application:start(syntax_tools),
     ok = application:start(compiler),
-    ok = application:start(lager),
-    ok = lager:set_loglevel(lager_console_backend, error).
+    ok = application:start(lager).
 
-teardown(_) ->
+stop_dependencies() ->
     ok = application:stop(compiler),
     ok = application:stop(syntax_tools),
     ok = application:stop(mnesia),
@@ -87,7 +165,61 @@ teardown(_) ->
     ok = application:stop(asn1),
     ok = application:stop(ssh).
 
-%% Helper functions ------------------------------------------------------------
+mock_inet() ->
+    meck:new(inet, [unstick, passthrough]),
+    meck:expect(inet, getifaddrs, 0,
+                {ok, [{"fake0",
+                       [{flags,[up,broadcast,running,multicast]},
+                        {hwaddr,[2,0,0,0,0,1]},
+                        {addr,{192,168,1,1}},
+                        {netmask,{255,255,255,0}},
+                        {broadaddr,{192,168,1,255}}]}]}).
+
+mock_backend() ->
+    %% As a logic backend we choose stub module 'linc_backend' from linc/test
+    %% directory. It is required because Meck won't mock modules that don't
+    %% exist.
+    meck:new(?LINC_BACKEND).
+
+unmock_backend() ->
+    meck:unload(?LINC_BACKEND).
+
+unmock_inet() ->
+    meck:unload(inet).
+
+setup_environment(Backend, SwitchId) ->
+    Config = [{switch, SwitchId,
+               [{backend, Backend},
+                {controllers, []},
+                {controllers_listener, disabled},
+                {ports, []},
+                {queues_status, disabled},
+                {queues, []}]}],
+    application:set_env(linc, logical_switches, Config),
+    application:set_env(linc, capable_switch_ports, []),
+    application:set_env(linc, capable_switch_queues, []).
+
+expect_linc_backend() ->
+    meck:expect(?LINC_BACKEND, start, fun(_) -> {ok, version, state} end),
+    meck:expect(?LINC_BACKEND, stop, fun(_) -> ok end).
+
+switch_lager_reports(off) ->
+    ok = lager:set_loglevel(lager_console_backend, none);
+switch_lager_reports(on) ->
+    ok = lager:set_loglevel(lager_console_backend, error).
+
+set_ports({CapablePorts, LogicalPorts}) ->
+    set_capable_ports(CapablePorts),
+    set_logical_ports(LogicalPorts).
+
+set_logical_ports(LogicalPorts) ->
+    {ok, [{switch, SwitchId, Opts0}]} = application:get_env(linc,
+                                                           logical_switches),
+    Opts1 = lists:keystore(ports, 1, Opts0, {ports, LogicalPorts}),
+    application:set_env(linc, logical_switches, [{switch, SwitchId, Opts1}]).
+
+set_capable_ports(CapablePorts) ->
+    ok = application:set_env(linc, capable_switch_ports, CapablePorts).
 
 assert_linc_logic_is_running(SwitchId, Retries) ->
     lists:takewhile(fun(_) ->
@@ -95,3 +227,9 @@ assert_linc_logic_is_running(SwitchId, Retries) ->
                           not is_pid(linc:lookup(SwitchId, linc_logic))
                   end, [ _TryNo || _TryNo <- lists:seq(1, Retries)]),
     ?assert(erlang:is_process_alive(linc:lookup(SwitchId, linc_logic))).
+
+assert_capable_port_mapped_correctly(CapableNo, SwitchId, LogicalPort) ->
+    {_,_, PortOpts} = LogicalPort,
+    {port_no, LogicalNo} = lists:keyfind(port_no, 1, PortOpts),
+    ?assertMatch([[{SwitchId, LogicalNo}]],
+                 ets:match(ports_map, {CapableNo, '$1'})).

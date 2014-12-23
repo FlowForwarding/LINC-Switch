@@ -22,12 +22,17 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         start_switch/1,
+         stop_switch/1,
+         switches/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
 
 -include("linc_logger.hrl").
+
+-define(PORTS_MAP_ETS, ports_map).
 
 %%------------------------------------------------------------------------------
 %% API functions
@@ -35,11 +40,10 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    {ok, Pid} = supervisor:start_link(?MODULE, []),
+    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, []),
     start_ofconfig(Pid),
 
-    ?DEBUG("sys.config: ~p", [application:get_env(linc,
-                                                  logical_switches)]),
+    ?DEBUG("sys.config: ~p", [application:get_env(linc, logical_switches)]),
     Config = case application:get_env(linc, of_config) of
                  {ok, enabled} ->
                      ?DEBUG("Old startup: ~p",
@@ -54,15 +58,19 @@ start_link() ->
                      linc_ofconfig:get_startup_without_ofconfig()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
+    initialize_capable_switch_data(),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
     {ok, Pid}.
 
-start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
-    Id = list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup"),
-    LogicSup = {Id, {linc_sup, start_link, Opts},
-                permanent, 5000, supervisor, [linc_sup]},
-    supervisor:start_child(Sup, LogicSup).
+switches() ->
+    [{switch_id(Id), Pid} || {Id, Pid, supervisor, [linc_sup]} <- supervisor:which_children(?MODULE)].
+
+start_switch(SwitchId) ->
+    supervisor:restart_child(?MODULE, linc_sup_id(SwitchId)).
+
+stop_switch(SwitchId) ->
+    supervisor:terminate_child(?MODULE, linc_sup_id(SwitchId)).
 
 %%------------------------------------------------------------------------------
 %% Supervisor callbacks
@@ -74,6 +82,23 @@ init([]) ->
 %%------------------------------------------------------------------------------
 %% Internal functions
 %%------------------------------------------------------------------------------
+
+initialize_capable_switch_data() ->
+    initialize_optical_extension(),
+    create_mapping_between_capable_and_logical_ports().
+
+switch_id(Id) ->
+    {match,[SwitchIdS]} = re:run(atom_to_list(Id), "([[:digit:]]+)", [{capture, first, list}]),
+    list_to_integer(SwitchIdS).
+
+linc_sup_id(SwitchId) ->
+    list_to_atom("linc" ++ integer_to_list(SwitchId) ++ "_sup").
+
+start_switch(Sup, [SwitchId, _, _Config] = Opts) ->
+    Id = linc_sup_id(SwitchId),
+    LogicSup = {Id, {linc_sup, start_link, Opts},
+                permanent, 5000, supervisor, [linc_sup]},
+    supervisor:start_child(Sup, LogicSup).
 
 backend_for_switch(SwitchId) ->
     {ok, Switches} = application:get_env(linc, logical_switches),
@@ -116,3 +141,31 @@ start_dependency(App) ->
             ?ERROR("Starting ~p application failed because: ~p",
                    [App, Error])
     end.
+
+initialize_optical_extension() ->
+    case application:get_env(linc, optical_links) of
+        {ok, Links} ->
+            linc_oe:initialize(Links);
+        _ ->
+            ok
+    end.
+
+create_mapping_between_capable_and_logical_ports() ->
+    ets:new(?PORTS_MAP_ETS, [named_table, public,
+                             {read_concurrency, true}]),
+    {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
+    [begin
+         {ports, SwPorts} = lists:keyfind(ports, 1, SwOpts),
+         create_mapping_between_capable_and_logical_ports(SwId, SwPorts)
+     end || {switch, SwId, SwOpts} <- LogicalSwitches].
+
+create_mapping_between_capable_and_logical_ports(SwId, SwPorts) ->
+    [begin
+         Mapping = case lists:keyfind(port_no, 1, PortOts) of
+                       {port_no, LogicalNo} ->
+                           {CapableNo, {SwId, LogicalNo}};
+                       false ->
+                           {CapableNo, {SwId, CapableNo}}
+         end,
+         ets:insert_new(?PORTS_MAP_ETS, Mapping) orelse throw(bad_port_config)
+     end || {port, CapableNo, PortOts} <- SwPorts].

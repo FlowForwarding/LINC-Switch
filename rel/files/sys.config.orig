@@ -34,6 +34,9 @@
      %% {port, 5, [{interface, "tap1"}, {ip, "10.0.0.1"}]},
      %% - tap interface with explicit type and queues disabled
      %% {port, 6, [{interface, "net1"}, {type, tap}]}
+     %% - emulated optical interface without queues (the interface name
+     %% has no meaning
+     %% {port, 7, [{interface, "opt1"}, {type, optical}]}
     ]},
 
    {capable_switch_queues,
@@ -43,6 +46,11 @@
      %% {queue, 2, [{min_rate, 100}, {max_rate, 100}]}
     ]},
 
+   %% Configuration of emulated optical links that connect emulated optical
+   %% ports. Each element of the list has format:
+   %% {{LOGICAL_SWITCH_A, PORT_A}, {LOGICAL_SWITCH_B, PORT_B}}
+   %% {optical_links, [{{1,2}, {2,1}}, {{2,2},{3,1}}]},
+
    %% Configuration of the logical switches.
    {logical_switches,
     [
@@ -50,8 +58,8 @@
       [
        %% Configuration of switch backend implementation used by ofs_logic
        %% process.
-       %% By default an Erlang userspace 1.3.1 implementation is selected.
-       %% Allowed values: 'linc_us3' | 'linc_us4'
+       %% By default an Erlang userspace 1.3.2 implementation is selected.
+       %% Allowed values: 'linc_us3' | 'linc_us4' | 'linc_us4_oe' | 'linc_us5'
        {backend, linc_us4},
 
        %% Configuration of the controllers switch will connect to. Ideally
@@ -84,6 +92,11 @@
        %% Allowed values: 'enabled' | 'disabled'
        {queues_status, disabled},
 
+       %% The datapath_id uniquely identifies a datapath. The lower
+       %% 48 bits are intended for the switch MAC address, while
+       %% the top 16 bits are up to the implementer.
+       {datapath_id, "00:00:00:00:00:00:00:01"},
+
        %% To assign a port to a logical switch two requirements has to be met:
        %%    a. the port has to be defined in the `capable_switch_ports`,
        %%    b. the port has to be listed in the `ports` for the logical switch.
@@ -107,7 +120,7 @@
                 %% - port with two queues:
                 %% {port, 2, [{queues, [1, 2]}]},
                 %% - port with explicit number and name
-                %% {port, 2, [{queues, []},
+                %% {port, 3, [{queues, []},
                 %%            {port_no, 1},
                 %%            {port_name, "Banshee"}]}
                ]}

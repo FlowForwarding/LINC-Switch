@@ -58,8 +58,6 @@ start_link() ->
                      linc_ofconfig:get_startup_without_ofconfig()
              end,
     ?DEBUG("Configuration: ~p", [Config]),
-    %% Better place for this initialization?
-    %% The optical links are permanent througt the capable switch life
     initialize_capable_switch_data(),
     [start_switch(Pid, [Id, backend_for_switch(Id), Config])
      || {switch, Id, _} <- Config],
@@ -79,7 +77,6 @@ stop_switch(SwitchId) ->
 %%------------------------------------------------------------------------------
 
 init([]) ->
-    %% initialize_capable_switch_data(),
     {ok, {{one_for_one, 5, 10}, []}}.
 
 %%------------------------------------------------------------------------------

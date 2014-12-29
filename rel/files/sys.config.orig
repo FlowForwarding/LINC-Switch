@@ -164,6 +164,13 @@
    %% , {buffer_size, 73400320}
   ]},
 
+ {of_protocol,
+  [
+   %% This flag allows to disable splitting messages into multipart
+   %% messages.
+   %% {no_multipart, true}
+  ]},
+
  {enetconf,
   [
    {capabilities, [{base, {1, 0}},

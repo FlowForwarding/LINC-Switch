@@ -83,6 +83,7 @@ as following:
                {port,6,[{queues,[]}, {port_no, 2}]}
               ]}]}
     ]}]},
+ {of_protocol, [{no_multipart, false}]},
  {enetconf,
   [{capabilities,[{base,{1,1}},{startup,{1,0}},{'writable-running',{1,0}}]},
    {callback_module,linc_ofconfig},
@@ -125,6 +126,8 @@ the following format:
 by a controller.
 
 * Ports 1 and 6 are attached to operating system tap ports.
+
+* The `no_multipart` flag allows to disable splitting OF messages.
 
 * The config can be also generated using [LINC Configuration generator][config_generator].
 

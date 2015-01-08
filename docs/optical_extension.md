@@ -1,10 +1,10 @@
-# LINC­OE: LINC-Switch for optical emulation #
+# LINC-OE: LINC-Switch for optical emulation #
 
 LINC-Switch provides a backend that emulates optical multiplexer -
 so called [ROADM (Reconfigurable optical add-drop multiplexer)][ROADM].
 This backend is available for OpenFlow v. 1.3.2. Each such multiplexer
 is run as logical switch within LINC-Switch container. When
-LINC-Switch is configured with this backend it is called LINC­OE,
+LINC-Switch is configured with this backend it is called LINC-OE,
 for "LINC Switch for optical emulation".
 
 This document shows how to use LINC-Switch to simulate simple optical
@@ -136,7 +136,7 @@ by a controller.
 Build LINC-Switch and run it:  
 ```$ make rel && sudo rel/linc/bin/linc console```
 
-## Flows Coniguration ##
+## Flows Configuration ##
 
 To configure flows on the switch we will use [icontrol][icontrol] application
 that is part of [LOOM][loom] controller. Our aim is to setup flows

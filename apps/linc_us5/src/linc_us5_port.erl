@@ -335,7 +335,6 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
     Port = #ofp_port{port_no = PortNo,
                      name = PortName,
                      config = PortConfig,
-                     state = [live],
                      properties =
                          [#ofp_port_desc_prop_ethernet{
                              curr = ?FEATURES,
@@ -383,7 +382,7 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
             case linc_us5_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
-                {ErlangPort, Pid, HwAddr} ->
+                {ErlangPort, Pid, HwAddr, OperstateChangesRef, Operstate} ->
                     ets:insert(linc:lookup(SwitchId, linc_ports),
                                #linc_port{port_no = PortNo, pid = self()}),
                     ets:insert(linc:lookup(SwitchId, linc_port_stats),
@@ -401,7 +400,10 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
                     end,
                     {ok, State#state{erlang_port = ErlangPort,
                                      port_ref = Pid,
-                                     port = Port#ofp_port{hw_addr = HwAddr}}}
+                                     operstate_changes_ref = OperstateChangesRef,
+                                     port = Port#ofp_port{
+                                              hw_addr = HwAddr,
+                                              state = init_port_state(Operstate)}}}
             end;
         %% When switch connects to a hardware interface such as eth0
         %% then communication is handled by two channels:
@@ -411,8 +413,8 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
         %%   a RAW socket binded with given network interface.
         %%   Handling of RAW sockets differs between OSes.
         eth ->
-            {Socket, IfIndex, EpcapPid, HwAddr} =
-                linc_us5_port_native:eth(Interface),
+            {Socket, IfIndex, EpcapPid, HwAddr, OperstateChangesRef,
+             Operstate} = linc_us5_port_native:eth(Interface),
             case queues_config(SwitchId, PortOpts) of
                 disabled ->
                     disabled;
@@ -433,8 +435,11 @@ init([SwitchId, {port, PortNo, PortOpts}]) ->
             {ok, State#state{socket = Socket,
                              ifindex = IfIndex,
                              epcap_pid = EpcapPid,
-                             port = Port#ofp_port{hw_addr = HwAddr}}}
-    end.
+                             operstate_changes_ref = OperstateChangesRef,
+                             port = Port#ofp_port{
+                                      hw_addr = HwAddr,
+                                      state = init_port_state(Operstate)}}}
+             end.
 
 %% @private
 handle_call({validate_port_mod, #ofp_port_mod{} = PortMod}, _From,
@@ -515,12 +520,14 @@ handle_call(get_info, _From, #state{resource_id = ResourceId,
 handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
             #state{socket = Socket,
                    port = #ofp_port{port_no = PortNo,
-                                    config = PortConfig},
+                                    config = PortConfig,
+                                    state = PortState},
                    erlang_port = Port,
                    queues = QueuesState,
                    ifindex = Ifindex,
                    switch_id = SwitchId} = State) ->
-    case check_port_config(no_fwd, PortConfig) of
+    case check_port_state([blocked, link_down], PortState) orelse
+        check_port_config(no_fwd, PortConfig) of
         true ->
             drop;
         false ->
@@ -555,6 +562,18 @@ handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
                                           sync_routing = SyncRouting} = State) ->
     handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting),
     {noreply, State};
+handle_info(NetlinkMsg, #state{port = Port0, operstate_changes_ref = Ref,
+                               interface = Interface} = State)
+  when element(1, NetlinkMsg) =:= netlink->
+    NewOperstate = linc_us5_port_native:operstate_change(NetlinkMsg,
+                                                         Ref, Interface),
+    PortState = mark_link_state_as(NewOperstate, Port0#ofp_port.state),
+    Port1 = Port0#ofp_port{state = PortState},
+    PortStatus = #ofp_port_status{reason = modify, desc = Port1},
+    linc_logic:send_to_controllers(State#state.switch_id,
+                                   #ofp_message{body = PortStatus}),
+    ?INFO("Set new port state ~p~n", [PortState]),
+    {noreply, State#state{port = Port1}};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
     ?ERROR("Port for interface ~p exited abnormally",
@@ -744,6 +763,9 @@ ports_for_switch(SwitchId, Config) ->
          {port, PortNo, [QueuesStatus | [Queues | PortConfig]]}
      end || {port, PortNo, PortConfig} <- Ports].
 
+check_port_state(Flags, State) ->
+    lists:any(fun(F) -> lists:member(F, State) end, Flags).
+
 check_port_config(Flag, Config) ->
     lists:member(port_down, Config) orelse lists:member(Flag, Config).
 
@@ -758,4 +780,24 @@ validate_port_mod(#ofp_port{}, #ofp_port_mod{properties = PMProperties}) ->
         %% ...otherwise reject the message.
         _ ->
             {error, {port_mod_failed, bad_config}}
+    end.
+
+init_port_state(down) ->
+    [live, link_down];
+init_port_state(up) ->
+    [live].
+
+mark_link_state_as(up, PortState) ->
+    not lists:member(link_down, PortState) andalso
+        ?WARNING("Setting up port that already is up"),
+    lists:filter(fun(link_down) -> false;
+                    (_) -> true
+                 end, PortState);
+mark_link_state_as(down, PortState) ->
+    case lists:member(link_down, PortState) of
+        true ->
+            ?WARNING("Setting down port that already is down"),
+            PortState;
+        false ->
+            [link_down | PortState]
     end.

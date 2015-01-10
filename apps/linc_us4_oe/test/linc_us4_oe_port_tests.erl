@@ -29,6 +29,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("pkt/include/pkt.hrl").
 -include("linc_us4_oe.hrl").
+-include("linc_us4_oe_port.hrl").
 
 -define(MOCKED(Type), [logic, port_native]
         ++ [X || X <- [packet, routing], Type == optical]).
@@ -40,6 +41,22 @@
 -define(PORT_STATES, [live, blocked, link_down]).
 
 %% Tests -----------------------------------------------------------------------
+
+port_state_test_() ->
+    {setup, fun setup/0, fun teardown/1,
+     [{setup,
+       fun() -> init_port_state_setup(up) end,
+       fun init_port_state_teardown/1,
+       {"Port state: initial state up", fun init_port_state_should_be_up/0}},
+      {foreach,
+       fun() -> init_port_state_setup(down) end,
+       fun init_port_state_teardown/1,
+       [{"Port state: send when down",
+         fun should_not_send_when_port_state_link_down/0},
+        {"Port state: initial state down",
+         fun init_port_state_should_be_down/0},
+        {"Port state: changes",
+         fun port_status_should_be_sent_on_state_changes/0}]}]}.
 
 port_config_test_() ->
     {setup, fun port_config_test_setup/0, fun teardown/1,
@@ -102,6 +119,36 @@ optical_port_test_() ->
          fun optical_ports_should_not_be_included_in_port_desc/0},
         {"Test correct port state is sent to controller",
          fun controller_should_receive_port_status_with_new_state/0}]}]}.
+
+init_port_state_should_be_down() ->
+    PortState = linc_us4_oe_port:get_state(?SWITCH_ID, 1),
+    ?assert(lists:member(link_down, PortState)).
+
+init_port_state_should_be_up() ->
+    PortState = linc_us4_oe_port:get_state(?SWITCH_ID, 1),
+    ?assertNot(lists:member(link_down, PortState)).
+
+should_not_send_when_port_state_link_down() ->
+    ?assertEqual(ok, linc_us4_oe_port:send(pkt(), _PortNo = 3)),
+    ?assertEqual(
+       ok, meck:wait(linc_us4_oe_port, handle_cast, [{send, '_'}, '_'], 2000)),
+    ?assertNot(meck:called(linc_us4_oe_port_native, send, _ArgsCnt = 3)).
+
+port_status_should_be_sent_on_state_changes() ->
+    [begin
+         %% GIVEN
+         PortState = linc_us4_oe_port:get_state(?SWITCH_ID, 1),
+         meck:reset(linc_logic),
+
+         %% WHEN
+         ExpectedLinkState = set_reverse_link_state(PortState, PortNo = 1),
+         meck:wait(linc_logic, send_to_controllers, 2, 2000),
+
+         %% TEHN
+         assert_port_status_sent_to_controller(ExpectedLinkState, PortNo),
+         assert_link_state(ExpectedLinkState,
+                           linc_us4_oe_port:get_state(?SWITCH_ID, PortNo))
+     end || _ <- lists:seq(1, 1)].
 
 port_should_have_right_number_set() ->
     %% GIVEN
@@ -319,14 +366,26 @@ routing_fun_invoked_test(ExpectedRoutingFun) ->
     unmock_routing_module().
 
 message_should_reach_optical_backend() ->
-    ok = linc_us4_oe_port:send(pkt(), _PortNo = 1),
+    %% GIVEN
+    ok = linc_us4_oe_port:set_state(?SWITCH_ID, PortNo = 1, _NoDown = []),
+
+    %% WHEN
+    ok = linc_us4_oe_port:send(pkt(), PortNo),
+
+    %% THEN
     ?assertEqual(ok, meck:wait(linc_us4_oe_port_native, send, 2, 1000)).
 
 message_from_optical_backed_should_be_routed() ->
-    Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, _PortNo = 1),
+    %% GIVEN
+    ok = linc_us4_oe_port:set_state(?SWITCH_ID, PortNo = 1, _NoDown = []),
+    Pid = linc_us4_oe_port:get_port_pid(?SWITCH_ID, PortNo),
+
+    %% WHEN
     Pid ! {optical_data,
            _OpticalPortPidFromMeck = list_to_pid("<0.0.99>"),
            <<"Hello Alice!">>},
+
+    %% THEN
     ?assertEqual(ok, meck:wait(linc_us4_oe_routing, route, 1, 1000)).
 
 experimental_port_desc_should_be_constructed() ->
@@ -457,6 +516,7 @@ setup() ->
 
 setup(Type) ->
     mock(?MOCKED(Type)),
+    ok = meck:new(linc_us4_oe_port, [passthrough]),
     linc:create(?SWITCH_ID),
     linc_us4_oe_test_utils:add_logic_path(),
     {ok, _Pid} = linc_us4_oe_sup:start_link(?SWITCH_ID),
@@ -468,10 +528,12 @@ setup(Type) ->
 teardown(Type) ->
     application:unload(linc),
     linc:delete(?SWITCH_ID),
+    ok = meck:unload(linc_us4_oe_port),
     unmock(?MOCKED(Type)).
 
 foreach_setup() ->
     ok = meck:reset(linc_logic),
+    ok = meck:reset(linc_us4_oe_port),
     ok = meck:reset(linc_us4_oe_port_native),
     {ok, Switches} = application:get_env(linc, logical_switches),
     ok = linc_us4_oe_port:initialize(?SWITCH_ID, Switches).
@@ -483,6 +545,14 @@ sync_routing_setup() ->
 async_routing_setup() ->
     application:set_env(linc, sync_routing, false),
     foreach_setup().
+
+init_port_state_setup(State) ->
+    expect_port_native_opersate(State),
+    foreach_setup().
+
+init_port_state_teardown(Args) ->
+    expect_port_native_opersate(up),
+    foreach_teardown(Args).
 
 foreach_teardown(_) ->
     ok = linc_us4_oe_port:terminate(?SWITCH_ID).
@@ -528,3 +598,38 @@ unmock_linc_oe() ->
 
 random_port_state() ->
     [S || S <- ?PORT_STATES, random:uniform(2) == 2].
+
+expect_port_native_opersate(State) ->
+    [meck:expect(linc_us4_oe_port_native, Fun, Arity, Expression)
+     || {Fun, Arity, Expression} <-
+            [{eth, 1, {socket, 0, pid, <<1,1,1,1,1,1>>, ref, State}},
+             {tap, 2, {port, pid, <<1,1,1,1,1,1>>, ref, State}}]].
+
+assert_port_status_sent_to_controller(ExpectedLinkState, PortNo) ->
+    #ofp_message{body = PortStatus} =
+        meck:capture(first, linc_logic, send_to_controllers, '_', 2),
+    #ofp_experimenter{experimenter = ?INFOBLOX_EXPERIMENTER,
+                      exp_type = port_status,
+                      data = #ofp_port_status{reason = modify,
+                                              desc = PortDesc}} = PortStatus,
+    #ofp_port_v6{state = PortState, port_no = PortNo} = PortDesc,
+    assert_link_state(ExpectedLinkState, PortState).
+
+set_reverse_link_state(PortState, PortNo) ->
+    [#linc_port{pid = Pid}] = ets:lookup(linc:lookup(?SWITCH_ID, linc_ports),
+                                         PortNo),
+    {PrevOperstate, NewOperstate} = case lists:member(link_down, PortState) of
+                                        true ->
+                                            {down, up};
+                                        false ->
+                                            {up, down}
+                                    end,
+    {port, PortNo, PortOpts} = lists:keyfind(PortNo, 2, ports(ethernet)),
+    Pid ! {netlink, ref, proplists:get_value(interface, PortOpts),
+           operstate, PrevOperstate, NewOperstate},
+    NewOperstate.
+
+assert_link_state(up, PortState) ->
+    ?assertNot(lists:member(link_down, PortState));
+assert_link_state(down, PortState) ->
+    ?assert(lists:member(link_down, PortState)).

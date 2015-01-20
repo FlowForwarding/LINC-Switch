@@ -396,7 +396,8 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
                    end
            end,
     case Type of
-        %% TODO: Comment
+        %% When switch connect to emulated optical interfaces it recevies
+        %% messages in the following format {optical_data, Pid, Packet}.
         optical ->
             case linc_us4_oe_port_native:optical(SwitchId, PortNo) of
                 {error, _Error} ->

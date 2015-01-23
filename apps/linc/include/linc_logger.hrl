@@ -23,21 +23,21 @@
 %%------------------------------------------------------------------------------
 
 -define(DEBUG(Msg),
-        lager:debug(Msg)).
+        lager:debug([{linc, x}], Msg)).
 -define(DEBUG(Msg, Args),
-        lager:debug(Msg, Args)).
+        lager:debug([{linc, x}], Msg, Args)).
 
 -define(INFO(Msg),
-        lager:info(Msg)).
+        lager:info([{linc, x}],Msg)).
 -define(INFO(Msg, Args),
-        lager:info(Msg, Args)).
+        lager:info([{linc, x}],Msg, Args)).
 
 -define(WARNING(Msg),
-        lager:warning(Msg)).
+        lager:warning([{linc, x}],Msg)).
 -define(WARNING(Msg, Args),
-        lager:warning(Msg, Args)).
+        lager:warning([{linc, x}],Msg, Args)).
 
 -define(ERROR(Msg),
-        lager:error(Msg)).
+        lager:error([{linc, x}],Msg)).
 -define(ERROR(Msg, Args),
-        lager:error(Msg, Args)).
+        lager:error([{linc, x}],Msg, Args)).

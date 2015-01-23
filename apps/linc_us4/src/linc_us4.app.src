@@ -5,6 +5,7 @@
                   stdlib,
                   lager,
                   mnesia,
+                  netlink,
                   linc]},
   {env, [{version, 4},
          {controllers, []},

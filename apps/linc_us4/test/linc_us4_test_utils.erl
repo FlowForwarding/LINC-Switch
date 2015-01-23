@@ -84,11 +84,11 @@ mock([port_native | Rest]) ->
     ok = meck:new(linc_us4_port_native),
     ok = meck:expect(linc_us4_port_native, eth,
                      fun(_) ->
-                             {socket, 0, pid, <<1,1,1,1,1,1>>}
+                             {socket, 0, pid, <<1,1,1,1,1,1>>, ref, up}
                      end),
     ok = meck:expect(linc_us4_port_native, tap,
                      fun(_, _) ->
-                             {port, pid, <<1,1,1,1,1,1>>}
+                             {port, pid, <<1,1,1,1,1,1>>, ref, ref, up}
                      end),
     ok = meck:expect(linc_us4_port_native, close,
                      fun(_) ->
@@ -97,6 +97,10 @@ mock([port_native | Rest]) ->
     ok = meck:expect(linc_us4_port_native, send,
                      fun(_, _, _) ->
                              ok
+                     end),
+    ok = meck:expect(linc_us4_port_native, operstate_change,
+                     fun(Msg, Ref, Interface) ->
+                             meck:passthrough([Msg, Ref, Interface])
                      end),
     mock(Rest);
 mock([group | Rest]) ->

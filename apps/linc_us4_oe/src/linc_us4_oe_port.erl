@@ -396,7 +396,8 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
                    end
            end,
     case Type of
-        %% TODO: Comment
+        %% When switch connect to emulated optical interfaces it recevies
+        %% messages in the following format {optical_data, Pid, Packet}.
         optical ->
             case linc_us4_oe_port_native:optical(SwitchId, PortNo) of
                 {error, _Error} ->
@@ -418,7 +419,9 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
                                                          SendFun, QueuesConfig)
                     end,
                     {ok, State#state{optical_port_pid = Pid,
-                                     port = Port#ofp_port{hw_addr = ?DEFAULT_HW_ADDR}},
+                                     port = Port#ofp_port{
+                                              hw_addr = ?DEFAULT_HW_ADDR,
+                                              state = init_port_state(down)}},
                      0}
             end;
         %% When switch connects to a tap interface, erlang receives file
@@ -429,7 +432,7 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
             case linc_us4_oe_port_native:tap(Interface, PortOpts) of
                 {stop, shutdown} ->
                     {stop, shutdown};
-                {ErlangPort, Pid, HwAddr} ->
+                {ErlangPort, Pid, HwAddr, OperstateChangesRef, Operstate} ->
                     ets:insert(linc:lookup(SwitchId, linc_ports),
                                #linc_port{port_no = PortNo, pid = self()}),
                     ets:insert(linc:lookup(SwitchId, linc_port_stats),
@@ -445,9 +448,13 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
                             linc_us4_oe_queue:attach_all(SwitchId, PortNo,
                                                          SendFun, QueuesConfig)
                     end,
-                    {ok, State#state{erlang_port = ErlangPort,
-                                     port_ref = Pid,
-                                     port = Port#ofp_port{hw_addr = HwAddr}},
+                    {ok, State#state{
+                           erlang_port = ErlangPort,
+                           port_ref = Pid,
+                           operstate_changes_ref = OperstateChangesRef,
+                           port = Port#ofp_port{
+                                    hw_addr = HwAddr,
+                                    state = init_port_state(Operstate)}},
                      0}
             end;
         %% When switch connects to a hardware interface such as eth0
@@ -458,8 +465,8 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
         %%   a RAW socket binded with given network interface.
         %%   Handling of RAW sockets differs between OSes.
         eth ->
-            {Socket, IfIndex, EpcapPid, HwAddr} =
-                linc_us4_oe_port_native:eth(Interface),
+            {Socket, IfIndex, EpcapPid, HwAddr, OperstateChangesRef,
+             Operstate} = linc_us4_oe_port_native:eth(Interface),
             case queues_config(SwitchId, PortOpts) of
                 disabled ->
                     disabled;
@@ -480,7 +487,10 @@ init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
             {ok, State#state{socket = Socket,
                              ifindex = IfIndex,
                              epcap_pid = EpcapPid,
-                             port = Port#ofp_port{hw_addr = HwAddr}},
+                             operstate_changes_ref = OperstateChangesRef,
+                             port = Port#ofp_port{
+                                      hw_addr = HwAddr,
+                                      state = init_port_state(Operstate)}},
              0}
     end.
 
@@ -506,11 +516,8 @@ handle_call(get_port, _From, #state{port = Port} = State) ->
 handle_call(get_port_state, _From,
             #state{port = #ofp_port{state = PortState}} = State) ->
     {reply, PortState, State};
-handle_call({set_port_state, NewPortState}, _From,
-            #state{port = Port, switch_id = SwitchId} = State) ->
-    NewState = State#state{port = Port#ofp_port{state = NewPortState}},
-    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, NewState)),
-    {reply, ok, NewState};
+handle_call({set_port_state, NewPortState}, _From, State) ->
+    {reply, ok, set_port_state_and_notify_controllers(NewPortState, State)};
 handle_call(get_port_config, _From,
             #state{port = #ofp_port{config = PortConfig}} = State) ->
     {reply, PortConfig, State};
@@ -571,9 +578,8 @@ handle_call(optical_up, _From,
 handle_cast({send, #linc_pkt{switch_id = SwitchId, packet = Packet0,
                              queue_id = QueueId}},
             #state{socket = Socket,
-                   port = #ofp_port{port_no = PortNo,
-                                    config = PortConfig},
-                   erlang_port = Port,
+                   port = #ofp_port{port_no = PortNo} = Port,
+                   erlang_port = ErlPort,
                    queues = QueuesState,
                    ifindex = Ifindex,
                    switch_id = SwitchId,
@@ -581,19 +587,19 @@ handle_cast({send, #linc_pkt{switch_id = SwitchId, packet = Packet0,
     %% The current port is non-optical so we need to strip optical headers
     %% in case the packet has such
     Packet1 = linc_us4_oe_packet:strip_optical_headers(Packet0),
-    case check_port_config(no_fwd, PortConfig) of
-        true ->
-            drop;
+    case is_accepting_packets(out, Port) of
         false ->
+            drop;
+        true ->
             Frame = pkt:encapsulate(Packet1),
             update_port_tx_counters(SwitchId, PortNo, byte_size(Frame)),
             case QueuesState of
                 disabled ->
-                    case {Port, Ifindex} of
+                    case {ErlPort, Ifindex} of
                         {undefined, _} ->
                             linc_us4_oe_port_native:send(Socket, Ifindex, Frame);
                         {_, undefined} ->
-                            port_command(Port, Frame)
+                            port_command(ErlPort, Frame)
                     end;
                 enabled ->
                     linc_us4_oe_queue:send(SwitchId, PortNo, QueueId, Frame)
@@ -607,8 +613,7 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
                    queues = QueuesState,
                    port = #ofp_port{port_no = PortNo} = Port,
                    switch_id = SwitchId} = State) ->
-
-    case is_port_accepting_packets(Port) of
+    case is_accepting_packets(out, Port) of
         false ->
             drop;
         true ->
@@ -627,21 +632,20 @@ handle_cast({send, #linc_pkt{packet = Packet, queue_id = QueueId}},
 
 %% @private
 handle_info({packet, _DataLinkType, _Time, _Length, Frame},
-            #state{port = #ofp_port{port_no = PortNo,
-                                    config = PortConfig},
+            #state{port = Port,
                    switch_id = SwitchId,
                    overload_protection = Protection,
                    sync_routing = SyncRouting} = State) ->
-    [handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting)
+    [handle_frame(Frame, SwitchId, Port, SyncRouting)
      || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
-handle_info({Port, {data, Frame}}, #state{port = #ofp_port{port_no = PortNo,
-                                                           config = PortConfig},
-                                          erlang_port = Port,
-                                          switch_id = SwitchId,
-                                          overload_protection = Protection,
-                                          sync_routing = SyncRouting} = State) ->
-    [handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting)
+handle_info({ErlPort, {data, Frame}}, #state{port = Port,
+                                             erlang_port = ErlPort,
+                                             switch_id = SwitchId,
+                                             overload_protection = Protection,
+                                             sync_routing = SyncRouting}
+            = State) ->
+    [handle_frame(Frame, SwitchId, Port, SyncRouting)
      || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
 handle_info({optical_data, Pid, Packet},
@@ -653,7 +657,13 @@ handle_info({optical_data, Pid, Packet},
     [handle_optical_packet(Packet, SwitchId, Port, SyncRouting)
      || Protection /= drop_all andalso Protection /= drop_rx],
     {noreply, State};
-
+handle_info(NetlinkMsg, #state{port = Port0, operstate_changes_ref = Ref,
+                               interface = Interface} = State)
+  when element(1, NetlinkMsg) =:= netlink->
+    NewOperstate = linc_us4_port_native:operstate_change(NetlinkMsg,
+                                                         Ref, Interface),
+    PortState = mark_link_state_as(NewOperstate, Port0#ofp_port.state),
+    {noreply, set_port_state_and_notify_controllers(PortState, State)};
 handle_info({'EXIT', _Pid, {port_terminated, 1}},
             #state{interface = Interface} = State) ->
     ?ERROR("Port for interface ~p exited abnormally",
@@ -726,54 +736,57 @@ remove(SwitchId, PortNo) ->
             ok = supervisor:terminate_child(Sup, Pid)
     end.
 
-handle_frame(Frame, SwitchId, PortNo, PortConfig, SyncRouting) ->
-    case check_port_config(no_recv, PortConfig) of
-        true ->
-            drop;
-        false ->
-            LincPkt = linc_us4_oe_packet:binary_to_record(Frame, SwitchId, PortNo),
-            update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
-            NewLincPkt =
-                case check_port_config(no_packet_in, PortConfig) of
-                    false ->
-                        LincPkt;
-                    true ->
-                        LincPkt#linc_pkt{no_packet_in = true}
-                end,
-            case SyncRouting of
-                true ->
-                    linc_us4_oe_routing:route(NewLincPkt);
-                false ->
-                    linc_us4_oe_routing:spawn_route(NewLincPkt)
-            end
+
+handle_frame(Frame, SwitchId, Port, SyncRouting) ->
+    case is_accepting_packets(in, Port) of
+        false -> drop;
+        true  -> do_handle_frame(Frame, SwitchId, Port, SyncRouting)
     end.
 
-handle_optical_packet(Packet, SwitchId,
-                      #ofp_port{port_no = PortNo,
-                                config = PortConfig} = Port,
-                      SyncRouting) ->
-    case is_port_accepting_packets(Port) of
-        false ->
-            drop;
+do_handle_frame(Frame, SwitchId, #ofp_port{port_no = PortNo, config = PortConfig},
+                SyncRouting) ->
+    LincPkt = linc_us4_oe_packet:binary_to_record(Frame, SwitchId, PortNo),
+    update_port_rx_counters(SwitchId, PortNo, byte_size(Frame)),
+    NewLincPkt =
+        case lists:member(no_packet_in, PortConfig) of
+            false ->
+                LincPkt;
+            true ->
+                LincPkt#linc_pkt{no_packet_in = true}
+        end,
+    case SyncRouting of
         true ->
-            %% NOTE: byte counters are fake for optical ports
-            update_port_rx_counters(SwitchId, PortNo,
-                                    byte_size(term_to_binary(Packet))),
-            LincPkt = linc_us4_oe_packet:optical_packet_to_record(
-                        Packet, SwitchId, PortNo),
-            NewLincPkt =
-                case check_port_config(no_packet_in, PortConfig) of
-                    false ->
-                        LincPkt;
-                    true ->
-                        LincPkt#linc_pkt{no_packet_in = true}
-                end,
-            case SyncRouting of
-                true ->
-                    linc_us4_oe_routing:route(NewLincPkt);
-                false ->
-                    linc_us4_oe_routing:spawn_route(NewLincPkt)
-            end
+            linc_us4_oe_routing:route(NewLincPkt);
+        false ->
+            linc_us4_oe_routing:spawn_route(NewLincPkt)
+    end.
+
+handle_optical_packet(Frame, SwitchId, Port, SyncRouting) ->
+    case is_accepting_packets(in, Port) of
+        false -> drop;
+        true  -> do_handle_optical_packet(Frame, SwitchId, Port, SyncRouting)
+    end.
+
+do_handle_optical_packet(Packet, SwitchId, #ofp_port{port_no = PortNo,
+                                                     config = PortConfig},
+                         SyncRouting) ->
+    %% NOTE: byte counters are fake for optical ports
+    update_port_rx_counters(SwitchId, PortNo,
+                            byte_size(term_to_binary(Packet))),
+    LincPkt = linc_us4_oe_packet:optical_packet_to_record(
+                Packet, SwitchId, PortNo),
+    NewLincPkt =
+        case lists:member(no_packet_in, PortConfig) of
+            false ->
+                LincPkt;
+            true ->
+                LincPkt#linc_pkt{no_packet_in = true}
+        end,
+    case SyncRouting of
+        true ->
+            linc_us4_oe_routing:route(NewLincPkt);
+        false ->
+            linc_us4_oe_routing:spawn_route(NewLincPkt)
     end.
 
 -spec update_port_rx_counters(integer(), integer(), integer()) -> any().
@@ -906,13 +919,15 @@ ports_for_switch(SwitchId, Config) ->
          {port, PortNo, [QueuesStatus | [Queues | PortConfig]]}
      end || {port, PortNo, PortConfig} <- Ports].
 
-check_port_config(Flag, Config) ->
-    lists:member(port_down, Config) orelse lists:member(Flag, Config).
-
-is_port_accepting_packets(#ofp_port{config = Config, state = State}) ->
-    (not lists:member(port_down, Config))
-        andalso (not lists:member(no_fwd, Config))
-        andalso (not lists:member(link_down, State)).
+is_accepting_packets(InOrOut, #ofp_port{config = Config, state = State}) ->
+    (not lists:member(link_down, State))
+        andalso (not lists:member(port_down, Config))
+        andalso case InOrOut of
+                    in ->
+                        not lists:member(no_recv, Config);
+                    out ->
+                        not lists:member(no_fwd, Config)
+                end.
 
 setup_load_control(SwitchId, PortNo, State) ->
     CheckerReference =
@@ -974,3 +989,30 @@ set_ofp_port(CapablePortNo, PortOpts) ->
               supported = ?FEATURES, peer = ?FEATURES,
               curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}.
 
+init_port_state(down) ->
+    [live, link_down];
+init_port_state(up) ->
+    [live].
+
+set_port_state_and_notify_controllers(PortState, #state{switch_id = SwitchId,
+                                                        port = Port} = State) ->
+    NewState = State#state{port = Port#ofp_port{state = PortState}},
+    linc_logic:send_to_controllers(SwitchId, oe_port_status(modify, NewState)),
+    ?INFO("[SwitchId=~p][PortNo=~p] Set port state ~p~n",
+          [SwitchId, Port#ofp_port.port_no, PortState]),
+    NewState.
+
+mark_link_state_as(up, PortState) ->
+    not lists:member(link_down, PortState) andalso
+        ?WARNING("Setting up port that already is up"),
+    lists:filter(fun(link_down) -> false;
+                    (_) -> true
+                 end, PortState);
+mark_link_state_as(down, PortState) ->
+    case lists:member(link_down, PortState) of
+        true ->
+            ?WARNING("Setting down port that already is down"),
+            PortState;
+        false ->
+            [link_down | PortState]
+    end.

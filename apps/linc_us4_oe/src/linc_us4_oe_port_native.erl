@@ -23,7 +23,8 @@
          optical/2,
          send/3,
          send/2,
-         close/1]).
+         close/1,
+         operstate_change/3]).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -58,7 +59,9 @@ tap(Interface, PortOpts) ->
             Fd = tuncer:getfd(Pid),
             Port = open_port({fd, Fd, Fd}, [binary]),
             HwAddr = get_hw_addr(Interface),
-            {Port, Pid, HwAddr};
+            {OperstateChangesRef, Operstate} =
+                get_operstate_and_subscribe_for_changes(Interface),
+            {Port, Pid, HwAddr, OperstateChangesRef, Operstate};
         {error, Error} ->
             ?ERROR("Tuncer error ~p for interface ~p",
                    [Error, Interface]),
@@ -76,7 +79,9 @@ eth(Interface) ->
                                 linux_raw_socket(Interface)
                         end,
     HwAddr = get_hw_addr(Interface),
-    {Socket, IfIndex, Pid, HwAddr}.
+    {OperstateChangesRef, Operstate} =
+        get_operstate_and_subscribe_for_changes(Interface),
+    {Socket, IfIndex, Pid, HwAddr, OperstateChangesRef, Operstate}.
 
 optical(SwitchId, PortNo) ->
     linc_us4_oe_optical_native:start_link(SwitchId, PortNo, self()).
@@ -101,11 +106,15 @@ send(Pid, Frame) ->
     linc_us4_oe_optical_native:send(Pid, Frame).
 
 close(#state{socket = undefined, port_ref = PortRef,
-             optical_port_pid = undefined}) ->
+             optical_port_pid = undefined,
+             operstate_changes_ref = OperstateRef}) ->
+    unsubscribe_for_operstate_changes(OperstateRef),
     tuncer:down(PortRef),
     tuncer:destroy(PortRef);
 close(#state{socket = Socket, port_ref = undefined, epcap_pid = EpcapPid,
-             optical_port_pid = undefined}) ->
+             optical_port_pid = undefined,
+             operstate_changes_ref = OperstateRef}) ->
+    unsubscribe_for_operstate_changes(OperstateRef),
     %% We use catch here to avoid crashes in tests, where EpcapPid is mocked
     %% and it's an atom, not a pid.
     case catch is_process_alive(EpcapPid) of
@@ -119,6 +128,13 @@ close(#state{socket = undefined, port_ref = undefined,
              optical_port_pid = Pid}) ->
     linc_us4_oe_optical_native:stop(Pid).
 
+operstate_change({netlink, SubscriptionRef, Interface, operstate,
+                  _PrevOperstate, NewOperstate}, SubscriptionRef, Interface) ->
+    operstate(NewOperstate);
+operstate_change({netlink, _, _, operstate, _, _} = Msg, _, Interface) ->
+    ?ERROR("Got unexpected operstate change messsage on interface ~s: ~p~n",
+           [Interface, Msg]),
+    throw({unexpected_operstate_change, Msg}).
 
 %%%-----------------------------------------------------------------------------
 %%% Internal functions
@@ -169,6 +185,32 @@ get_hw_addr(Interface) ->
                     list_to_binary(MAC)
             end
     end.
+
+-spec get_operstate_and_subscribe_for_changes(IntfName :: string()) ->
+                                                     Result when
+      Result :: {SubscriptionRef :: reference(),
+                 CurrentOperstate :: up | down}.
+get_operstate_and_subscribe_for_changes(Intf) ->
+    {ok, Ref} = netlink:subscribe(Intf, [operstate]),
+    netlink:invalidate(Intf, [operstate]),
+    netlink:get_match(link, unspec, [{operstate, native, _AnyState = up}]),
+    receive
+        {netlink, Ref, Intf, operstate, _PrevOperstate, Operstate} ->
+            {Ref, operstate(Operstate)}
+    after
+        500 ->
+            ?ERROR("Cannot get current operation state for interface ~p~n",
+                   [Intf]),
+            throw(cannot_get_interface_operstate)
+    end.
+
+operstate(up) ->
+    up;
+operstate(_) ->
+    down.
+
+unsubscribe_for_operstate_changes(Ref) ->
+    ok = netlink:unsubscribe(Ref).
 
 -spec epcap_options(string()) -> list(tuple()).
 epcap_options(Interface) ->

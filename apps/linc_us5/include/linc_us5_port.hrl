@@ -24,6 +24,7 @@
           type = physical    :: linc_port_type(),
           switch_id = 0      :: integer(),
           port = #ofp_port{} :: ofp_port(),
+          operstate_changes_ref :: reference(),
           %% State of tap interface
           erlang_port        :: port(),
           port_ref           :: pid(),

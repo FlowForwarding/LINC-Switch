@@ -42,7 +42,6 @@ port_up(Pid) ->
 
 init([SwitchId, PortNo, Pid]) ->
     add_ofp_port_to_optical_port_mapping(SwitchId, PortNo),
-    % ok = linc_us4_oe_port:set_state(SwitchId, PortNo, [link_down]),
     {ok, link_down, #state{ofp_port_switch_id = SwitchId,
                            ofp_port_no = PortNo,
                            ofp_port_pid = Pid}, 0}.

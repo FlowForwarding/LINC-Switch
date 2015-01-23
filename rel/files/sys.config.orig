@@ -199,6 +199,32 @@
     ]}
   ]},
 
+ {lager,
+  [{colored, true},
+   {handlers,
+    [{lager_console_backend, info},
+     %% To enable 'debug' logs on the console change 'info' to 'debug'.
+     %% However that will produce big amount of logs from dependencies.
+     %% To filter them out and display only 'debug' messages from LINC
+     %% application, change the above 'lager_console_backend' into the
+     %% one presented below. Note that all the 'debug' logs can be for
+     %% example redirected to a file by setting appropriate log level
+     %% in the 'lager_file_backend'.
+     %% {lager_console_backend,
+     %%  [debug,
+     %%   {lager_default_formatter,
+     %%    [{linc,
+     %%      [time, " [", severity, "] ", message, "\n"],
+     %%      [""]}]
+     %%   }]
+     %% },
+     {lager_file_backend, [{file, "log/error.log"}, {level, error},
+                           {size, 10485760}, {date, "$D0"},{count, 5}]},
+     {lager_file_backend, [{file, "log/console.log"}, {level, info},
+                           {size, 10485760}, {date, "$D0"},{count, 5}]}
+    ]}
+  ]},
+
  {sasl,
   [
    {sasl_error_logger, {file, "log/sasl-error.log"}},

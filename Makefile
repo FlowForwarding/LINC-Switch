@@ -51,4 +51,5 @@ dev:
 	deps/*/ebin -config rel/files/sys.config -args_file rel/files/vm.args \
 	 -eval "lists:map(fun application:start/1, [kernel, stdlib, asn1, \
 		crypto, public_key, ssl, compiler, syntax_tools, runtime_tools, \
-		xmerl, mnesia, lager, netlink, linc, of_protocol, of_config, sync])"
+		xmerl, mnesia, goldrush, lager, netlink, linc, of_protocol, \
+		of_config, sync])"

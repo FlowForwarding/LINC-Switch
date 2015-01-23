@@ -151,6 +151,7 @@ setup() ->
     ok = application:start(syntax_tools),
     ok = application:start(compiler),
     ok = application:start(netlink),
+    ok = application:start(goldrush),
     ok = application:start(lager),
     ok = lager:set_loglevel(lager_console_backend, error).
 
@@ -161,7 +162,8 @@ teardown(_) ->
     ok = application:stop(mnesia),
     ok = application:stop(xmerl),
     ok = application:stop(netlink),
-    ok = application:stop(lager).
+    ok = application:stop(lager),
+    ok = application:stop(goldrush).
 
 config_request_reply_setup() ->
     mocked = linc_us4_oe_test_utils:mock(?MOCKED),

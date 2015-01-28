@@ -7,7 +7,7 @@
    {of_config, enabled},
 
    %% Following setting enables or disables spawning a new process for each
-   %% packet to be routed. If it's set to false a new process will be spawned, 
+   %% packet to be routed. If it's set to false a new process will be spawned,
    %% if it's set to true (or not defined) it will stay in the parent process
    {sync_routing, true},
 
@@ -121,8 +121,11 @@
                 %% {port, 2, [{queues, [1, 2]}]},
                 %% - port with explicit number and name
                 %% {port, 3, [{queues, []},
-                %%            {port_no, 1},
+                %%            {port_no, 11},
                 %%            {port_name, "Banshee"}]}
+                %% NOTE: The third element of the port tuple can be
+                %% either a {queues, _} tuple or a list of options. It
+                %% is recommended to use a list of options.
                ]}
       ]}
 

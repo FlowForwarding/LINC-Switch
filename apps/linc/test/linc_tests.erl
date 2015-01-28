@@ -27,17 +27,32 @@
                 [{C, fun() -> T(Value) end} || {C, T} <- CommentTestPairs]
         end).
 
--define(PORTS, {_Capable = [{port, 1, [{interface, "dummy"}]},
-                            {port, 2, [{interface, "dummy"}]}],
+-define(CAPABLE_PORTS(PortNums), [{port, No, [{interface, "dummy"}]}
+                                  || No <- PortNums]).
+
+-define(PORTS, {_Capable = ?CAPABLE_PORTS([1,2,3]),
                 _Logical = [{port, 1, [{queues, []}, {port_no, 10}]},
-                            {port, 2, [{queues, []}, {port_no, 11}]}]
+                            {port, 2, [{queues, []}, {port_no, 11}]},
+                            {port, 3, [{queues, []}]}]
                }).
 
--define(INCORRECT_PORTS, {_Capable = [{port, 1, [{interface, "dummy"}]},
-                                      {port, 2, [{interface, "dummy"}]}],
-                          _Logical = [{port, 1, [{queues, []}, {port_no, 10}]},
-                                      {port, 1, [{queues, []}, {port_no, 11}]}]
-               }).
+-define(INCORRECT_PORTS_LIST,
+        [{duplicated_capable_port_no,
+          {?CAPABLE_PORTS([1,2]),
+           [{port, 1, [{queues, []}, {port_no, 10}]},
+            {port, 1, [{queues, []}, {port_no, 11}]}]
+          }},
+         {duplicated_logical_port_no,
+          {?CAPABLE_PORTS([1,2]),
+           [{port, 1, [{queues, []}, {port_no, 10}]},
+            {port, 2, [{queues, []}, {port_no, 10}]}]
+          }},
+         {duplicated_logical_port_no,
+          {?CAPABLE_PORTS([1,2]),
+           %% Logical port_no defaults to capable port_no when port_no
+           %% option is not present.
+           [{port, 1, {queues, []}}, {port, 2, [{queues, []}, {port_no, 1}]}]
+          }}]).
 
 %% Tests -----------------------------------------------------------------------
 
@@ -100,23 +115,26 @@ capable_to_logical_ports_map_should_be_empty(SwitchId) ->
     ?assertEqual([], ets:tab2list(ports_map)).
 
 capable_to_logical_ports_mapping_should_fail(_) ->
-    %% GIVEN
-    set_ports(?INCORRECT_PORTS),
+    [begin
+         %% GIVEN
+         set_ports(Ports),
 
-    %% WHEN
-    switch_lager_reports(off),
-    Result = application:start(linc),
-    switch_lager_reports(on),
+         %% WHEN
+         turn_lager_error_reports(off),
+         Result = application:start(linc),
+         turn_lager_error_reports(on),
 
-    %% THEN
-    ?assertMatch({error,{bad_return,{_MFA,bad_port_config}}}, Result).
+         %% THEN
+         ?assertMatch({error, {{bad_port_config, ExpectedFailReason}, _}},
+                      Result)
+     end || {ExpectedFailReason, Ports} <- ?INCORRECT_PORTS_LIST].
 
 %% Fixtures --------------------------------------------------------------------
 
 backend_start_setup() ->
     error_logger:tty(false),
     start_dependencies(),
-    switch_lager_reports(on),
+    turn_lager_error_reports(on),
     mock_inet(),
     mock_backend(),
     setup_environment(?LINC_BACKEND, SwitchId = 1),
@@ -207,9 +225,9 @@ expect_linc_backend() ->
     meck:expect(?LINC_BACKEND, start, fun(_) -> {ok, version, state} end),
     meck:expect(?LINC_BACKEND, stop, fun(_) -> ok end).
 
-switch_lager_reports(off) ->
-    ok = lager:set_loglevel(lager_console_backend, none);
-switch_lager_reports(on) ->
+turn_lager_error_reports(off) ->
+    ok = lager:set_loglevel(lager_console_backend, emergency);
+turn_lager_error_reports(on) ->
     ok = lager:set_loglevel(lager_console_backend, error).
 
 set_ports({CapablePorts, LogicalPorts}) ->
@@ -234,6 +252,6 @@ assert_linc_logic_is_running(SwitchId, Retries) ->
 
 assert_capable_port_mapped_correctly(CapableNo, SwitchId, LogicalPort) ->
     {_,_, PortOpts} = LogicalPort,
-    {port_no, LogicalNo} = lists:keyfind(port_no, 1, PortOpts),
+    LogicalNo = proplists:get_value(port_no, PortOpts, CapableNo),
     ?assertMatch([[{SwitchId, LogicalNo}]],
                  ets:match(ports_map, {CapableNo, '$1'})).

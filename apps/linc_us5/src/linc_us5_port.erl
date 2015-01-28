@@ -311,135 +311,24 @@ is_valid(SwitchId, PortNo) when is_integer(PortNo)->
 %%%-----------------------------------------------------------------------------
 
 %% @private
-init([SwitchId, {port, PortNo, PortOpts}]) ->
+init([SwitchId, {port, CapablePortNo, PortOpts}]) ->
     process_flag(trap_exit, true),
     %% epcap crashes if this dir does not exist.
     filelib:ensure_dir(filename:join([code:priv_dir(epcap), "tmp", "ensure"])),
-    PortName = "Port" ++ integer_to_list(PortNo),
-    Advertised = case lists:keyfind(features, 1, PortOpts) of
-                     false ->
-                         ?FEATURES;
-                     {features, undefined} ->
-                         ?FEATURES;
-                     {features, Features} ->
-                         linc_ofconfig:convert_port_features(Features)
-                 end,
-    PortConfig = case lists:keyfind(config, 1, PortOpts) of
-                     false ->
-                         [];
-                     {config, undefined} ->
-                         [];
-                     {config, Config} ->
-                         linc_ofconfig:convert_port_config(Config)
-                 end,
-    Port = #ofp_port{port_no = PortNo,
-                     name = PortName,
-                     config = PortConfig,
-                     properties =
-                         [#ofp_port_desc_prop_ethernet{
-                             curr = ?FEATURES,
-                             advertised = Advertised,
-                             supported = ?FEATURES, peer = ?FEATURES,
-                             curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}]},
-    QueuesState = case queues_enabled(SwitchId) of
-                      false ->
-                          disabled;
-                      true ->
-                          enabled
-                  end,
-    SwitchName = "LogicalSwitch" ++ integer_to_list(SwitchId),
-    ResourceId =  SwitchName ++ "-" ++ PortName,
-    {interface, Interface} = lists:keyfind(interface, 1, PortOpts),
-    %% Use sync routing unless explicitly disabled in the configuration
-    SyncRouting = case application:get_env(linc, sync_routing) of
-                      {ok, false} ->
-                          false;
-                      _ ->
-                          true
-                  end,
-    State = #state{resource_id = ResourceId, interface = Interface, port = Port,
-                   queues = QueuesState, switch_id = SwitchId,
-                   sync_routing = SyncRouting},
-    Type = case lists:keyfind(type, 1, PortOpts) of
-        {type, Type1} ->
-            Type1;
-        _ ->
-            %% The type is not specified explicitly.
-            %% Guess from the interface name.
-            case re:run(Interface, "^tap.*$", [{capture, none}]) of
-                match ->
-                    tap;
-                nomatch ->
-                    eth
-            end
-    end,
-    case Type of
-        %% When switch connects to a tap interface, erlang receives file
-        %% descriptor to read/write ethernet frames directly from the
-        %% desired /dev/tapX character device. No socket communication
-        %% is involved.
-        tap ->
-            case linc_us5_port_native:tap(Interface, PortOpts) of
-                {stop, shutdown} ->
-                    {stop, shutdown};
-                {ErlangPort, Pid, HwAddr, OperstateChangesRef, Operstate} ->
-                    ets:insert(linc:lookup(SwitchId, linc_ports),
-                               #linc_port{port_no = PortNo, pid = self()}),
-                    ets:insert(linc:lookup(SwitchId, linc_port_stats),
-                               #ofp_port_stats{port_no = PortNo,
-                                               duration_sec = erlang:now()}),
-                    case queues_config(SwitchId, PortOpts) of
-                        disabled ->
-                            disabled;
-                        QueuesConfig ->
-                            SendFun = fun(Frame) ->
-                                              port_command(ErlangPort, Frame)
-                                      end,
-                            linc_us5_queue:attach_all(SwitchId, PortNo,
-                                                      SendFun, QueuesConfig)
-                    end,
-                    {ok, State#state{erlang_port = ErlangPort,
-                                     port_ref = Pid,
-                                     operstate_changes_ref = OperstateChangesRef,
-                                     port = Port#ofp_port{
-                                              hw_addr = HwAddr,
-                                              state = init_port_state(Operstate)}}}
-            end;
-        %% When switch connects to a hardware interface such as eth0
-        %% then communication is handled by two channels:
-        %% * receiving ethernet frames is done by libpcap wrapped-up by
-        %%   a epcap application
-        %% * sending ethernet frames is done by writing to
-        %%   a RAW socket binded with given network interface.
-        %%   Handling of RAW sockets differs between OSes.
-        eth ->
-            {Socket, IfIndex, EpcapPid, HwAddr, OperstateChangesRef,
-             Operstate} = linc_us5_port_native:eth(Interface),
-            case queues_config(SwitchId, PortOpts) of
-                disabled ->
-                    disabled;
-                QueuesConfig ->
-                    SendFun = fun(Frame) ->
-                                      linc_us5_port_native:send(Socket,
-                                                                IfIndex,
-                                                                Frame)
-                              end,
-                    linc_us5_queue:attach_all(SwitchId, PortNo,
-                                              SendFun, QueuesConfig)
-            end,
-            ets:insert(linc:lookup(SwitchId, linc_ports),
-                       #linc_port{port_no = PortNo, pid = self()}),
-            ets:insert(linc:lookup(SwitchId, linc_port_stats),
-                       #ofp_port_stats{port_no = PortNo,
-                                       duration_sec = erlang:now()}),
-            {ok, State#state{socket = Socket,
-                             ifindex = IfIndex,
-                             epcap_pid = EpcapPid,
-                             operstate_changes_ref = OperstateChangesRef,
-                             port = Port#ofp_port{
-                                      hw_addr = HwAddr,
-                                      state = init_port_state(Operstate)}}}
-             end.
+    Port = set_ofp_port(CapablePortNo, PortOpts),
+    State0 = #state{switch_id = SwitchId, port = Port,
+                    resource_id = construct_port_resource_id(SwitchId,
+                                                             Port#ofp_port.name),
+                    interface =  proplists:get_value(interface, PortOpts),
+                    queues = get_queues_state(SwitchId),
+                    sync_routing = get_sync_routing_state()},
+    State1 = case get_interface_type(PortOpts) of
+                 tap ->
+                     setup_tap_interface(PortOpts, State0);
+                 eth ->
+                     setup_eth_interface(PortOpts, State0)
+             end,
+    {ok, State1}.
 
 %% @private
 handle_call({validate_port_mod, #ofp_port_mod{} = PortMod}, _From,
@@ -802,4 +691,143 @@ mark_link_state_as(down, PortState) ->
             PortState;
         false ->
             [link_down | PortState]
+    end.
+
+set_ofp_port(CapablePortNo, PortOpts) ->
+    PortNo = proplists:get_value(port_no, PortOpts, CapablePortNo),
+    PortName = proplists:get_value(port_name, PortOpts,
+                                   "Port" ++ integer_to_list(PortNo)),
+    Advertised = case lists:keyfind(features, 1, PortOpts) of
+                     false ->
+                         ?FEATURES;
+                     {features, undefined} ->
+                         ?FEATURES;
+                     {features, Features} ->
+                         linc_ofconfig:convert_port_features(Features)
+                 end,
+    PortConfig = case lists:keyfind(config, 1, PortOpts) of
+                     false ->
+                         [];
+                     {config, undefined} ->
+                         [];
+                     {config, Config} ->
+                         linc_ofconfig:convert_port_config(Config)
+                 end,
+    #ofp_port{port_no = PortNo,
+              name = PortName,
+              config = PortConfig,
+              state = [live],
+              properties =
+                  [#ofp_port_desc_prop_ethernet{
+                      curr = ?FEATURES,
+                      advertised = Advertised,
+                      supported = ?FEATURES, peer = ?FEATURES,
+                      curr_speed = ?PORT_SPEED, max_speed = ?PORT_SPEED}]}.
+
+get_queues_state(SwitchId) ->
+    case queues_enabled(SwitchId) of
+        false ->
+            disabled;
+        true ->
+            enabled
+    end.
+
+get_interface_type(PortOpts) ->
+    case lists:keyfind(type, 1, PortOpts) of
+        {type, Type1} ->
+            Type1;
+        _ ->
+            %% The type is not specified explicitly.
+            %% Guess from the interface name.
+            Interface = proplists:get_value(interface, PortOpts),
+            case re:run(Interface, "^tap.*$", [{capture, none}]) of
+                match ->
+                    tap;
+                nomatch ->
+                    eth
+            end
+    end.
+
+get_sync_routing_state() ->
+    %% Use sync routing unless explicitly disabled in the configuration
+    case application:get_env(linc, sync_routing) of
+        {ok, false} ->
+            false;
+        _ ->
+            true
+    end.
+
+%% @doc Setup tap interface.
+%%
+%% When switch connects to a tap interface, erlang receives file
+%% descriptor to read/write ethernet frames directly from the
+%% desired /dev/tapX character device. No socket communication
+%% is involved.
+setup_tap_interface(PortOpts, #state{interface = Interface,
+                                     port = Port} = State0) ->
+    case linc_us5_port_native:tap(Interface, PortOpts) of
+        {stop, shutdown} ->
+            {stop, shutdown};
+        {ErlangPort, Pid, HwAddr, OperstateChangesRef, Operstate} ->
+            State1 = State0#state{erlang_port = ErlangPort,
+                                  port_ref = Pid,
+                                  operstate_changes_ref = OperstateChangesRef,
+                                  port= Port#ofp_port{
+                                          hw_addr = HwAddr,
+                                          state = init_port_state(Operstate)}},
+            SendFun = fun(Frame) ->
+                              port_command(ErlangPort, Frame)
+                      end,
+            setup_linc_port_and_ofp_port_stats_ets(State1),
+            setup_port_queues(PortOpts, SendFun, State1),
+            State1
+    end.
+
+%% @doc
+%%
+%% When switch connects to a hardware interface such as eth0
+%% then communication is handled by two channels:
+%% * receiving ethernet frames is done by libpcap wrapped-up by
+%%   a epcap application
+%% * sending ethernet frames is done by writing to
+%%   a RAW socket binded with given network interface.
+%%   Handling of RAW sockets differs between OSes.
+setup_eth_interface(PortOpts, #state{interface = Interface,
+                                     port = Port} = State0) ->
+    {Socket, IfIndex, EpcapPid, HwAddr, OperstateChangesRef, Operstate}
+        = linc_us5_port_native:eth(Interface),
+    State1 = State0#state{socket = Socket,
+                          ifindex = IfIndex,
+                          epcap_pid = EpcapPid,
+                          operstate_changes_ref = OperstateChangesRef,
+                          port = Port#ofp_port{
+                                   hw_addr = HwAddr,
+                                   state = init_port_state(Operstate)}},
+    SendFun = fun(Frame) ->
+                      linc_us5_port_native:send(Socket, IfIndex, Frame)
+              end,
+    setup_linc_port_and_ofp_port_stats_ets(State1),
+    setup_port_queues(PortOpts, SendFun, State1),
+    State1.
+
+
+construct_port_resource_id(SwitchId, PortName) ->
+    "LogicalSwitch" ++ integer_to_list(SwitchId) ++ "-" ++ PortName.
+
+setup_linc_port_and_ofp_port_stats_ets(#state{switch_id = SwitchId,
+                                              port = Port}) ->
+    ets:insert(linc:lookup(SwitchId, linc_ports),
+               #linc_port{port_no = Port#ofp_port.port_no, pid = self()}),
+    ets:insert(linc:lookup(SwitchId, linc_port_stats),
+               #ofp_port_stats{port_no = Port#ofp_port.port_no,
+                               duration_sec = erlang:now()}).
+
+setup_port_queues(PortOpts, SendFun, #state{switch_id = SwitchId,
+                                            port = Port}) ->
+    case queues_config(SwitchId, PortOpts) of
+        disabled ->
+            disabled;
+        QueuesConfig ->
+            linc_us5_queue:attach_all(SwitchId, Port#ofp_port.port_no,
+                                      SendFun, QueuesConfig)
     end.

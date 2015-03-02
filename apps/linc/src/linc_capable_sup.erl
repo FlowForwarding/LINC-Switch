@@ -41,7 +41,7 @@ start_link() ->
     {ok, LogicalSwitches} = application:get_env(linc, logical_switches),
     ?DEBUG("sys.config logical switches:~n~p", [LogicalSwitches]),
     linc_ports_mapping:initialize(LogicalSwitches),
-    {ok, Pid} = supervisor:start_link(?MODULE, []),
+    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE ,[]),
     start_ofconfig_if_enabled(Pid),
     Config = case application:get_env(linc, of_config) of
                  {ok, enabled} ->

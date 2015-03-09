@@ -1,5 +1,7 @@
 #!/bin/sh
 
 if [ `uname` = Linux -a `id -u` != 0 ]; then
-    sudo -n setcap cap_net_admin=ep ./rel/linc/erts-*/bin/beam.smp
+    if ! sudo -n setcap cap_net_admin=ep ./rel/linc/erts-*/bin/beam.smp; then
+        echo "[WARN] Setting NET_ADMIN capability failed. Start the switch as superuser."
+    fi
 fi

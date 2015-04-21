@@ -5,11 +5,8 @@
 - [LINC-Switch main dependencies](#linc-switch-main-dependencies)
 - [LINC-Switch tests](#linc-switch-tests)
 - [LINC-Switch supervision tree](#linc-switch-supervision-tree)
-- [linc-Switch backends](#linc-switch-backends)
-    - [OpenFlow 1.3 with Optical Extensions](#openflow-1.3-with-optical-extensions)
-        - [Multiple ROADMS running on one Erlang node](#multiple-roadms-running-on-one-erlang-node)
-        - [Simulated optical ports](#simulated-optical-ports)
-        - [Custom OF messages](#custom-of-messages)
+- [Backends](#backends)
+    - [LINC-OE: OpenFlow 1.3 with OE](#linc-oe-openflow-13-with-oe)
 - [LINC-Switch packet processing pipeline](#linc-switch-packet-processing-pipeline)
 - [LINC-Switch OpenFlow messages processing](#linc-switch-openflow-messages-processing)
         
@@ -26,7 +23,7 @@
 
 * [Configuration (sys.config file) explained](https://github.com/FlowForwarding/LINC-Switch/blob/master/rel/files/sys.config.orig)
 
-* [LINC-Environment to quickly get started and undetstand how the LINC integrates with the OS](https://github.com/FlowForwarding/LINC-Environment](https://github.com/FlowForwarding/LINC-Environment)
+* [LINC-Environment to quickly get started and undetstand how the LINC integrates with the OS](https://github.com/FlowForwarding/LINC-Environment)
 
 ## LINC-Switch Erlang apps ##
 
@@ -87,59 +84,215 @@ the linc application too:
 
 TODO
 
-## LINC-Switch backends ##
+## Backends ##
 
-### OpenFlow 1.3 with Optical Extensions ###
+### LINC-OE: OpenFlow 1.3 with OE ###
 
-#### Multiple ROADMS running on one Erlang node ####
+`OE` stands for Optical Extension. It is used for simulating multiple
+optical switches [(ROADMs)][ROADM] that are emulated by a number of
+Logical Switches running within one LINC-Switch node.
+Each Logical Switch is started by `linc_capable_sup` module.
+It is also the top supervisor of the whole LINC-Switch application.
 
-Simulating multiple optical switches (ROADMs) within one Erlang node is
-achieved by Logical Switches. A Capable Switch can run multiple Logical
-Switches. linc_capable_sup module  starts each Logical Switch. It is also
-the top supervisor of the whole LINC-Switch application.
-
-#### Simulated optical ports ####
+##### Emulated optical ports #####
 
 All the other backends read/write packets to either ethernet ports or
 TUN/TAP ones via appropriate libraries mentioned in the
 [dependencies](#linc-switch-main-dependencies) section. The `linc_us4_oe`
-backend supports additional port: simulated optical port. It is entirely
-implemented in LINC in the `linc_us4_oe`_optical_native module.
+backend introduces emulated optical port. It is entirely
+implemented in LINC in the `linc_us4_oe_optical_native` module.
 
-The `linc_us4_oe`_optical_native is a gen_fsm, and it provides a custom
-protocol between a pair of optical port so that they can communicate
-their state (link_up, link_down, port_up, port_down). linc_oe provides
-an API for getting optical peer pid based on SwitchId and PortNo
-(the Id unique per Logical Switch).
+The `linc_us4_oe_optical_native` is a gen_fsm, and it provides a custom
+protocol between a pair of optical ports belonging to different
+Logical Switches so that they can communicate
+their state (link_up, link_down, port_up, port_down). `linc_oe` provides
+an API for getting pids of emulated optical ports based on `SwitchId` and `PortNo`
+(`PorNo` is unique per Logical Switch).
 
-Similarly as in the case of the other ports, the messages carrying user
-data are sent directly to the processes representing OpenFlow ports.
-The OpenFlow ports are implemented via ``linc_us4`_oe`_port module. Note,
-that this module represent the OpenFlow port regardless of the underlying
-"physical port" (eth, TUN/TAP, optical). Each OpenFlow port process is
-a gen_server. It receives packets (user data) in handle_info/2 and sends
-them by `send/2`. The optical data (packets represented in simulated
-optical medium) is represented by Erlang messages and have the following format:
+In a LINC-Switch that emulates the optical network, one can distinguish
+two port's types: **T-Port** or **W-Port**. T-Port connects a packet
+network to the switch and converts data to optical signals. Signals
+are transmitted with a specified wavelength. In LINC, the medium conversion
+is emulated by adding additional header to the packet representation.
+Such a header contains information on wavelength of a signal called *lambda*.
+A T-Port in LINC adds or removes this header. The W-Port connects two
+optical ports.
+
+![LINC-Switch emulated optical ports](img/optical-ports.png)
+
+The messages carrying emulated optical signals
+are sent directly to the processes representing OpenFlow ports.
+These are implemented via `linc_us4_oe_port` module. Note,
+that this module represents the OpenFlow port regardless of the underlying
+*physical port* (eth, TUN/TAP, optical). Each OpenFlow port process is
+a gen_server. It receives packets in `handle_info/2` and sends
+them by `send/2`. The messages that emulate optical signals have the
+following format:
 
 ```erlang
 OpticalDataMessage :: {optical_data, Pid, Packet}
 Pid :: pid() %% pid of the peer simulated optical port (linc_us4_oe_native_optical)
 Packet :: [#och_sigid{} | pkt:packet()]
 ```
+The 3rd and 4th byte of `#och_sig_id.channel_number` field stands for
+`lambda`.
 
-#### Custom OF messages ####
+##### OpenFlow Extensions #####
 
-The Optical Extension requires custom OpenFlow messages. One example
+LINC-OE requires custom OpenFlow messages. One example
 of such a message is a port description request message containing
 all the ports in a Logical Switch (eth, optical…). This request is
 implemented as an experimenter one and is handled in the
-[linc_us4_oe_port:ofp_experimenter_request/1](https://github.com/FlowForwarding/LINC-Switch/blob/master/apps/linc_us4_oe/src/linc_us4_oe.erl#L431).
+`linc_us4_oe_port:ofp_experimenter_request/1`.
 Important thing to note is that the name of the function have to match
 the name of the record representing the message in the of_protocol (see
-[here](https://github.com/FlowForwarding/of_protocol/blob/master/src/ofp_v4_encode.erl#L453).
-The functions in the `linc_us4`_oe` are called from the
-[linc_logic](https://github.com/FlowForwarding/LINC-Switch/blob/master/apps/linc/src/linc_logic.erl)
-module that ties the backend and the OpenFlow client.
+`ofp_v4_encode:encode_body/1` in of_protocol).
+The functions in the `linc_us4_oe` are called from the
+`linc_logic` module that ties the backend and the OpenFlow client.
+
+To emulate optical signal we add additional header to the packet
+representation that carries data of the emulated signal.
+The header is represented by the `#och_sigid{}` record:
+
+```erlang
+-record(och_sigid, {
+          grid_type = <<0:8>> :: binary(),
+          channel_spacing = <<0:8>> :: binary(),
+          channel_number = <<0:16>> :: binary(),
+          spectral_width = <<0:16>> :: binary()
+         }).
+```
+
+The lambda value that is used for marking optical channels is in the
+`channel_number` field. The rest of the fields are ignored in the
+current implementation.
+
+
+###### Set Field Action for Lambda ######
+
+When converting a packet to optical signal a *lambda* value needs to be
+assigned to it. For that use *ofp_field* of type *och_sigid*
+whose values corresponds to the *och_sigid* record. However in the LINC-OE
+context only the *channel_number (lambda)* field is meaningful.
+The *och_sigid* field, wrapped
+into an experimenter action with Infoblox Experimenter ID can
+be used in a Flow Entry that forwards packets from W-Port to T-Port
+or between W-Ports (when the *lambda* value has to be changed). The snippet
+below shows how to construct *ofp_field* for *och_sigid*. 
+
+```erlang
+   Field = #ofp_field{class = openflow_basic,
+                      has_mask = false,
+                      name = och_sigid,
+                      value = <<0:16, (_Lambda = 20):16, 0:16>>},
+    SetField = #ofp_action_set_field{field = Field},
+    Action1 = #ofp_action_experimenter{experimenter = ?INFOBLOX_EXPERIMENTER,
+                                       data = SetField}
+```
+
+The *Set Field Action* is actually run in the `linc_us4_oe_packet:set_field/2`,
+which adds *och_sigid* header to the packet representation according
+to the *ofp_field*. 
+
+###### Matching on Lambda  ######
+
+On a W-Port one can match on the *lambda* value of emulated optical
+signal. To match on it, we use the same *ofp_field* as with Set Field
+Action with one difference: the class is **INFOBLOX** (Infoblox Vendor Id)
+instead of **OPENFLOW_BASIC**. The snippet below shows that:
+
+``` erlang
+MatchField = #ofp_field{class = infoblox,
+                        has_mask = false,
+                        name = och_sigid,
+                        value = <<0:16, (_Lambda = 10):16, 0:16>>}
+```
+
+###### Optical Port Status ######
+
+The switch uses the experimenter message for sending asynchronous port
+status messages for optical transport ports.  The messages are sent
+using the same rules as the port status messages.
+The body of the message is a *ofp_port_status*  wrapped into an
+experimenter message:
+
+```erlang
+   P = #ofp_port_v6{port_no     = 1,
+                    hw_addr     = <<8,0,39,255,136,50>>,
+                    name        = <<"Port1">>,
+                    config      = [],
+                    state       = [live],
+                    properties  = []},
+   Body = #ofp_port_status{
+             reason = add,
+             desc = P},
+   Msg = #ofp_message{version = 4,
+                      type = experimenter,
+                      xid = 12345,
+                      body = #ofp_experimenter{
+                                experimenter = ?INFOBLOX_EXPERIMENTER,
+                                exp_type     = port_status,
+                                data         = Body}},
+```
+
+
+###### Optial Port Description ######
+
+Controllers request the optical transport port descriptions using
+experimenter multipart request with **INFOBLOX_EXPERIMENTER** experimenter id
+and *exp_type* set to *port_desc*.
+
+```erlang
+#ofp_experimenter_request{experimenter = ?INFOBLOX_EXPERIMENTER,
+                          exp_type = port_desc,
+                          data = <<>>}.
+```
+
+The switch responds with an experimenter multipart reply
+with the list of extended port descriptions.  The response includes
+all the ports on the switch - T-Ports and W-Ports.
+The switch’s response to a regular port description request
+(not the experimenter one) does not include the optical transport ports.
+Below is the experimenter multipart response with port descriptions.
+
+```erlang
+ V = [#ofp_port_optical_transport_layer_entry{
+            layer_class = port,
+            signal_type = otsn,
+            adaptation  = ots_oms},
+         #ofp_port_optical_transport_layer_entry{
+            layer_class = och,
+            signal_type = fix_grid,
+            adaptation  = oduk_oduij}],
+    F = [#ofp_port_optical_transport_application_code{
+            feature_type    = opt_interface_class,
+            oic_type        = proprietary,
+            app_code        = <<"arbitrary">>},
+         #ofp_port_optical_transport_layer_stack{
+            feature_type    = layer_stack,
+            value           = V}],
+    Pr = [#ofp_port_desc_prop_optical_transport {
+            type                = optical_transport,
+            port_signal_type    = otsn,
+            reserved            = 0,
+            features            = F}],
+    Data = [#ofp_port_v6{
+               port_no     = 1,
+               hw_addr     = <<8,0,39,255,136,50>>,
+               name        = <<"Port1">>,
+               config      = [],
+               state       = [live],
+               properties  = Pr,
+               is_optical = false}],
+    Msg = #ofp_message{
+             version = 4,
+             type = multipart_reply,
+             xid = 1,
+             body = #ofp_experimenter_reply{
+                       experimenter    = ?INFOBLOX_EXPERIMENTER,
+                       exp_type        = port_desc,
+                       data            = Data}},
+```
 
 ## LINC-Switch packet processing pipeline ##
 
@@ -173,7 +326,7 @@ module that ties the backend and the OpenFlow client.
     to the packet (via `linc_us4_instructions:apply/2`)
 
         1. as a result, actions from *Apply-Actions* instruction *(Action List)*
-        or from an *Action Set* can be applied to the packet
+p        or from an *Action Set* can be applied to the packet
         (`linc_us4_actions:apply_set/1` or `linc_us4_actions:apply_list/2`)
 
         2. also actions from a group’s bucket can be applied
@@ -226,3 +379,5 @@ The diagram below illustrates packet processing pipeline:
 
     5. the backend module has functions dedicated for each type of an
     OF message which names match the record names of the messages
+
+[ROADM]: http://en.wikipedia.org/wiki/Reconfigurable_optical_add-drop_multiplexer

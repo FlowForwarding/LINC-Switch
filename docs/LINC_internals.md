@@ -16,17 +16,17 @@
 
 ## Quick Start ##
 
-* The architecture overview: [https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/LINC_Switch_Quick_Start_Guide.pdf](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/LINC_Switch_Quick_Start_Guide.pdf)
+* [The architecture overview](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/LINC_Switch_Quick_Start_Guide.pdf)
 
-* LINC poster with architecture overview:  https://drive.google.com/open?id=0BzE3z16kAXqUcTZ1NUVVYUxPREE&authuser=1
+* [LINC poster with architecture overview](https://github.com/FlowForwarding/incubation/blob/master/papers_presos/FlowForwarding-LINC-poster-final.pdf)
 
-* Optical Extension description: [https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/optical_extension.](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/optical_extension.md)[md](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/optical_extension.md)
+* [Optical Extension description](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/optical_extension.md)
 
-* Dealing with packets explanation: [https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/packet_capture.md](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/packet_capture.md)
+* [Dealing with packets explanation](https://github.com/FlowForwarding/LINC-Switch/blob/master/docs/packet_capture.md)
 
-* Configuration (sys.config file) explained: [https://github.com/FlowForwarding/LINC-Switch/blob/master/rel/files/sys.config.orig](https://github.com/FlowForwarding/LINC-Switch/blob/master/rel/files/sys.config.orig)
+* [Configuration (sys.config file) explained](https://github.com/FlowForwarding/LINC-Switch/blob/master/rel/files/sys.config.orig)
 
-* LINC-Environment to quickly get started and undetstand how the LINC integrates with the OS: [https://github.com/FlowForwarding/LINC-Environment](https://github.com/FlowForwarding/LINC-Environment)
+* [LINC-Environment to quickly get started and undetstand how the LINC integrates with the OS](https://github.com/FlowForwarding/LINC-Environment](https://github.com/FlowForwarding/LINC-Environment)
 
 ## LINC-Switch Erlang apps ##
 

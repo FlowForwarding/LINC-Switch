@@ -173,10 +173,10 @@ send(#linc_pkt{no_packet_in = false, fields = Fields, packet = Packet,
                packet_in_bytes = Bytes, cookie = Cookie,
                switch_id = SwitchId},
      controller) ->
-    {BufferId,Data} = maybe_buffer(SwitchId, Reason, Packet, Bytes),
-    PacketIn = #ofp_packet_in{buffer_id = BufferId, reason = Reason,
-                              table_id = TableId, cookie = Cookie,
-                              match = Fields, data = Data},
+    {BufferId, TotalLen, Data} = maybe_buffer(SwitchId, Reason, Packet, Bytes),
+    PacketIn = #ofp_packet_in{buffer_id = BufferId, total_len = TotalLen,
+                              reason = Reason, table_id = TableId,
+                              cookie = Cookie, match = Fields, data = Data},
     linc_logic:send_to_controllers(SwitchId, #ofp_message{body = PacketIn}),
     ok;
 send(#linc_pkt{}, local) ->
@@ -594,10 +594,12 @@ maybe_buffer(SwitchId, _Reason, Packet, Bytes) ->
     maybe_buffer(SwitchId, Packet, Bytes).
 
 maybe_buffer(_SwitchId, Packet, no_buffer) ->
-    {no_buffer, pkt:encapsulate(Packet)};
+    PacketBin = pkt:encapsulate(Packet),
+    {no_buffer, byte_size(PacketBin), PacketBin};
 maybe_buffer(SwitchId, Packet, Bytes) ->
     BufferId = linc_buffer:save_buffer(SwitchId, Packet),
-    {BufferId, truncate_packet(Packet,Bytes)}.
+    PacketBin = truncate_packet(Packet,Bytes),
+    {BufferId, byte_size(PacketBin), PacketBin}.
 
 truncate_packet(Packet,Bytes) ->
     Bin = pkt:encapsulate(Packet),

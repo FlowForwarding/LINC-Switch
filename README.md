@@ -20,7 +20,7 @@ and testing of new OpenFlow features.
 ### Erlang
 
 To use LINC you need to have an Erlang runtime installed on your
-machine. Required version is **R15B+**.
+machine. Required version is **R16** or newer.
 
 #### Install from sources
 

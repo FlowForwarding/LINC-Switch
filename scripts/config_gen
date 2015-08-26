@@ -10,8 +10,8 @@ main(Args) ->
             SysConfig = generate_sys_config(ParsedConfig),
             ok = file:write_file(OutputFile, io_lib:fwrite("~p.~n", [SysConfig]))
     catch
-        _:required_argument_missing ->
-            io:format("Required argument missing.~n"),
+        _:{required_argument_missing, Argument} ->
+            io:format("Required argument ~p missing.~n", [Argument]),
             usage(),
             halt(1);
         _:_ ->
@@ -37,7 +37,8 @@ usage_example(ScriptName) ->
         "-o ../rel/files/sys.config".
 
 parse_args([], Config) ->
-    [lists:keymember(RequiredArgument, 1, Config) orelse error(required_argument_missing)
+    [lists:keymember(RequiredArgument, 1, Config) orelse
+     error({required_argument_missing, RequiredArgument})
      || RequiredArgument <- [switches, controllers, output_file]],
     Config;
 parse_args(["-s", LogicalSwitch | Rest], Config) ->

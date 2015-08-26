@@ -12,10 +12,12 @@ main(Args) ->
     catch
         _:required_argument_missing ->
             io:format("Required argument missing.~n"),
-            usage();
+            usage(),
+            halt(1);
         _:_ ->
             io:format("Invalid argument.~n"),
-            usage()
+            usage(),
+            halt(1)
     end.
 
 usage() ->

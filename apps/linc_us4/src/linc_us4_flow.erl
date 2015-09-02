@@ -865,6 +865,15 @@ validate_action(_SwitchId, #ofp_action_push_mpls{}, _Match) ->
     {error,{bad_action,bad_argument}};
 validate_action(_SwitchId, #ofp_action_pop_mpls{}, _Match) ->
     ok;
+validate_action(_SwitchId, #ofp_action_push_pbb{ethertype = Ether}, _Match) ->
+    case Ether of
+        16#88e7 ->
+            ok;
+        _ ->
+            {error, {bad_action, bad_argument}}
+    end;
+validate_action(_SwitchId, #ofp_action_pop_pbb{}, _Match) ->
+    ok;
 validate_action(_SwitchId, #ofp_action_set_field{field=Field}, Match) ->
     case are_prerequisites_met(Field,Match) of
         true ->

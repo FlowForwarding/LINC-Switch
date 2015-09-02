@@ -71,6 +71,8 @@ flow_mod_test_() ->
        ,{"Delete where meter", fun delete_where_meter/0}
        ,{"Add flow with an incompatible value/mask pair in the match",
          fun incompatible_value_mask_pair_in_match/0}
+       ,{"Validate push_pbb action", fun push_pbb_action/0}
+       ,{"Validate pop_pbb action", fun pop_pbb_action/0}
       ]}}.
 
 bad_table_id() ->
@@ -1041,6 +1043,22 @@ incompatible_value_mask_pair_in_match() ->
                    [{write_actions,[{output,15,no_buffer}]}]),
     ?assertEqual({error, {bad_match, bad_wildcards}},
                  linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)).
+
+push_pbb_action() ->
+    FlowModAdd = #ofp_flow_mod{
+                    table_id = 0,command = add,
+                    instructions =
+                        [#ofp_instruction_apply_actions{
+                            actions = [#ofp_action_push_pbb{ethertype = 16#88e7}]}]},
+    ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)).
+
+pop_pbb_action() ->
+    FlowModAdd = #ofp_flow_mod{
+                    table_id = 0,command = add,
+                    instructions =
+                        [#ofp_instruction_apply_actions{
+                            actions = [#ofp_action_pop_pbb{}]}]},
+    ?assertEqual(ok, linc_us4_flow:modify(?SWITCH_ID, FlowModAdd)).
 
 statistics_test_() ->
     {setup, fun setup/0, fun teardown/1,

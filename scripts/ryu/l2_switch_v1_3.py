@@ -36,7 +36,7 @@ class L2Switch(RyuApp):
         flow_mod = datapath.ofproto_parser.OFPFlowMod(datapath, 0, 0, table_id,
                                                       ofproto.OFPFC_ADD, 0, 0,
                                                       priority,
-                                                      ofproto.OFPCML_NO_BUFFER,
+                                                      ofproto.OFP_NO_BUFFER,
                                                       ofproto.OFPP_ANY,
                                                       OFPG_ANY, 0,
                                                       match, instructions)
@@ -81,7 +81,7 @@ class L2Switch(RyuApp):
             self.install_dst_entry(datapath, in_port, eth_src)
 
         # Flood
-        self.flood(datapath, msg.data)
+        self.flood(datapath, in_port, msg.data)
 
     def install_src_entry(self, datapath, in_port, eth_src):
         """Install flow entry matching on eth_src in table 0."""
@@ -105,13 +105,13 @@ class L2Switch(RyuApp):
         flow_mod = self.create_flow_mod(datapath, 123, 1, match, [write])
         datapath.send_msg(flow_mod)
 
-    def flood(self, datapath, data):
+    def flood(self, datapath, in_port, data):
         """Send a packet_out with output to all ports."""
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
         output_all = parser.OFPActionOutput(ofproto.OFPP_ALL,
                                             ofproto.OFPCML_NO_BUFFER)
-        packet_out = parser.OFPPacketOut(datapath, 0xffffffff,
-                                         ofproto.OFPP_CONTROLLER,
+        packet_out = parser.OFPPacketOut(datapath, ofproto.OFP_NO_BUFFER,
+                                         in_port,
                                          [output_all], data)
         datapath.send_msg(packet_out)

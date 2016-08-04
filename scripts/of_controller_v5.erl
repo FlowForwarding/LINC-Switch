@@ -34,6 +34,7 @@
          features_request/0,
          remove_all_flows/0,
          group_mod/0,
+         group_delete/0,
          port_mod/0,
          port_desc_request/0,
          set_config/0,
@@ -53,6 +54,7 @@
          config_request_meter_17/0,
          add_meter_19_with_burst_size/0,
          get_stats_meter_19/0,
+         delete_meter_19/0,
          flow_mod_with_flags/0,
          set_async/0,
          get_async_request/0,
@@ -265,6 +267,43 @@ scenario(meter_burst) ->
               [{meter, 19},
                {write_actions, [{output, controller, no_buffer}]}]),
      get_stats_meter_19];
+%% When a flow entry refers to a meter, the flow entry must be deleted
+%% as a consequence of the meter being deleted.
+%%
+%% To verify, run this scenario and check that the first flow stats
+%% request returns information about the flow entry with the cookie
+%% "meterdel", and that the second doesn't.
+scenario(flow_removal_after_meter_removal) ->
+    %% The cookie must be exactly 8 bytes.
+    Cookie = <<"meterdel">>,
+    [add_meter_19_with_burst_size,
+     flow_add([{cookie, Cookie}],
+              [],
+              [{meter, 19},
+               {write_actions, [{output, controller, no_buffer}]}]),
+     %% Here the flow exists.
+     flow_stats_request_with_cookie(Cookie),
+     delete_meter_19,
+     %% Here it doesn't.
+     flow_stats_request_with_cookie(Cookie)];
+%% When a flow entry refers to a group, the flow entry must be deleted
+%% as a consequence of the group being deleted.
+%%
+%% To verify, run this scenario and check that the first flow stats
+%% request returns information about the flow entry with the cookie
+%% "groupdel", and that the second doesn't.
+scenario(flow_removal_after_group_removal) ->
+    %% The cookie must be exactly 8 bytes.
+    Cookie = <<"groupdel">>,
+    [group_mod,
+     flow_add([{cookie, Cookie}],
+              [],
+              [{write_actions, [{group, 1}]}]),
+     %% Here the flow exists.
+     flow_stats_request_with_cookie(Cookie),
+     group_delete,
+     %% Here it doesn't.
+     flow_stats_request_with_cookie(Cookie)];
 scenario(flow_mod_with_flags) ->
     [flow_mod_with_flags,
      flow_stats_request];
@@ -956,6 +995,12 @@ group_mod() ->
                              watch_group = 1,
                              actions = [#ofp_action_output{port = 2}]}]}).
 
+group_delete() ->
+    message(#ofp_group_mod{
+               command  = delete,
+               type = all,
+               group_id = 1}).
+
 port_mod() ->
     message(#ofp_port_mod{port_no = 1,
                           hw_addr = <<0,17,0,0,17,17>>,
@@ -1161,6 +1206,11 @@ add_meter_19_with_burst_size() ->
 
 get_stats_meter_19() ->
     message(#ofp_meter_stats_request{meter_id = 19}).
+
+delete_meter_19() ->
+    message(#ofp_meter_mod{
+               command = delete,
+               meter_id = 19}).
 
 %% Flow mod with flags set to check if they are correctly encoded/decoded.
 flow_mod_with_flags() ->
